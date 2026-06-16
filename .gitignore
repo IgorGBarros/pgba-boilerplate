@@ -1,0 +1,48 @@
+@'
+# Python / Django
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.log
+*.sqlite3
+media/
+staticfiles/
+
+# Virtual Envs
+venv/
+env/
+.venv/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secret.key
+
+# Docker / K8s
+docker-compose.override.yml
+kind-config.yaml
+kustomization.yaml.backup
+
+# Tests / Coverage
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Migrations (mantém apenas __init__.py)
+**/migrations/0*.py
+'@ | Out-File -FilePath ".gitignore" -Encoding utf8
