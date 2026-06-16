@@ -1,0 +1,1288 @@
+O Windows PowerShell
+Copyright (C) Microsoft Corporation. Todos os direitos reservados.
+
+Instale o PowerShell mais recente para obter novos recursos e aprimoramentos! https://aka.ms/PSWindows
+
+PS C:\Users\ig0r_> cd C:\Users\ig0r_\Documents\backend\k8s
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl port-forward svc/backend-service 8000:8000 -n app-ns
+Forwarding from 127.0.0.1:8000 -> 8000
+Forwarding from [::1]:8000 -> 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl logs backend-669946666d-blxqd -n app-ns
+Aguardando o PostgreSQL iniciar...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL não está pronto - aguardando...
+PostgreSQL iniciado!
+Aplicando migrações Django...
+Operations to perform:
+  Apply all migrations: User, admin, auth, contenttypes, sessions
+Running migrations:
+  Applying contenttypes.0001_initial... OK
+  Applying contenttypes.0002_remove_content_type_name... OK
+  Applying auth.0001_initial... OK
+  Applying auth.0002_alter_permission_name_max_length... OK
+  Applying auth.0003_alter_user_email_max_length... OK
+  Applying auth.0004_alter_user_username_opts... OK
+  Applying auth.0005_alter_user_last_login_null... OK
+  Applying auth.0006_require_contenttypes_0002... OK
+  Applying auth.0007_alter_validators_add_error_messages... OK
+  Applying auth.0008_alter_user_username_max_length... OK
+  Applying auth.0009_alter_user_last_name_max_length... OK
+  Applying auth.0010_alter_group_name_max_length... OK
+  Applying auth.0011_update_proxy_permissions... OK
+  Applying auth.0012_alter_user_first_name_max_length... OK
+  Applying User.0001_initial... OK
+  Applying User.0002_role_customuser_role... OK
+  Applying User.0003_subscriptionplan_subscription... OK
+  Applying User.0004_plan_customuser_plan... OK
+  Applying admin.0001_initial... OK
+  Applying admin.0002_logentry_remove_auto_add... OK
+  Applying admin.0003_logentry_add_action_flag_choices... OK
+  Applying sessions.0001_initial... OK
+Iniciando servidor Gunicorn...
+[2025-11-20 22:22:49 +0000] [8] [INFO] Starting gunicorn 23.0.0
+[2025-11-20 22:22:49 +0000] [8] [INFO] Listening at: http://0.0.0.0:8000 (8)
+[2025-11-20 22:22:49 +0000] [8] [INFO] Using worker: sync
+[2025-11-20 22:22:49 +0000] [65] [INFO] Booting worker with pid: 65
+[2025-11-20 22:28:51 +0000] [8] [CRITICAL] WORKER TIMEOUT (pid:65)
+[2025-11-20 19:28:51 -0300] [65] [ERROR] Error handling request (no URI read)
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/workers/sync.py", line 133, in handle
+    req = next(parser)
+          ^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/parser.py", line 41, in __next__
+    self.mesg = self.mesg_class(self.cfg, self.unreader, self.source_addr, self.req_count)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/message.py", line 259, in __init__
+    super().__init__(cfg, unreader, peer_addr)
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/message.py", line 60, in __init__
+    unused = self.parse(self.unreader)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/message.py", line 271, in parse
+    self.get_data(unreader, buf, stop=True)
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/message.py", line 262, in get_data
+    data = unreader.read()
+           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/unreader.py", line 36, in read
+    d = self.chunk()
+        ^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/unreader.py", line 63, in chunk
+    return self.sock.recv(self.mxchunk)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/workers/base.py", line 204, in handle_abort
+    sys.exit(1)
+SystemExit: 1
+[2025-11-20 19:28:51 -0300] [65] [INFO] Worker exiting (pid: 65)
+[2025-11-20 22:28:51 +0000] [66] [INFO] Booting worker with pid: 66
+[2025-11-20 22:38:35 +0000] [8] [CRITICAL] WORKER TIMEOUT (pid:66)
+[2025-11-20 19:38:35 -0300] [66] [ERROR] Error handling request (no URI read)
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/workers/sync.py", line 133, in handle
+    req = next(parser)
+          ^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/parser.py", line 41, in __next__
+    self.mesg = self.mesg_class(self.cfg, self.unreader, self.source_addr, self.req_count)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/message.py", line 259, in __init__
+    super().__init__(cfg, unreader, peer_addr)
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/message.py", line 60, in __init__
+    unused = self.parse(self.unreader)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/message.py", line 271, in parse
+    self.get_data(unreader, buf, stop=True)
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/message.py", line 262, in get_data
+    data = unreader.read()
+           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/unreader.py", line 36, in read
+    d = self.chunk()
+        ^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/http/unreader.py", line 63, in chunk
+    return self.sock.recv(self.mxchunk)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/gunicorn/workers/base.py", line 204, in handle_abort
+    sys.exit(1)
+SystemExit: 1
+[2025-11-20 19:38:35 -0300] [66] [INFO] Worker exiting (pid: 66)
+[2025-11-20 22:38:35 +0000] [67] [INFO] Booting worker with pid: 67
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS        RESTARTS      AGE
+backend-7cc8d94f69-62mc9    1/1     Running       0             6s
+backend-854879685b-fp8w7    1/1     Terminating   0             44s
+postgres-6c78c96497-gdgvn   1/1     Running       1 (16m ago)   28m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl logs backend-7cc8d94f69-62mc9 -n app-ns
+Aguardando o PostgreSQL iniciar...
+PostgreSQL iniciado!
+Aplicando migrações Django...
+Operations to perform:
+  Apply all migrations: User, admin, auth, contenttypes, sessions
+Running migrations:
+  No migrations to apply.
+Iniciando servidor Gunicorn...
+[2025-11-20 22:39:00 +0000] [7] [INFO] Starting gunicorn 23.0.0
+[2025-11-20 22:39:00 +0000] [7] [INFO] Listening at: http://0.0.0.0:8000 (7)
+[2025-11-20 22:39:00 +0000] [7] [INFO] Using worker: sync
+[2025-11-20 22:39:00 +0000] [12] [INFO] Booting worker with pid: 12
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS    RESTARTS      AGE
+backend-7cc8d94f69-62mc9    1/1     Running   0             21m
+postgres-6c78c96497-gdgvn   1/1     Running   1 (38m ago)   50m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-7cc8d94f69-62mc9 -n app-ns -- bash
+root@backend-7cc8d94f69-62mc9:/app# python manage.py collectstatic --noinput
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 209, in handle
+    collected = self.collect()
+                ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 135, in collect
+    handler(path, prefixed_path, storage)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 368, in copy_file
+    if not self.delete_file(path, prefixed_path, source_storage):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 278, in delete_file
+    if self.storage.exists(prefixed_path):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/files/storage/filesystem.py", line 206, in exists
+    return os.path.lexists(self.path(name))
+                           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/storage.py", line 39, in path
+    raise ImproperlyConfigured(
+django.core.exceptions.ImproperlyConfigured: You're using the staticfiles app without having set the STATIC_ROOT setting to a filesystem path.
+root@backend-7cc8d94f69-62mc9:/app# ls -la /app/static/
+ls: cannot access '/app/static/': No such file or directory
+root@backend-7cc8d94f69-62mc9:/app# ^C
+root@backend-7cc8d94f69-62mc9:/app# exit
+exit
+command terminated with exit code 130
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build -t igorgbarros/backend:latest .
+[+] Building 0.1s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 2B                                                                                 0.0s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/vwm45wybw9zt0z8gldqr6arvo
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+25244d620b74: Layer already exists
+ebb07cd170cc: Layer already exists
+653ba7cf89b6: Already exists
+ba79ecd6b908: Layer already exists
+14fd028d05b0: Layer already exists
+0c02df0688c6: Layer already exists
+4f4fb700ef54: Layer already exists
+d6413c75b31d: Layer already exists
+45fd87bb1a12: Layer already exists
+dad67da3f26b: Layer already exists
+841cc640c526: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS    RESTARTS      AGE
+backend-68956568ff-96sqd    1/1     Running   0             34s
+postgres-6c78c96497-gdgvn   1/1     Running   1 (46m ago)   58m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-68956568ff-96sqd -n app-ns -- bash
+root@backend-68956568ff-96sqd:/app# python manage.py collectstatic --noinput
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 209, in handle
+    collected = self.collect()
+                ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 135, in collect
+    handler(path, prefixed_path, storage)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 368, in copy_file
+    if not self.delete_file(path, prefixed_path, source_storage):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 278, in delete_file
+    if self.storage.exists(prefixed_path):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/files/storage/filesystem.py", line 206, in exists
+    return os.path.lexists(self.path(name))
+                           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/storage.py", line 39, in path
+    raise ImproperlyConfigured(
+django.core.exceptions.ImproperlyConfigured: You're using the staticfiles app without having set the STATIC_ROOT setting to a filesystem path.
+root@backend-68956568ff-96sqd:/app# ls -la /app/static/
+ls -la /app/static/admin/css/
+ls: cannot access '/app/static/': No such file or directory
+ls: cannot access '/app/static/admin/css/': No such file or directory
+root@backend-68956568ff-96sqd:/app# ls -la /app/static/
+ls: cannot access '/app/static/': No such file or directory
+root@backend-68956568ff-96sqd:/app# ls -la /app/static/admin/css/
+ls: cannot access '/app/static/admin/css/': No such file or directory
+root@backend-68956568ff-96sqd:/app# python manage.py collectstatic --noinput
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 209, in handle
+    collected = self.collect()
+                ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 135, in collect
+    handler(path, prefixed_path, storage)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 368, in copy_file
+    if not self.delete_file(path, prefixed_path, source_storage):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 278, in delete_file
+    if self.storage.exists(prefixed_path):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/files/storage/filesystem.py", line 206, in exists
+    return os.path.lexists(self.path(name))
+                           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/storage.py", line 39, in path
+    raise ImproperlyConfigured(
+django.core.exceptions.ImproperlyConfigured: You're using the staticfiles app without having set the STATIC_ROOT setting to a filesystem path.
+root@backend-68956568ff-96sqd:/app# ^C
+root@backend-68956568ff-96sqd:/app# exit
+exit
+command terminated with exit code 130
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build -t igorgbarros/backend:latest .
+[+] Building 0.1s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 2B                                                                                 0.0s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/l0n1woa178i61yhuuukgk3t7p
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+653ba7cf89b6: Already exists
+4f4fb700ef54: Layer already exists
+ba79ecd6b908: Layer already exists
+ebb07cd170cc: Layer already exists
+45fd87bb1a12: Layer already exists
+841cc640c526: Layer already exists
+14fd028d05b0: Layer already exists
+dad67da3f26b: Layer already exists
+0c02df0688c6: Layer already exists
+d6413c75b31d: Layer already exists
+25244d620b74: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS        RESTARTS      AGE
+backend-68956568ff-96sqd    1/1     Terminating   0             11m
+backend-6c699ffb9d-ckj9d    1/1     Running       0             20s
+postgres-6c78c96497-gdgvn   1/1     Running       1 (57m ago)   68m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-6c699ffb9d-ckj9d -n app-ns -- bash
+root@backend-6c699ffb9d-ckj9d:/app# python manage.py collectstatic --noinput
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 209, in handle
+    collected = self.collect()
+                ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 135, in collect
+    handler(path, prefixed_path, storage)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 368, in copy_file
+    if not self.delete_file(path, prefixed_path, source_storage):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 278, in delete_file
+    if self.storage.exists(prefixed_path):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/files/storage/filesystem.py", line 206, in exists
+    return os.path.lexists(self.path(name))
+                           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/storage.py", line 39, in path
+    raise ImproperlyConfigured(
+django.core.exceptions.ImproperlyConfigured: You're using the staticfiles app without having set the STATIC_ROOT setting to a filesystem path.
+root@backend-6c699ffb9d-ckj9d:/app# ls -la /app/static/
+ls: cannot access '/app/static/': No such file or directory
+root@backend-6c699ffb9d-ckj9d:/app# ls -la /app/static/admin/css/
+ls: cannot access '/app/static/admin/css/': No such file or directory
+root@backend-6c699ffb9d-ckj9d:/app# pip install whitenoise
+Collecting whitenoise
+  Downloading whitenoise-6.11.0-py3-none-any.whl.metadata (3.7 kB)
+Downloading whitenoise-6.11.0-py3-none-any.whl (20 kB)
+Installing collected packages: whitenoise
+Successfully installed whitenoise-6.11.0
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+
+[notice] A new release of pip is available: 25.0.1 -> 25.3
+[notice] To update, run: pip install --upgrade pip
+root@backend-6c699ffb9d-ckj9d:/app# pip install --upgrade pip
+Requirement already satisfied: pip in /usr/local/lib/python3.12/site-packages (25.0.1)
+Collecting pip
+  Downloading pip-25.3-py3-none-any.whl.metadata (4.7 kB)
+Downloading pip-25.3-py3-none-any.whl (1.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 20.2 MB/s eta 0:00:00
+Installing collected packages: pip
+  Attempting uninstall: pip
+    Found existing installation: pip 25.0.1
+    Uninstalling pip-25.0.1:
+      Successfully uninstalled pip-25.0.1
+Successfully installed pip-25.3
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+root@backend-6c699ffb9d-ckj9d:/app# ls -la /app/static/
+ls: cannot access '/app/static/': No such file or directory
+root@backend-6c699ffb9d-ckj9d:/app# python manage.py collectstatic --noinput
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 209, in handle
+    collected = self.collect()
+                ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 135, in collect
+    handler(path, prefixed_path, storage)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 368, in copy_file
+    if not self.delete_file(path, prefixed_path, source_storage):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 278, in delete_file
+    if self.storage.exists(prefixed_path):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/files/storage/filesystem.py", line 206, in exists
+    return os.path.lexists(self.path(name))
+                           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/storage.py", line 39, in path
+    raise ImproperlyConfigured(
+django.core.exceptions.ImproperlyConfigured: You're using the staticfiles app without having set the STATIC_ROOT setting to a filesystem path.
+root@backend-6c699ffb9d-ckj9d:/app# ls -la /app/static/admin/css/
+ls: cannot access '/app/static/admin/css/': No such file or directory
+root@backend-6c699ffb9d-ckj9d:/app# exit
+exit
+command terminated with exit code 2
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build -t igorgbarros/backend:latest .
+[+] Building 0.1s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 2B                                                                                 0.0s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/vfthhrfd869vmtsksfbwata2g
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+653ba7cf89b6: Already exists
+dad67da3f26b: Layer already exists
+ebb07cd170cc: Layer already exists
+4f4fb700ef54: Layer already exists
+0c02df0688c6: Layer already exists
+45fd87bb1a12: Layer already exists
+d6413c75b31d: Layer already exists
+25244d620b74: Layer already exists
+14fd028d05b0: Layer already exists
+ba79ecd6b908: Layer already exists
+841cc640c526: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS    RESTARTS      AGE
+backend-59547c74c8-6xpws    1/1     Running   0             63s
+postgres-6c78c96497-gdgvn   1/1     Running   1 (62m ago)   74m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-59547c74c8-6xpws -n app-ns -- bash
+root@backend-59547c74c8-6xpws:/app# python manage.py collectstatic --noinput
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 209, in handle
+    collected = self.collect()
+                ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 135, in collect
+    handler(path, prefixed_path, storage)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 368, in copy_file
+    if not self.delete_file(path, prefixed_path, source_storage):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 278, in delete_file
+    if self.storage.exists(prefixed_path):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/files/storage/filesystem.py", line 206, in exists
+    return os.path.lexists(self.path(name))
+                           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/storage.py", line 39, in path
+    raise ImproperlyConfigured(
+django.core.exceptions.ImproperlyConfigured: You're using the staticfiles app without having set the STATIC_ROOT setting to a filesystem path.
+root@backend-59547c74c8-6xpws:/app# exit
+exit
+command terminated with exit code 1
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build -t igorgbarros/backend:latest .
+[+] Building 0.1s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 2B                                                                                 0.0s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/xgfp6dmj2aetrvjtm3ni5zt01
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+653ba7cf89b6: Already exists
+dad67da3f26b: Layer already exists
+4f4fb700ef54: Layer already exists
+0c02df0688c6: Layer already exists
+ba79ecd6b908: Layer already exists
+25244d620b74: Layer already exists
+14fd028d05b0: Layer already exists
+45fd87bb1a12: Layer already exists
+ebb07cd170cc: Layer already exists
+841cc640c526: Layer already exists
+d6413c75b31d: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS    RESTARTS      AGE
+backend-7fb98dd447-hp2zj    1/1     Running   0             57s
+postgres-6c78c96497-gdgvn   1/1     Running   1 (70m ago)   82m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-7fb98dd447-hp2zj -n app-ns -- bash
+root@backend-7fb98dd447-hp2zj:/app# python manage.py collectstatic --noinput
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 209, in handle
+    collected = self.collect()
+                ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 135, in collect
+    handler(path, prefixed_path, storage)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 368, in copy_file
+    if not self.delete_file(path, prefixed_path, source_storage):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 278, in delete_file
+    if self.storage.exists(prefixed_path):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/files/storage/filesystem.py", line 206, in exists
+    return os.path.lexists(self.path(name))
+                           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/storage.py", line 39, in path
+    raise ImproperlyConfigured(
+django.core.exceptions.ImproperlyConfigured: You're using the staticfiles app without having set the STATIC_ROOT setting to a filesystem path.
+root@backend-7fb98dd447-hp2zj:/app# exit
+exit
+command terminated with exit code 1
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build -t igorgbarros/backend:latest .
+[+] Building 0.5s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.2s
+ => => transferring dockerfile: 2B                                                                                 0.1s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/jssj59f9fpd9rogtjid2gf75i
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+4f4fb700ef54: Layer already exists
+ebb07cd170cc: Layer already exists
+45fd87bb1a12: Layer already exists
+14fd028d05b0: Layer already exists
+dad67da3f26b: Layer already exists
+d6413c75b31d: Layer already exists
+25244d620b74: Layer already exists
+0c02df0688c6: Layer already exists
+653ba7cf89b6: Already exists
+ba79ecd6b908: Layer already exists
+841cc640c526: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS        RESTARTS      AGE
+backend-7684bb6b-fb2c9      1/1     Running       0             9s
+backend-7fb98dd447-hp2zj    1/1     Terminating   0             16m
+postgres-6c78c96497-gdgvn   1/1     Running       1 (86m ago)   97m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-7684bb6b-fb2c9 -n app-ns -- bash
+root@backend-7684bb6b-fb2c9:/app# exit
+exit
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS    RESTARTS      AGE
+backend-7684bb6b-fb2c9      1/1     Running   1 (18m ago)   22m
+postgres-6c78c96497-gdgvn   1/1     Running   2 (18m ago)   119m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-7684bb6b-fb2c9 -n app-ns -- bash
+root@backend-7684bb6b-fb2c9:/app# python manage.py collectstatic --noinput
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 209, in handle
+    collected = self.collect()
+                ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 135, in collect
+    handler(path, prefixed_path, storage)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 368, in copy_file
+    if not self.delete_file(path, prefixed_path, source_storage):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 278, in delete_file
+    if self.storage.exists(prefixed_path):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/files/storage/filesystem.py", line 206, in exists
+    return os.path.lexists(self.path(name))
+                           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/storage.py", line 39, in path
+    raise ImproperlyConfigured(
+django.core.exceptions.ImproperlyConfigured: You're using the staticfiles app without having set the STATIC_ROOT setting to a filesystem path.
+root@backend-7684bb6b-fb2c9:/app# exit
+exit
+command terminated with exit code 1
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build -t igorgbarros/backend:latest .
+[+] Building 0.1s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 2B                                                                                 0.0s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/f42p2qn022u7qkpepc0u0qord
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+0c02df0688c6: Layer already exists
+653ba7cf89b6: Already exists
+25244d620b74: Layer already exists
+d6413c75b31d: Layer already exists
+ebb07cd170cc: Layer already exists
+841cc640c526: Layer already exists
+ba79ecd6b908: Layer already exists
+4f4fb700ef54: Layer already exists
+45fd87bb1a12: Layer already exists
+dad67da3f26b: Layer already exists
+14fd028d05b0: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS        RESTARTS      AGE
+backend-5d7777bfd5-vvkwl    1/1     Running       0             7s
+backend-7684bb6b-fb2c9      1/1     Terminating   1 (19m ago)   23m
+postgres-6c78c96497-gdgvn   1/1     Running       2 (19m ago)   121m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-5d7777bfd5-vvkwl -n app-ns -- bash
+root@backend-5d7777bfd5-vvkwl:/app# python manage.py collectstatic --noinput
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 209, in handle
+    collected = self.collect()
+                ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 135, in collect
+    handler(path, prefixed_path, storage)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 368, in copy_file
+    if not self.delete_file(path, prefixed_path, source_storage):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 278, in delete_file
+    if self.storage.exists(prefixed_path):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/files/storage/filesystem.py", line 206, in exists
+    return os.path.lexists(self.path(name))
+                           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/storage.py", line 39, in path
+    raise ImproperlyConfigured(
+django.core.exceptions.ImproperlyConfigured: You're using the staticfiles app without having set the STATIC_ROOT setting to a filesystem path.
+root@backend-5d7777bfd5-vvkwl:/app# python manage.py collectstatic
+
+You have requested to collect static files at the destination
+location as specified in your settings.
+
+This will overwrite existing files!
+Are you sure you want to do this?
+
+Type 'yes' to continue, or 'no' to cancel: yes
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 209, in handle
+    collected = self.collect()
+                ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 135, in collect
+    handler(path, prefixed_path, storage)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 368, in copy_file
+    if not self.delete_file(path, prefixed_path, source_storage):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 278, in delete_file
+    if self.storage.exists(prefixed_path):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/files/storage/filesystem.py", line 206, in exists
+    return os.path.lexists(self.path(name))
+                           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/storage.py", line 39, in path
+    raise ImproperlyConfigured(
+django.core.exceptions.ImproperlyConfigured: You're using the staticfiles app without having set the STATIC_ROOT setting to a filesystem path.
+root@backend-5d7777bfd5-vvkwl:/app# exit
+exit
+command terminated with exit code 1
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build -t igorgbarros/backend:latest .
+[+] Building 0.1s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 2B                                                                                 0.0s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/j9wtjvwutun3zxh8v0yr7yzvu
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+ebb07cd170cc: Layer already exists
+d6413c75b31d: Layer already exists
+ba79ecd6b908: Layer already exists
+dad67da3f26b: Layer already exists
+653ba7cf89b6: Already exists
+4f4fb700ef54: Layer already exists
+14fd028d05b0: Layer already exists
+841cc640c526: Layer already exists
+0c02df0688c6: Layer already exists
+45fd87bb1a12: Layer already exists
+25244d620b74: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS        RESTARTS      AGE
+backend-5d7777bfd5-vvkwl    1/1     Terminating   0             7m15s
+backend-b49ccbd98-6q2rn     1/1     Running       0             6s
+postgres-6c78c96497-gdgvn   1/1     Running       2 (26m ago)   128m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-b49ccbd98-6q2rn -n app-ns -- bash
+root@backend-b49ccbd98-6q2rn:/app# python manage.py collectstatic --noinput
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 209, in handle
+    collected = self.collect()
+                ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 135, in collect
+    handler(path, prefixed_path, storage)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 368, in copy_file
+    if not self.delete_file(path, prefixed_path, source_storage):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 278, in delete_file
+    if self.storage.exists(prefixed_path):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/files/storage/filesystem.py", line 206, in exists
+    return os.path.lexists(self.path(name))
+                           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/storage.py", line 39, in path
+    raise ImproperlyConfigured(
+django.core.exceptions.ImproperlyConfigured: You're using the staticfiles app without having set the STATIC_ROOT setting to a filesystem path.
+root@backend-b49ccbd98-6q2rn:/app# python manage.py migrate
+Operations to perform:
+  Apply all migrations: User, admin, auth, contenttypes, sessions
+Running migrations:
+  No migrations to apply.
+root@backend-b49ccbd98-6q2rn:/app# python manage.py makemigrations
+No changes detected
+root@backend-b49ccbd98-6q2rn:/app# python manage.py collectstatic --noinput
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 209, in handle
+    collected = self.collect()
+                ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 135, in collect
+    handler(path, prefixed_path, storage)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 368, in copy_file
+    if not self.delete_file(path, prefixed_path, source_storage):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/management/commands/collectstatic.py", line 278, in delete_file
+    if self.storage.exists(prefixed_path):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/files/storage/filesystem.py", line 206, in exists
+    return os.path.lexists(self.path(name))
+                           ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/staticfiles/storage.py", line 39, in path
+    raise ImproperlyConfigured(
+django.core.exceptions.ImproperlyConfigured: You're using the staticfiles app without having set the STATIC_ROOT setting to a filesystem path.
+root@backend-b49ccbd98-6q2rn:/app# echo $DJANGO_SETTINGS_MODULE
+
+root@backend-b49ccbd98-6q2rn:/app# exit
+exit
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build --no-cache -t igorgbarros/backend:latest .
+[+] Building 0.1s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 2B                                                                                 0.0s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/ttde8t5mi2n19l1iu86yexzwh
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+653ba7cf89b6: Already exists
+25244d620b74: Layer already exists
+45fd87bb1a12: Layer already exists
+d6413c75b31d: Layer already exists
+dad67da3f26b: Layer already exists
+ebb07cd170cc: Layer already exists
+14fd028d05b0: Layer already exists
+841cc640c526: Layer already exists
+4f4fb700ef54: Layer already exists
+ba79ecd6b908: Layer already exists
+0c02df0688c6: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl delete namespace app-ns
+namespace "app-ns" deleted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl create namespace app-ns
+namespace/app-ns created
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl apply -k overlays/dev
+secret/backend-secret created
+service/backend-service created
+service/postgres-service created
+deployment.apps/backend created
+deployment.apps/postgres created
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl delete namespace app-ns
+namespace "app-ns" deleted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl create namespace app-ns
+namespace/app-ns created
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl apply -k overlays/dev
+secret/backend-secret created
+service/backend-service created
+service/postgres-service created
+deployment.apps/backend created
+deployment.apps/postgres created
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS    RESTARTS   AGE
+backend-56595b7b8d-z8k6l    1/1     Running   0          18s
+postgres-6c78c96497-47w4c   1/1     Running   0          18s
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-56595b7b8d-z8k6l -n app-ns -- python manage.py shell
+10 objects imported automatically (use -v 2 for details).
+
+Python 3.12.11 (main, Jun 10 2025, 23:56:19) [GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+(InteractiveConsole)
+>>> from django.conf import settings
+>>> print(settings.STATIC_ROOT)  # Deve imprimir: /app/static
+None
+>>> print(settings.DATABASES['default']['HOST'])  # Confirma conexão
+postgres-service.app-ns.svc.cluster.local
+>>> print(settings.SETTINGS_MODULE)
+Api.settings
+>>>
+KeyboardInterrupt
+>>>
+KeyboardInterrupt
+>>> exit
+Use exit() or Ctrl-D (i.e. EOF) to exit
+>>> exit()
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build --no-cache -t igorgbarros/backend:latest .
+[+] Building 0.1s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 2B                                                                                 0.0s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/vsnc6axcgm1ftwt6zmnb9i9ll
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+841cc640c526: Layer already exists
+25244d620b74: Layer already exists
+ebb07cd170cc: Layer already exists
+dad67da3f26b: Layer already exists
+0c02df0688c6: Layer already exists
+d6413c75b31d: Layer already exists
+ba79ecd6b908: Layer already exists
+45fd87bb1a12: Layer already exists
+653ba7cf89b6: Already exists
+4f4fb700ef54: Layer already exists
+14fd028d05b0: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS    RESTARTS   AGE
+backend-6c57445f9f-grdqq    1/1     Running   0          6m39s
+postgres-6c78c96497-47w4c   1/1     Running   0          14m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-6c57445f9f-grdqq -n app-ns -- python manage.py shell
+10 objects imported automatically (use -v 2 for details).
+
+Python 3.12.11 (main, Jun 10 2025, 23:56:19) [GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+(InteractiveConsole)
+>>> from django.conf import settings
+>>> print(settings.SETTINGS_MODULE)  # Deve imprimir: Api.settings
+Api.settings
+>>> print(settings.STATIC_ROOT)      # Deve imprimir: /app/static
+None
+>>> exit()
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build --no-cache -t igorgbarros/backend:latest .
+[+] Building 0.1s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 2B                                                                                 0.0s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/y0gqzhxoquhspmtut81zz23fh
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+d6413c75b31d: Layer already exists
+ba79ecd6b908: Layer already exists
+0c02df0688c6: Layer already exists
+653ba7cf89b6: Already exists
+dad67da3f26b: Layer already exists
+25244d620b74: Layer already exists
+ebb07cd170cc: Layer already exists
+14fd028d05b0: Layer already exists
+45fd87bb1a12: Layer already exists
+841cc640c526: Layer already exists
+4f4fb700ef54: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS        RESTARTS   AGE
+backend-6c57445f9f-grdqq    1/1     Terminating   0          12m
+backend-7dfbc66cd9-s2sk7    1/1     Running       0          8s
+postgres-6c78c96497-47w4c   1/1     Running       0          19m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-7dfbc66cd9-s2sk7 -n app-ns -- python manage.py shell
+10 objects imported automatically (use -v 2 for details).
+
+Python 3.12.11 (main, Jun 10 2025, 23:56:19) [GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+(InteractiveConsole)
+>>> from django.conf import settings
+>>> print(settings.STATIC_ROOT)  # Agora deve imprimir: /app/static
+None
+>>> from django.conf import settings
+>>> print(settings.SETTINGS_MODULE)  # Deve imprimir: Api.settings
+Api.settings
+>>> print(settings.STATIC_ROOT)      # Deve imprimir: /app/static
+None
+>>> exit()
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build --no-cache -t igorgbarros/backend:latest .
+[+] Building 0.1s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 2B                                                                                 0.0s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/b7h38grrvkc6auilipw7skycu
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+ba79ecd6b908: Layer already exists
+d6413c75b31d: Layer already exists
+841cc640c526: Layer already exists
+4f4fb700ef54: Layer already exists
+ebb07cd170cc: Layer already exists
+0c02df0688c6: Layer already exists
+653ba7cf89b6: Already exists
+25244d620b74: Layer already exists
+45fd87bb1a12: Layer already exists
+dad67da3f26b: Layer already exists
+14fd028d05b0: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS        RESTARTS   AGE
+backend-6f8d8b9fb6-l2tlj    1/1     Running       0          5s
+backend-7dfbc66cd9-s2sk7    1/1     Terminating   0          7m3s
+postgres-6c78c96497-47w4c   1/1     Running       0          26m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-6f8d8b9fb6-l2tlj -n app-ns -- python manage.py shell
+10 objects imported automatically (use -v 2 for details).
+
+Python 3.12.11 (main, Jun 10 2025, 23:56:19) [GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+(InteractiveConsole)
+>>> from django.conf import settings
+>>> print("SETTINGS_MODULE:", settings.SETTINGS_MODULE)
+SETTINGS_MODULE: Api.settings
+>>> print("STATIC_ROOT:", settings.STATIC_ROOT)
+STATIC_ROOT: None
+>>> exit()
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build --no-cache -t igorgbarros/backend:latest .
+[+] Building 0.1s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 2B                                                                                 0.0s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/u7b2bcqcee81m9bvgvgo0g1pn
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+ebb07cd170cc: Layer already exists
+0c02df0688c6: Layer already exists
+841cc640c526: Layer already exists
+653ba7cf89b6: Already exists
+d6413c75b31d: Layer already exists
+ba79ecd6b908: Layer already exists
+dad67da3f26b: Layer already exists
+45fd87bb1a12: Layer already exists
+4f4fb700ef54: Layer already exists
+25244d620b74: Layer already exists
+14fd028d05b0: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS        RESTARTS   AGE
+backend-65987db7d5-7kv5q    1/1     Running       0          23s
+backend-6f8d8b9fb6-l2tlj    1/1     Terminating   0          22m
+postgres-6c78c96497-47w4c   1/1     Running       0          48m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-65987db7d5-7kv5q -n app-ns -- python manage.py shell
+10 objects imported automatically (use -v 2 for details).
+
+Python 3.12.11 (main, Jun 10 2025, 23:56:19) [GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+(InteractiveConsole)
+>>> from django.conf import settings
+>>> print(settings.DATABASES['default']['HOST'])  # Deve ser: postgres-service.app-ns.svc.cluster.local
+postgres-service.app-ns.svc.cluster.local
+>>> print(settings.STATIC_ROOT)                   # Deve ser: /app/static
+None
+>>> print("SETTINGS_MODULE:", settings.SETTINGS_MODULE)
+SETTINGS_MODULE: Api.settings
+>>> exit()
+PS C:\Users\ig0r_\Documents\backend\k8s> docker build --no-cache -t igorgbarros/backend:latest .
+[+] Building 0.1s (1/1) FINISHED                                                                   docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                               0.0s
+ => => transferring dockerfile: 2B                                                                                 0.0s
+ERROR: failed to build: failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/q7k8yfte8dspxm964ua7tmx8d
+PS C:\Users\ig0r_\Documents\backend\k8s> docker push igorgbarros/backend:latest
+The push refers to repository [docker.io/igorgbarros/backend]
+14fd028d05b0: Layer already exists
+841cc640c526: Layer already exists
+653ba7cf89b6: Already exists
+4f4fb700ef54: Layer already exists
+25244d620b74: Layer already exists
+0c02df0688c6: Layer already exists
+ebb07cd170cc: Layer already exists
+45fd87bb1a12: Layer already exists
+d6413c75b31d: Layer already exists
+ba79ecd6b908: Layer already exists
+dad67da3f26b: Layer already exists
+latest: digest: sha256:58609d9e48c9f5553c8735cc3d79e12fafb8315540953d7cf7b491ffec14bf5f size: 856
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl rollout restart deployment backend -n app-ns
+deployment.apps/backend restarted
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get pods -n app-ns --watch
+NAME                        READY   STATUS        RESTARTS   AGE
+backend-5c679fbbd7-dp6nb    1/1     Running       0          9s
+backend-65987db7d5-7kv5q    1/1     Terminating   0          11m
+postgres-6c78c96497-47w4c   1/1     Running       0          60m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-5c679fbbd7-dp6nb -n app-ns -- python manage.py shell
+10 objects imported automatically (use -v 2 for details).
+
+Python 3.12.11 (main, Jun 10 2025, 23:56:19) [GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+(InteractiveConsole)
+>>> from django.conf import settings
+>>> print(settings.STATIC_ROOT)  # Agora deve imprimir /app/static
+None
+>>> exit
+Use exit() or Ctrl-D (i.e. EOF) to exit
+>>> exit()
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl get service -n app-ns
+NAME               TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)          AGE
+backend-service    NodePort    10.109.180.171   <none>        8000:30080/TCP   61m
+postgres-service   ClusterIP   10.104.109.219   <none>        5432/TCP         61m
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl exec -it backend-5c679fbbd7-dp6nb -n app-ns -- bash
+root@backend-5c679fbbd7-dp6nb:/app# python manage.py createsuperuser
+Email: igorguimaraesbarros@gmail.com
+Name: Igor Guimarães Barros
+Password:
+Password (again):
+Traceback (most recent call last):
+  File "/app/manage.py", line 22, in <module>
+    main()
+  File "/app/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 416, in run_from_argv
+    self.execute(*args, **cmd_options)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/auth/management/commands/createsuperuser.py", line 90, in execute
+    return super().execute(*args, **options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 460, in execute
+    output = self.handle(*args, **options)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/auth/management/commands/createsuperuser.py", line 239, in handle
+    self.UserModel._default_manager.db_manager(database).create_superuser(
+  File "/app/User/models.py", line 51, in create_superuser
+    return self.create_user(email, password, **extra_fields)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/User/models.py", line 39, in create_user
+    user.save(using=self._db)
+  File "/usr/local/lib/python3.12/site-packages/django/contrib/auth/base_user.py", line 65, in save
+    super().save(*args, **kwargs)
+  File "/usr/local/lib/python3.12/site-packages/django/db/models/base.py", line 902, in save
+    self.save_base(
+  File "/usr/local/lib/python3.12/site-packages/django/db/models/base.py", line 1008, in save_base
+    updated = self._save_table(
+              ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/db/models/base.py", line 1169, in _save_table
+    results = self._do_insert(
+              ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/db/models/base.py", line 1210, in _do_insert
+    return manager._insert(
+           ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/db/models/manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/db/models/query.py", line 1854, in _insert
+    return query.get_compiler(using=using).execute_sql(returning_fields)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/db/models/sql/compiler.py", line 1881, in execute_sql
+    cursor.execute(sql, params)
+  File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'utf-8' codec can't encode character '\udcc3' in position 11: surrogates not allowed
+root@backend-5c679fbbd7-dp6nb:/app# python manage.py createsuperuser
+Email: igorguimaraesbarros@gmail.com
+Name: Igor Guimarães Barros
+Password:
+Password (again):
+Plano gratuito não encontrado.
+Role não encontrada.
+Superuser created successfully.
+root@backend-5c679fbbd7-dp6nb:/app# exit
+exit
+PS C:\Users\ig0r_\Documents\backend\k8s> kubectl port-forward svc/backend-service 8000:8000 -n app-ns
+Forwarding from 127.0.0.1:8000 -> 8000
+Forwarding from [::1]:8000 -> 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+Handling connection for 8000
+PS C:\Users\ig0r_\Documents\backend\k8s> history
+
+  Id CommandLine
+  -- -----------
+   1 cd C:\Users\ig0r_\Documents\backend\k8s
+   2 kubectl port-forward svc/backend-service 8000:8000 -n app-ns
+   3 kubectl rollout restart deployment backend -n app-ns
+   4 kubectl logs backend-669946666d-blxqd -n app-ns
+   5 kubectl rollout restart deployment backend -n app-ns
+   6 kubectl get pods -n app-ns --watch
+   7 kubectl logs backend-7cc8d94f69-62mc9 -n app-ns
+   8 kubectl get pods -n app-ns --watch
+   9 kubectl exec -it backend-7cc8d94f69-62mc9 -n app-ns -- bash
+  10 docker build -t igorgbarros/backend:latest .
+  11 docker push igorgbarros/backend:latest
+  12 kubectl rollout restart deployment backend -n app-ns
+  13 kubectl get pods -n app-ns --watch
+  14 kubectl exec -it backend-68956568ff-96sqd -n app-ns -- bash
+  15 docker build -t igorgbarros/backend:latest .
+  16 docker push igorgbarros/backend:latest
+  17 kubectl rollout restart deployment backend -n app-ns
+  18 kubectl get pods -n app-ns --watch
+  19 kubectl exec -it backend-6c699ffb9d-ckj9d -n app-ns -- bash
+  20 docker build -t igorgbarros/backend:latest .
+  21 docker push igorgbarros/backend:latest
+  22 kubectl rollout restart deployment backend -n app-ns
+  23 kubectl get pods -n app-ns --watch
+  24 kubectl exec -it backend-59547c74c8-6xpws -n app-ns -- bash
+  25 docker build -t igorgbarros/backend:latest .
+  26 docker push igorgbarros/backend:latest
+  27 kubectl rollout restart deployment backend -n app-ns
+  28 kubectl get pods -n app-ns --watch
+  29 kubectl exec -it backend-7fb98dd447-hp2zj -n app-ns -- bash
+  30 docker build -t igorgbarros/backend:latest .
+  31 docker push igorgbarros/backend:latest
+  32 kubectl rollout restart deployment backend -n app-ns
+  33 kubectl get pods -n app-ns --watch
+  34 kubectl exec -it backend-7684bb6b-fb2c9 -n app-ns -- bash
+  35 kubectl get pods -n app-ns --watch
+  36 kubectl exec -it backend-7684bb6b-fb2c9 -n app-ns -- bash
+  37 docker build -t igorgbarros/backend:latest .
+  38 docker push igorgbarros/backend:latest
+  39 kubectl rollout restart deployment backend -n app-ns
+  40 kubectl get pods -n app-ns --watch
+  41 kubectl exec -it backend-5d7777bfd5-vvkwl -n app-ns -- bash
+  42 docker build -t igorgbarros/backend:latest .
+  43 docker push igorgbarros/backend:latest
+  44 kubectl rollout restart deployment backend -n app-ns
+  45 kubectl get pods -n app-ns --watch
+  46 kubectl exec -it backend-b49ccbd98-6q2rn -n app-ns -- bash
+  47 docker build --no-cache -t igorgbarros/backend:latest .
+  48 docker push igorgbarros/backend:latest
+  49 kubectl delete namespace app-ns
+  50 kubectl create namespace app-ns
+  51 kubectl apply -k overlays/dev
+  52 kubectl delete namespace app-ns
+  53 kubectl create namespace app-ns
+  54 kubectl apply -k overlays/dev
+  55 kubectl get pods -n app-ns --watch
+  56 kubectl exec -it backend-56595b7b8d-z8k6l -n app-ns -- python manage.py shell
+  57 docker build --no-cache -t igorgbarros/backend:latest .
+  58 docker push igorgbarros/backend:latest
+  59 kubectl rollout restart deployment backend -n app-ns
+  60 kubectl get pods -n app-ns --watch
+  61 kubectl exec -it backend-6c57445f9f-grdqq -n app-ns -- python manage.py shell
+  62 docker build --no-cache -t igorgbarros/backend:latest .
+  63 docker push igorgbarros/backend:latest
+  64 kubectl rollout restart deployment backend -n app-ns
+  65 kubectl get pods -n app-ns --watch
+  66 kubectl exec -it backend-7dfbc66cd9-s2sk7 -n app-ns -- python manage.py shell
+  67 docker build --no-cache -t igorgbarros/backend:latest .
+  68 docker push igorgbarros/backend:latest
+  69 kubectl rollout restart deployment backend -n app-ns
+  70 kubectl get pods -n app-ns --watch
+  71 kubectl exec -it backend-6f8d8b9fb6-l2tlj -n app-ns -- python manage.py shell
+  72 docker build --no-cache -t igorgbarros/backend:latest .
+  73 docker push igorgbarros/backend:latest
+  74 kubectl rollout restart deployment backend -n app-ns
+  75 kubectl get pods -n app-ns --watch
+  76 kubectl exec -it backend-65987db7d5-7kv5q -n app-ns -- python manage.py shell
+  77 docker build --no-cache -t igorgbarros/backend:latest .
+  78 docker push igorgbarros/backend:latest
+  79 kubectl rollout restart deployment backend -n app-ns
+  80 kubectl get pods -n app-ns --watch
+  81 kubectl exec -it backend-5c679fbbd7-dp6nb -n app-ns -- python manage.py shell
+  82 kubectl get service -n app-ns
+  83 kubectl exec -it backend-5c679fbbd7-dp6nb -n app-ns -- bash
+  84 kubectl port-forward svc/backend-service 8000:8000 -n app-ns
+
+
+PS C:\Users\ig0r_\Documents\backend\k8s>
