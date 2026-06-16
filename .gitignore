@@ -1,48 +1,26 @@
 @'
-# Python / Django
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
-dist/
-build/
+
+# Django
 *.log
 *.sqlite3
 media/
 staticfiles/
 
-# Virtual Envs
+# Env
 venv/
-env/
-.venv/
+.env
+!.env.example
 
-# IDE / OS
+# OS/IDE
 .vscode/
 .idea/
-*.swp
-*.swo
 .DS_Store
-Thumbs.db
 
-# Environment & Secrets
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-secret.key
-
-# Docker / K8s
-docker-compose.override.yml
-kind-config.yaml
-kustomization.yaml.backup
-
-# Tests / Coverage
-.pytest_cache/
-htmlcov/
-.coverage
-coverage.xml
-
-# Migrations (mantém apenas __init__.py)
-**/migrations/0*.py
-'@ | Out-File -FilePath ".gitignore" -Encoding utf8
+# Docker/K8s (opcional, se quiser versionar)
+# docker-compose.override.yml
+'@ | Out-File -FilePath ".gitignore" -Encoding utf8 -Force
