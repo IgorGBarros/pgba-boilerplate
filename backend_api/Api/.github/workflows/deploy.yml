@@ -1,0 +1,48 @@
+# deploy.yml
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # environment: production  ← Comente se quiser evitar warning (opcional)
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend_api/requirements.txt
+
+      - name: Run migrations
+        run: |
+          cd backend_api
+          python manage.py migrate
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.prod
+          # Secrets do GitHub: configure em Settings → Secrets → Actions
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+
+      - name: Collect static
+        run: |
+          cd backend_api
+          python manage.py collectstatic --noinput
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.prod
