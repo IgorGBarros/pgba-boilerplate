@@ -1,0 +1,54 @@
+# === Python / Django (backend_api) ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+.eggs/
+.venv/
+venv/
+env/
+staticfiles/
+media/
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# === Node / frontend ===
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+*.local
+
+# === Segredos / configuração local ===
+# Nunca comitar .env real — só o .env.example fica versionado.
+.env
+.env.local
+.env.*.local
+backend_api/.env
+frontend/.env
+*.pem
+*.key
+
+# === Banco de dados / dados locais ===
+*.sqlite3
+pgdata/
+
+# === Editor / OS ===
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.swp
+
+# === Build / cache diversos ===
+*.tgz
+.turbo/
+.cache/
