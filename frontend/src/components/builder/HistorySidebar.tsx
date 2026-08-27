@@ -104,7 +104,7 @@ export default function HistorySidebar({
                   <span className="text-[10px] opacity-50">{formatTime(conv.timestamp)}</span>
                   <Trash2
                     className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-50 hover:!opacity-100 hover:text-red-400"
-                    onClick={(e: { stopPropagation: () => void; }) => {
+                    onClick={(e) => {
                       e.stopPropagation();
                       onDeleteConversation(conv.id);
                     }}

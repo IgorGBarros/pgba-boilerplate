@@ -18,9 +18,10 @@ interface PreviewPanelProps {
   files: ProjectFile[];
   logs: GenerateLogEvent[];
   onClearLogs: () => void;
+  workspace?: string;
 }
 
-export default function PreviewPanel({ previewUrl, files, logs, onClearLogs }: PreviewPanelProps) {
+export default function PreviewPanel({ previewUrl, files, logs, onClearLogs, workspace }: PreviewPanelProps) {
   const [showExplorer, setShowExplorer] = useState(true);
   const [showPreview, setShowPreview] = useState(true);
   const [activeFile, setActiveFile] = useState<string | null>(null);
@@ -110,7 +111,7 @@ export default function PreviewPanel({ previewUrl, files, logs, onClearLogs }: P
             {showPreview ? (
               <iframe key={iframeKey} src={previewUrl} className="h-full w-full border-0 bg-white" title="Preview" />
             ) : activeFile ? (
-              <CodeViewer filePath={activeFile} />
+              <CodeViewer filePath={activeFile} workspace={workspace} />
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-slate-500">Selecione um arquivo ou abra o Preview</div>
             )}

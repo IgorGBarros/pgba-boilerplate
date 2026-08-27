@@ -2,24 +2,26 @@
 import { Suspense, lazy, useState } from "react";
 import KnowledgeChat from "@/components/KnowledgeChat";
 import GeneratedRouter from "@/components/GeneratedRouter";
-import AgentStatusBoard from "@/components/AgentStatusBoard";
 
-// Carregado sob demanda: só quem abre a aba "Estúdio" paga o custo de
+// Carregado sob demanda: só quem abre o Estúdio paga o custo de
 // framer-motion + cmdk + react-syntax-highlighter (~700KB) — sem isso, o
-// bundle inicial de quem só usa o chat de conhecimento ficava inflado à toa.
+// bundle inicial ficaria inflado à toa mesmo pra quem só usa o chat de
+// conhecimento. Mesmo assim é a aba PADRÃO (painel principal do sistema —
+// ver CLAUDE.md), então o Suspense cobre só o primeiro carregamento.
 const Studio = lazy(() => import("@/pages/Studio"));
 
-type Tab = "knowledge" | "agents" | "pages" | "studio";
+// "Agentes" deixou de ser aba separada: absorvida pela visão "Empresa"
+// dentro do próprio Studio (setores + agentes + projetos, tudo junto).
+type Tab = "studio" | "knowledge" | "pages";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "knowledge", label: "Conhecimento" },
-  { id: "agents", label: "Agentes" },
-  { id: "pages", label: "Páginas geradas" },
   { id: "studio", label: "Estúdio" },
+  { id: "knowledge", label: "Conhecimento" },
+  { id: "pages", label: "Páginas geradas" },
 ];
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("knowledge");
+  const [tab, setTab] = useState<Tab>("studio");
 
   return (
     <main className="min-h-screen">
@@ -40,14 +42,13 @@ export default function App() {
         </nav>
       </header>
 
-      {tab === "knowledge" && <KnowledgeChat />}
-      {tab === "agents" && <AgentStatusBoard />}
-      {tab === "pages" && <GeneratedRouter />}
       {tab === "studio" && (
         <Suspense fallback={<p className="p-6 text-sm text-slate-500">Carregando estúdio...</p>}>
           <Studio />
         </Suspense>
       )}
+      {tab === "knowledge" && <KnowledgeChat />}
+      {tab === "pages" && <GeneratedRouter />}
     </main>
   );
 }

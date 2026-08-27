@@ -1,32 +1,30 @@
 #!/usr/bin/env node
 // frontend/devserver/index.mjs
 //
-// Servidor de desenvolvimento local (porta 5174) que existe SÓ para dar
-// ao admin panel (`AdminCreate.tsx`) uma visão em tempo real do loop de
-// geração — que já existe e funciona via CLI (`npm run generate`), mas
-// um `fetch` do navegador não pode chamar `execFileSync("npm", ...)`
-// nem escrever arquivo em disco diretamente. Este servidor faz a ponte:
-// roda a MESMA função `generatePage()` de `scripts/generator.mjs`
-// (nenhuma lógica duplicada) e transmite cada estágio via
-// Server-Sent Events para a UI.
-//
-// Não é um servidor de produção — só dev, só localhost, nunca exposto
-// externamente. Sobe junto com o Vite via `npm run dev:admin`
-// (concurrently).
+// SERVIDOR PRINCIPAL (porta 5174) — toda a automação vive aqui, sempre no
+// ar: geração via harness, credenciais, guardrails, e agora também o
+// gerenciamento dos SERVIDORES SECUNDÁRIOS (um processo Vite próprio, em
+// porta própria, por projeto criado pela IA — ver `lib/workspace.mjs`
+// para o porquê disso existir separado do app principal).
 import http from "node:http";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import "dotenv/config";
 import { generatePage } from "../scripts/generator.mjs";
+import {
+  listWorkspaces,
+  createWorkspace,
+  startWorkspace,
+  stopWorkspace,
+  workspacePath,
+} from "./lib/workspace.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const PORT = 5174;
 const ALLOWED_ORIGIN = "http://localhost:5173";
 
-// Pastas mostradas na árvore de arquivos do Studio — deliberadamente só
-// o que faz sentido editar/gerar (não expõe node_modules, config raiz etc).
 const EXPLORER_ROOTS = ["src/pages", "src/components", "src/lib"];
 
 function listFilesRecursive(rootDir, relBase = "") {
@@ -50,8 +48,7 @@ function listFilesRecursive(rootDir, relBase = "") {
   return results;
 }
 
-// Clientes SSE conectados, por id de job.
-const jobClients = new Map(); // jobId -> Set<ServerResponse>
+const jobClients = new Map();
 
 function sendEvent(jobId, event) {
   const clients = jobClients.get(jobId);
@@ -75,6 +72,11 @@ function readBody(req) {
   });
 }
 
+function sendJson(res, status, body) {
+  res.writeHead(status, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(body));
+}
+
 const server = http.createServer(async (req, res) => {
   withCors(res);
 
@@ -86,8 +88,8 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  // SSE: o admin panel se conecta aqui ANTES de disparar a criação, para
-  // não perder nenhum evento (mesmo padrão do create-ia-frontend).
+  // --- Geração de página (principal OU dentro de um workspace secundário) ---
+
   if (req.method === "GET" && url.pathname === "/api/generate-stream") {
     const jobId = url.searchParams.get("jobId");
     if (!jobId) {
@@ -95,83 +97,72 @@ const server = http.createServer(async (req, res) => {
       res.end("jobId obrigatório");
       return;
     }
-
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
-
+    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
     if (!jobClients.has(jobId)) jobClients.set(jobId, new Set());
     jobClients.get(jobId).add(res);
-
-    req.on("close", () => {
-      jobClients.get(jobId)?.delete(res);
-    });
+    req.on("close", () => jobClients.get(jobId)?.delete(res));
     return;
   }
 
-  // Dispara a geração. Responde imediatamente (202); o progresso real
-  // vai todo pelo SSE acima.
   if (req.method === "POST" && url.pathname === "/api/generate-page") {
     const raw = await readBody(req);
     let payload;
     try {
       payload = JSON.parse(raw);
     } catch {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "JSON inválido" }));
-      return;
+      return sendJson(res, 400, { error: "JSON inválido" });
     }
 
-    const { prompt, name, jobId, accessToken } = payload;
+    const { prompt, name, jobId, accessToken, workspace } = payload;
     if (!prompt || !jobId) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "prompt e jobId são obrigatórios" }));
-      return;
+      return sendJson(res, 400, { error: "prompt e jobId são obrigatórios" });
     }
 
-    res.writeHead(202, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ accepted: true, jobId }));
+    // Sem `workspace`: gera no app principal (comportamento de sempre).
+    // Com `workspace`: gera DENTRO do projeto secundário — mesma função,
+    // só muda a raiz onde o arquivo é escrito e onde o typecheck roda.
+    const targetRoot = workspace ? workspacePath(workspace) : ROOT;
+    if (workspace && !fs.existsSync(targetRoot)) {
+      return sendJson(res, 404, { error: `Projeto local '${workspace}' não encontrado.` });
+    }
 
-    // Roda em background; eventos vão para quem estiver ouvindo o SSE.
+    sendJson(res, 202, { accepted: true, jobId });
+
     generatePage({
-      root: ROOT,
+      root: targetRoot,
       apiUrl: process.env.VITE_API_URL || "http://localhost:8000",
       accessToken: accessToken || process.env.PGBA_ACCESS_TOKEN,
       prompt,
       name: name || undefined,
       onLog: (stage, message) => sendEvent(jobId, { stage, message }),
     })
-      .then((result) => {
-        sendEvent(jobId, { stage: "complete", message: "ok", result });
-      })
-      .catch((err) => {
-        sendEvent(jobId, { stage: "error", message: err.message });
-      });
+      .then((result) => sendEvent(jobId, { stage: "complete", message: "ok", result }))
+      .catch((err) => sendEvent(jobId, { stage: "error", message: err.message }));
     return;
   }
 
-  // Árvore de arquivos (Studio) — só o que faz sentido navegar/editar.
+  // --- Árvore de arquivos / conteúdo (principal) ---
+
   if (req.method === "GET" && url.pathname === "/api/project-files") {
-    const files = EXPLORER_ROOTS.flatMap((root) => {
-      if (!fs.existsSync(path.join(ROOT, root))) return [];
+    const workspace = url.searchParams.get("workspace");
+    const base = workspace ? workspacePath(workspace) : ROOT;
+    if (!fs.existsSync(base)) return sendJson(res, 404, { error: "Projeto não encontrado", files: [] });
+
+    const roots = workspace ? ["src/pages", "src/components"] : EXPLORER_ROOTS;
+    const files = roots.flatMap((root) => {
+      if (!fs.existsSync(path.join(base, root))) return [];
       const parts = root.split("/");
-      return [
-        { name: parts[parts.length - 1], type: "folder", path: root },
-        ...listFilesRecursive(ROOT, root),
-      ];
+      return [{ name: parts[parts.length - 1], type: "folder", path: root }, ...listFilesRecursive(base, root)];
     });
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ files }));
-    return;
+    return sendJson(res, 200, { files });
   }
 
-  // Conteúdo de um arquivo específico (para o preview de código no Studio).
   if (req.method === "GET" && url.pathname === "/api/file-content") {
+    const workspace = url.searchParams.get("workspace");
+    const base = workspace ? workspacePath(workspace) : ROOT;
     const relPath = url.searchParams.get("path") || "";
-    const fullPath = path.normalize(path.join(ROOT, relPath));
-    if (!fullPath.startsWith(ROOT) || !fs.existsSync(fullPath)) {
+    const fullPath = path.normalize(path.join(base, relPath));
+    if (!fullPath.startsWith(path.normalize(base)) || !fs.existsSync(fullPath)) {
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("");
       return;
@@ -181,11 +172,51 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // --- Workspaces (projetos SECUNDÁRIOS: processo + porta próprios) ---
+
+  if (req.method === "GET" && url.pathname === "/api/workspace") {
+    return sendJson(res, 200, { workspaces: listWorkspaces() });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/workspace/create") {
+    const raw = await readBody(req);
+    let payload;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return sendJson(res, 400, { error: "JSON inválido" });
+    }
+    try {
+      // npm install roda aqui — pode levar alguns segundos.
+      const result = createWorkspace(payload.name);
+      return sendJson(res, 201, { success: true, ...result });
+    } catch (err) {
+      return sendJson(res, 400, { success: false, error: err.message });
+    }
+  }
+
+  const startMatch = url.pathname.match(/^\/api\/workspace\/([^/]+)\/start$/);
+  if (req.method === "POST" && startMatch) {
+    try {
+      const result = startWorkspace(decodeURIComponent(startMatch[1]));
+      return sendJson(res, 200, { success: true, ...result });
+    } catch (err) {
+      return sendJson(res, 400, { success: false, error: err.message });
+    }
+  }
+
+  const stopMatch = url.pathname.match(/^\/api\/workspace\/([^/]+)\/stop$/);
+  if (req.method === "POST" && stopMatch) {
+    const stopped = stopWorkspace(decodeURIComponent(stopMatch[1]));
+    return sendJson(res, 200, { success: stopped });
+  }
+
   res.writeHead(404);
   res.end();
 });
 
 server.listen(PORT, () => {
-  console.log(`🔧 Dev-server de geração rodando em http://localhost:${PORT}`);
-  console.log("   (só para o admin panel local — nunca exponha isto externamente)");
+  console.log(`🔧 Servidor principal (devserver) rodando em http://localhost:${PORT}`);
+  console.log("   Projetos secundários sobem em portas 4000-4099, sob demanda.");
+  console.log("   (só para uso local — nunca exponha isto externamente)");
 });

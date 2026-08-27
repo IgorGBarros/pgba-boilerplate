@@ -30,6 +30,7 @@ export async function triggerGeneratePage(params: {
   prompt: string;
   name?: string;
   accessToken?: string;
+  workspace?: string;
 }): Promise<void> {
   const res = await fetch(`${DEV_SERVER_URL}/api/generate-page`, {
     method: "POST",
@@ -42,21 +43,65 @@ export async function triggerGeneratePage(params: {
   }
 }
 
+// --- Workspaces: projetos SECUNDÁRIOS, cada um com processo/porta próprios ---
+// (o Studio em si — porta 5173/5174 — é o SERVIDOR PRINCIPAL, sempre no ar
+// com toda a automação; um workspace é criado sob demanda, roda isolado.)
+
+export interface Workspace {
+  name: string;
+  running: boolean;
+  port: number | null;
+}
+
+export async function listWorkspaces(): Promise<Workspace[]> {
+  const res = await fetch(`${DEV_SERVER_URL}/api/workspace`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.workspaces ?? [];
+}
+
+export async function createWorkspace(name: string): Promise<{ name: string; path: string }> {
+  const res = await fetch(`${DEV_SERVER_URL}/api/workspace/create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.error || `Dev-server respondeu ${res.status}`);
+  return data;
+}
+
+export async function startWorkspace(name: string): Promise<{ name: string; port: number; alreadyRunning: boolean }> {
+  const res = await fetch(`${DEV_SERVER_URL}/api/workspace/${encodeURIComponent(name)}/start`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.error || `Dev-server respondeu ${res.status}`);
+  return data;
+}
+
+export async function stopWorkspace(name: string): Promise<boolean> {
+  const res = await fetch(`${DEV_SERVER_URL}/api/workspace/${encodeURIComponent(name)}/stop`, { method: "POST" });
+  const data = await res.json();
+  return !!data.success;
+}
+
 export interface ProjectFile {
   name: string;
   path: string;
   type: string;
 }
 
-export async function listProjectFiles(): Promise<ProjectFile[]> {
-  const res = await fetch(`${DEV_SERVER_URL}/api/project-files`);
+export async function listProjectFiles(workspace?: string): Promise<ProjectFile[]> {
+  const query = workspace ? `?workspace=${encodeURIComponent(workspace)}` : "";
+  const res = await fetch(`${DEV_SERVER_URL}/api/project-files${query}`);
   if (!res.ok) return [];
   const data = await res.json();
   return data.files ?? [];
 }
 
-export async function fetchFileContent(path: string): Promise<string> {
-  const res = await fetch(`${DEV_SERVER_URL}/api/file-content?path=${encodeURIComponent(path)}`);
+export async function fetchFileContent(path: string, workspace?: string): Promise<string> {
+  const params = new URLSearchParams({ path });
+  if (workspace) params.set("workspace", workspace);
+  const res = await fetch(`${DEV_SERVER_URL}/api/file-content?${params}`);
   if (!res.ok) return "";
   return res.text();
 }

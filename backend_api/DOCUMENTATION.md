@@ -61,8 +61,10 @@ Pilares:
                         └─────────────┬──────────────┘
                                       │ JWT
                         ┌─────────────▼──────────────┐
-                        │     TenantMiddleware        │  ← resolve tenant_id
-                        │      (core/middleware)      │    de todo request
+                        │  autenticação DRF (JWT)     │
+                        │  + TenantContextMixin        │  ← resolve tenant_id
+                        │  (core.mixins, dentro de     │    DEPOIS da auth
+                        │   initial() de cada view)    │
                         └─────────────┬──────────────┘
            ┌──────────────────────────┼───────────────────────────┐
            │                          │                           │
@@ -91,7 +93,7 @@ Cada app Django é uma camada com responsabilidade única:
 
 | App | Responsabilidade |
 |---|---|
-| `core` | Mixins transversais (tenant/auditoria/soft-delete), middleware de tenant, utilitários LGPD, `ConsentRecord` |
+| `core` | Mixins transversais (tenant/auditoria/soft-delete/`TenantContextMixin`), utilitários LGPD, `ConsentRecord` |
 | `User` | Autenticação, usuários, roles, planos |
 | `harness` | Credenciais de provedores de IA + guardrails anti-alucinação + endpoint de geração de código |
 | `ingestion` | RAG: fontes de conhecimento (Obsidian, upload, URL) → busca semântica |
@@ -104,9 +106,28 @@ Cada app Django é uma camada com responsabilidade única:
 ## 3. Multi-tenancy: isolamento por tenant
 
 Todo model de negócio herda `core.mixins.TenantMixin`, que adiciona um
-campo `tenant_id` (UUID, indexado). `core/middleware/tenant.py` resolve o
-tenant do request (hoje: de um cabeçalho/JWT — ajustável por projeto) e
-disponibiliza como `request.tenant_id`.
+campo `tenant_id` (UUID, indexado).
+
+**`request.tenant_id` é resolvido por `core.mixins.TenantContextMixin`
+— toda APIView/ViewSet nova precisa herdar dele.** Isso não é opcional
+nem estilo: middleware comum de Django roda ANTES da autenticação do
+DRF, então `request.user` (e portanto `request.user.tenant_id`) ainda
+não existe nesse momento — um middleware nunca resolve isso de verdade
+para uma request de API. `TenantContextMixin.initial()` roda DEPOIS da
+autenticação, no lugar certo do ciclo de vida do DRF:
+
+```python
+from core.mixins import TenantContextMixin
+from rest_framework.views import APIView
+
+class MinhaView(TenantContextMixin, APIView):
+    def get(self, request):
+        tenant_id = request.tenant_id  # já resolvido de verdade aqui
+```
+
+`core/middleware/tenant.py` (`TenantMiddleware`) ainda existe no
+`MIDDLEWARE`, mas é só para o caso raro de uma view Django "crua" (não-DRF)
+autenticada por sessão — **nunca confie nele para uma APIView/ViewSet**.
 
 Regra absoluta: **toda query filtra por `tenant_id` explicitamente**. Isso
 vale em três lugares onde é fácil esquecer e onde o custo de esquecer é

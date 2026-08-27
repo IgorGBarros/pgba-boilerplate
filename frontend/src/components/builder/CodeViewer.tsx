@@ -17,9 +17,10 @@ const LANG_MAP: Record<string, string> = {
 
 interface CodeViewerProps {
   filePath: string;
+  workspace?: string;
 }
 
-export default function CodeViewer({ filePath }: CodeViewerProps) {
+export default function CodeViewer({ filePath, workspace }: CodeViewerProps) {
   const [code, setCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -31,7 +32,7 @@ export default function CodeViewer({ filePath }: CodeViewerProps) {
     setLoading(true);
     setCode(null);
 
-    fetchFileContent(filePath).then((text) => {
+    fetchFileContent(filePath, workspace).then((text) => {
       if (!cancelled) {
         setCode(text);
         setLoading(false);
@@ -41,7 +42,7 @@ export default function CodeViewer({ filePath }: CodeViewerProps) {
     return () => {
       cancelled = true;
     };
-  }, [filePath]);
+  }, [filePath, workspace]);
 
   if (loading) {
     return (
