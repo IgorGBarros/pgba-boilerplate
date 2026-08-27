@@ -17,6 +17,7 @@ import {
   listWorkspaces,
   createWorkspace,
   startWorkspace,
+  waitForServerReady,
   type GenerateLogEvent,
   type ProjectFile,
   type Workspace,
@@ -59,6 +60,7 @@ export default function Studio() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [companyRefreshKey, setCompanyRefreshKey] = useState(0);
+  const [startingProject, setStartingProject] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const activeWorkspace = workspaces.find((w) => w.name === activeProject) ?? null;
@@ -72,9 +74,17 @@ export default function Studio() {
     setWorkspaces(await listWorkspaces());
   }
 
+  // Sem isso, um workspace criado numa sessão anterior (devserver
+  // reiniciado nesse meio-tempo) aparece pra sempre como "parado" na UI,
+  // mesmo que continue existindo em disco — e clicar nele nunca troca o
+  // preview, porque `running` nunca é reavaliado depois do mount inicial.
   useEffect(() => {
     refreshWorkspaces();
-    return () => eventSourceRef.current?.close();
+    const interval = setInterval(refreshWorkspaces, 5000);
+    return () => {
+      clearInterval(interval);
+      eventSourceRef.current?.close();
+    };
   }, []);
 
   useEffect(() => {
@@ -86,19 +96,59 @@ export default function Studio() {
     setMessages((prev) => [...prev, { ...msg, id: crypto.randomUUID(), timestamp: new Date() }]);
   }
 
+  // Este é o ponto que faltava: selecionar um projeto secundário só
+  // trocava `activeProject`, nunca verificava se o processo estava
+  // rodando de verdade — se não estivesse (ex: criado numa sessão
+  // anterior), o preview silenciosamente continuava mostrando o
+  // principal, dando a impressão de que a troca de projeto não fazia nada.
+  async function handleSelectProject(name: string | null) {
+    setActiveProject(name);
+    if (name === null) return;
+
+    const existing = workspaces.find((w) => w.name === name);
+    if (existing?.running) return;
+
+    setStartingProject(name);
+    addMessage({ type: "plan", content: `Iniciando "${name}"...` });
+    try {
+      const started = await startWorkspace(name);
+      const ready = await waitForServerReady(`http://localhost:${started.port}`);
+      await refreshWorkspaces();
+      addMessage({
+        type: ready ? "assistant" : "error",
+        content: ready
+          ? `"${name}" no ar em http://localhost:${started.port}.`
+          : `"${name}" subiu mas não respondeu a tempo em http://localhost:${started.port} — tente de novo em alguns segundos.`,
+      });
+    } catch (err) {
+      addMessage({ type: "error", content: err instanceof Error ? err.message : `Falha ao iniciar "${name}".` });
+    } finally {
+      setStartingProject(null);
+    }
+  }
+
   async function handleCreateLocalProject() {
     const name = prompt("Nome do novo projeto (vira uma pasta local + porta própria):");
     if (!name?.trim()) return;
 
     addMessage({ type: "plan", content: `Criando projeto local "${name}" (npm install pode levar alguns segundos)...` });
+    setStartingProject(name.trim());
     try {
       await createWorkspace(name.trim());
       const started = await startWorkspace(name.trim());
+      const ready = await waitForServerReady(`http://localhost:${started.port}`);
       await refreshWorkspaces();
       setActiveProject(started.name);
-      addMessage({ type: "assistant", content: `Projeto "${started.name}" no ar em http://localhost:${started.port}.` });
+      addMessage({
+        type: ready ? "assistant" : "error",
+        content: ready
+          ? `Projeto "${started.name}" no ar em http://localhost:${started.port}.`
+          : `Projeto "${started.name}" criado mas não respondeu a tempo — tente selecioná-lo de novo em alguns segundos.`,
+      });
     } catch (err) {
       addMessage({ type: "error", content: err instanceof Error ? err.message : "Falha ao criar projeto local." });
+    } finally {
+      setStartingProject(null);
     }
   }
 
@@ -175,7 +225,7 @@ export default function Studio() {
         {/* Seletor de projeto: Principal (este Studio) vs. secundários (processo/porta próprios) */}
         <div className="flex items-center gap-1 border-b border-white/10 bg-surface px-4 py-1.5">
           <button
-            onClick={() => setActiveProject(null)}
+            onClick={() => handleSelectProject(null)}
             className={`flex items-center gap-1.5 rounded-card px-2.5 py-1 text-[11px] font-medium transition ${
               activeProject === null ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-200"
             }`}
@@ -185,16 +235,18 @@ export default function Studio() {
           {workspaces.map((w) => (
             <button
               key={w.name}
-              onClick={() => setActiveProject(w.name)}
-              className={`flex items-center gap-1.5 rounded-card px-2.5 py-1 text-[11px] font-medium transition ${
+              onClick={() => handleSelectProject(w.name)}
+              disabled={startingProject === w.name}
+              className={`flex items-center gap-1.5 rounded-card px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 ${
                 activeProject === w.name ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-200"
               }`}
             >
               <Circle className={`h-1.5 w-1.5 ${w.running ? "fill-green-400 text-green-400" : "fill-slate-600 text-slate-600"}`} />
               {w.name}
+              {startingProject === w.name && <span className="text-[10px] text-slate-500">(iniciando...)</span>}
             </button>
           ))}
-          <button onClick={handleCreateLocalProject} className="flex items-center gap-1 rounded-card px-2.5 py-1 text-[11px] text-slate-500 hover:text-brand-500" title="Criar projeto local (processo/porta próprios)">
+          <button onClick={handleCreateLocalProject} disabled={!!startingProject} className="flex items-center gap-1 rounded-card px-2.5 py-1 text-[11px] text-slate-500 hover:text-brand-500 disabled:opacity-50" title="Criar projeto local (processo/porta próprios)">
             <Plus className="h-3 w-3" />
             Projeto local
           </button>

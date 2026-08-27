@@ -84,6 +84,25 @@ export async function stopWorkspace(name: string): Promise<boolean> {
   return !!data.success;
 }
 
+/**
+ * Espera o processo Vite do workspace secundário realmente aceitar
+ * conexões antes de apontar o iframe pra lá. `startWorkspace()` retorna
+ * assim que o processo é criado (spawn é não-bloqueante) — o Vite ainda
+ * leva um instante pra terminar de subir, principalmente no primeiro
+ * boot. Sem isso, o preview mostraria erro de conexão por um instante.
+ */
+export async function waitForServerReady(url: string, attempts = 20, delayMs = 300): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await fetch(url, { mode: "no-cors" });
+      return true;
+    } catch {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  return false;
+}
+
 export interface ProjectFile {
   name: string;
   path: string;

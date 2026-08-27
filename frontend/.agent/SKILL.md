@@ -143,6 +143,18 @@ Kimi em modo agente:
 Não entregue uma tela que só "parece pronta" — `npm run build` passando é
 o piso mínimo, não a definição de pronto.
 
+## Skills complementares
+
+- `.agent/skills/react-performance.md` — regras de performance React
+  adaptadas de `tech-leads-club/agent-skills` (MIT/Apache). O resumo curto
+  já vai embutido no `DEFAULT_SYSTEM_PROMPT` da geração automática; leia o
+  arquivo completo se estiver revisando ou otimizando manualmente.
+
+Esse catálogo (`github.com/tech-leads-club/agent-skills`) tem dezenas de
+outras skills — segurança, acessibilidade, PR review, SEO — organizadas
+exatamente no mesmo formato `SKILL.md` que usamos aqui. Vale a pena
+consultar antes de escrever uma skill nova do zero para este projeto.
+
 ## Modelos recomendados para este loop
 
 Qualquer modelo com boas capacidades agênticas/de tool-use funciona. Duas
