@@ -1,6 +1,6 @@
 // frontend/src/pages/Studio.tsx
 import { useEffect, useRef, useState } from "react";
-import { Rocket, Sparkles, Building2, Plus, Circle } from "lucide-react";
+import { Rocket, Sparkles, Building2, Plus, Circle, AlertTriangle } from "lucide-react";
 import ChatPanel from "@/components/builder/ChatPanel";
 import PreviewPanel from "@/components/builder/PreviewPanel";
 import HistorySidebar from "@/components/builder/HistorySidebar";
@@ -18,6 +18,7 @@ import {
   createWorkspace,
   startWorkspace,
   waitForServerReady,
+  isDevServerReachable,
   type GenerateLogEvent,
   type ProjectFile,
   type Workspace,
@@ -69,6 +70,7 @@ export default function Studio() {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [companyRefreshKey, setCompanyRefreshKey] = useState(0);
   const [startingProject, setStartingProject] = useState<string | null>(null);
+  const [devServerDown, setDevServerDown] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const activeWorkspace = workspaces.find((w) => w.name === activeProject) ?? null;
@@ -79,7 +81,12 @@ export default function Studio() {
   }
 
   async function refreshWorkspaces() {
-    setWorkspaces(await listWorkspaces());
+    const data = await listWorkspaces();
+    setWorkspaces(data);
+    // listWorkspaces() já engole erro de rede (nunca lança) — o jeito de
+    // saber se a chamada realmente falhou é perguntar pro próprio
+    // cliente depois dela rodar, não pelo valor de retorno.
+    setDevServerDown(!isDevServerReachable());
   }
 
   // Sem isso, um workspace criado numa sessão anterior (devserver
@@ -230,6 +237,15 @@ export default function Studio() {
       />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {devServerDown && (
+          <div className="flex items-center gap-2 border-b border-yellow-500/20 bg-yellow-500/10 px-4 py-2 text-xs text-yellow-400">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            Dev-server não está respondendo (porta 5174). Gerar página, ver arquivos e projetos locais não vão
+            funcionar até você rodar <code className="rounded bg-black/20 px-1 py-0.5">npm run dev:admin</code> em vez de
+            <code className="rounded bg-black/20 px-1 py-0.5">npm run dev</code>.
+          </div>
+        )}
+
         {/* Seletor de projeto: Principal (este Studio) vs. secundários (processo/porta próprios) */}
         <div className="flex items-center gap-1 overflow-x-auto border-b border-white/10 bg-surface px-3 py-1.5 sm:px-4">
           <button

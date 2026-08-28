@@ -1,4 +1,5 @@
 // frontend/src/components/builder/ChatBubble.tsx
+import { forwardRef } from "react";
 import { motion } from "framer-motion";
 import { User, Bot, AlertTriangle, Hammer, ListTodo } from "lucide-react";
 import type { ChatMessage } from "@/types/builder";
@@ -6,7 +7,12 @@ import type { ChatMessage } from "@/types/builder";
 const iconMap = { user: User, assistant: Bot, error: AlertTriangle, fix: Hammer, plan: ListTodo };
 const labelMap = { user: "Você", assistant: "Assistente", error: "Erro", fix: "Autocorreção", plan: "Plano" };
 
-export default function ChatBubble({ message }: { message: ChatMessage }) {
+// `forwardRef` é obrigatório aqui: o `AnimatePresence` do ChatPanel usa
+// `mode="popLayout"`, que precisa anexar um ref no filho direto (este
+// componente) pra medir a saída durante a animação — sem isso o React
+// avisa "Function components cannot be given refs" e a medição falha
+// silenciosamente.
+const ChatBubble = forwardRef<HTMLDivElement, { message: ChatMessage }>(function ChatBubble({ message }, ref) {
   const Icon = iconMap[message.type] ?? Bot;
   const isUser = message.type === "user";
   const isError = message.type === "error";
@@ -15,6 +21,7 @@ export default function ChatBubble({ message }: { message: ChatMessage }) {
 
   return (
     <motion.div
+      ref={ref}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
@@ -58,4 +65,6 @@ export default function ChatBubble({ message }: { message: ChatMessage }) {
       </div>
     </motion.div>
   );
-}
+});
+
+export default ChatBubble;
