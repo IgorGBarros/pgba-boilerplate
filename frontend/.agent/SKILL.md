@@ -150,6 +150,12 @@ o piso mínimo, não a definição de pronto.
   já vai embutido no `DEFAULT_SYSTEM_PROMPT` da geração automática; leia o
   arquivo completo se estiver revisando ou otimizando manualmente.
 
+Este arquivo governa **o que** construir. Para **como o agente se
+comporta** durante a sessão (impedir ações destrutivas, leitura de
+segredo, etc.), ver `tech-leads-club/harness-toolkit` — camada externa,
+independente do `harness` deste repositório — documentado em
+`CLAUDE.md`, seção 10.
+
 Esse catálogo (`github.com/tech-leads-club/agent-skills`) tem dezenas de
 outras skills — segurança, acessibilidade, PR review, SEO — organizadas
 exatamente no mesmo formato `SKILL.md` que usamos aqui. Vale a pena

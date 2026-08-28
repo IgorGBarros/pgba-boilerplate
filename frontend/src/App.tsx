@@ -1,5 +1,6 @@
 // frontend/src/App.tsx
 import { Suspense, lazy, useState } from "react";
+import { Boxes } from "lucide-react";
 import KnowledgeChat from "@/components/KnowledgeChat";
 import GeneratedRouter from "@/components/GeneratedRouter";
 
@@ -20,20 +21,34 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "pages", label: "Páginas geradas" },
 ];
 
+// Altura real do header (56px) — usada pelo Studio para calcular sua
+// própria altura (`h-[calc(100vh-var(--pgba-header-h))]`). Um valor só,
+// nunca dois números que podem descolar um do outro.
+export const HEADER_HEIGHT_PX = 56;
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("studio");
 
   return (
-    <main className="min-h-screen">
-      <header className="flex items-center justify-between border-b border-white/5 px-6 py-4">
-        <h1 className="font-display text-lg">PGBA</h1>
-        <nav className="flex gap-1">
+    <main className="min-h-screen bg-surface">
+      <header
+        style={{ height: HEADER_HEIGHT_PX }}
+        className="flex items-center justify-between gap-3 border-b border-white/10 bg-surface-raised/80 px-4 backdrop-blur-sm sm:px-6"
+      >
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500/15">
+            <Boxes className="h-4 w-4 text-brand-500" />
+          </div>
+          <h1 className="font-display text-base font-semibold tracking-tight sm:text-lg">PGBA</h1>
+        </div>
+
+        <nav className="flex min-w-0 gap-1 overflow-x-auto">
           {TABS.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`rounded-card px-3 py-1.5 text-xs font-medium transition ${
-                tab === t.id ? "bg-brand-500 text-white" : "text-slate-400 hover:bg-white/5"
+              className={`shrink-0 whitespace-nowrap rounded-card px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
+                tab === t.id ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
               }`}
             >
               {t.label}
@@ -43,7 +58,13 @@ export default function App() {
       </header>
 
       {tab === "studio" && (
-        <Suspense fallback={<p className="p-6 text-sm text-slate-500">Carregando estúdio...</p>}>
+        <Suspense
+          fallback={
+            <div className="flex h-[60vh] items-center justify-center">
+              <p className="text-sm text-slate-500">Carregando estúdio...</p>
+            </div>
+          }
+        >
           <Studio />
         </Suspense>
       )}

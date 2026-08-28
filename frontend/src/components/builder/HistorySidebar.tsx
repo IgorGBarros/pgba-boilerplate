@@ -35,12 +35,15 @@ export default function HistorySidebar({
   const [search, setSearch] = useState("");
   const filtered = conversations.filter((c) => c.title.toLowerCase().includes(search.toLowerCase()));
 
-  return (
-    <motion.div
-      animate={{ width: isCollapsed ? 48 : 260 }}
-      transition={{ duration: 0.2 }}
-      className="flex h-full flex-col overflow-hidden border-r border-white/10 bg-surface"
-    >
+  function handleSelect(id: string) {
+    onSelectConversation(id);
+    // Em telas pequenas o painel é um overlay — escolher uma conversa
+    // deve fechar, senão cobre o chat que acabou de ser trocado.
+    if (window.innerWidth < 1024) onToggle();
+  }
+
+  const content = (
+    <>
       <div className="flex items-center justify-between px-2 py-3">
         {!isCollapsed && <span className="pl-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Histórico</span>}
         <button onClick={onToggle} className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-white/5 hover:text-slate-100">
@@ -87,7 +90,7 @@ export default function HistorySidebar({
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
-              onClick={() => onSelectConversation(conv.id)}
+              onClick={() => handleSelect(conv.id)}
               className={`group mb-1 flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition ${
                 activeConversationId === conv.id ? "bg-brand-500/10 text-brand-500" : "text-slate-400 hover:bg-white/5 hover:text-slate-100"
               } ${isCollapsed ? "justify-center" : ""}`}
@@ -129,6 +132,26 @@ export default function HistorySidebar({
           </button>
         </div>
       </div>
-    </motion.div>
+    </>
   );
-}
+
+  return (
+    <>
+      {/* Fundo escurecido — só existe em telas pequenas, quando o painel está aberto como overlay */}
+      {!isCollapsed && <div className="fixed inset-0 z-30 bg-black/60 lg:hidden" onClick={onToggle} />}
+
+      {/* Telas `lg+`: parte do layout, empurra conteúdo, colapsa pra tira de ícones (48px).
+          Telas menores: escondido quando colapsado (nunca ocupa espaço fixo); quando aberto,
+          vira um painel flutuante por cima de tudo. */}
+      <motion.div
+        animate={{ width: isCollapsed ? 48 : 260 }}
+        transition={{ duration: 0.2 }}
+        className={`h-full flex-col overflow-hidden border-r border-white/10 bg-surface ${
+          isCollapsed ? "hidden lg:flex" : "fixed inset-y-0 left-0 z-40 flex w-72 lg:relative lg:z-auto lg:w-auto"
+        }`}
+      >
+        {content}
+      </motion.div>
+    </>
+  );
+} 

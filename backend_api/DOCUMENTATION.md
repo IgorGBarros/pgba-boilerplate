@@ -656,6 +656,15 @@ Boa parte do frontend (e de código em geral) deste projeto é pensada para
 ser gerada por um agente de codificação — Claude Code, Codex CLI, Kimi
 CLI em modo agente, ou equivalente — não só digitada à mão.
 
+> **Não confundir com `tech-leads-club/harness-toolkit`** (ferramenta
+> externa, `npm i -g @tech-leads-club/harness-toolkit`): apesar do nome
+> parecido, não tem relação com o `harness` deste repositório. É uma
+> camada de segurança que roda como hook do próprio Claude Code/Cursor,
+> bloqueando ações destrutivas do agente (leitura de `.env`/segredos,
+> `git push --force`, comandos fora do repositório) antes de acontecerem.
+> Opcional, por conta de cada desenvolvedor — ver `CLAUDE.md` seção 10
+> para os comandos de instalação e configuração corretos para este repo.
+
 ### A skill (`frontend/.agent/SKILL.md`)
 
 Todo agente deve ler esse arquivo antes de gerar ou alterar uma tela.

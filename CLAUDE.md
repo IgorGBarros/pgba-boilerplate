@@ -18,6 +18,15 @@ sugestões.
    filtra explicitamente por `tenant_id`. Isso vale especialmente para o
    módulo `ingestion`: um LLM que "vaza" contexto de um tenant para outro
    é uma falha de segurança, não um bug de UX.
+
+   **Toda APIView/ViewSet nova herda de `core.mixins.TenantContextMixin`
+   (antes de `APIView`/`ViewSet` no MRO) para que `request.tenant_id`
+   exista de verdade.** Não use `core.middleware.tenant.TenantMiddleware`
+   para isso — middleware de Django roda antes da autenticação do DRF,
+   então `request.user` (e `tenant_id`) ainda não existe nesse ponto para
+   uma request de API. Esse foi um bug real de produção neste boilerplate:
+   todo endpoint tenant-scoped devolvia lista vazia até isso ser corrigido
+   (ver DOCUMENTATION.md §3).
 2. **LGPD por padrão, não por adição.** Dado sensível (CPF, e-mail,
    telefone, saúde) passa por `core/utils/lgpd.py` (mascaramento/
    criptografia). Nunca armazene PII em texto puro em `ingestion.Document`
@@ -178,7 +187,11 @@ outro app deste boilerplate (seção 2) e, adicionalmente:
 - usa `core.models.ConsentRecord.has_consent_for_purpose()` antes de usar
   dado do titular para qualquer finalidade que não seja a operação
   essencial do serviço (ex: antes de incluir dado em treino de IA ou em
-  agregados comerciais vendidos a terceiros).
+  agregados comerciais vendidos a terceiros);
+- **toda `APIView`/`ViewSet` herda `core.mixins.TenantContextMixin`**
+  (antes da classe base do DRF no MRO) — sem isso, `request.tenant_id`
+  fica sempre vazio e qualquer filtro por tenant na queryset devolve
+  lista vazia. Ver seção 1 e `agency/views.py` como referência de uso.
 
 Exemplo de generalização: o app `inventory` de um projeto de gestão de
 estoque expõe `Product`, `InventoryItem`, `Sale`. Um projeto jurídico
@@ -344,34 +357,74 @@ default quando não há restrição.
 
 Este boilerplate assume que boa parte do frontend (e de código em geral)
 vai ser gerada por um agente de codificação — Claude Code, Codex CLI,
-Kimi CLI em modo agente, ou equivalente — não só digitada à mão. Duas
-peças cuidam disso:
+Kimi CLI em modo agente, ou equivalente — não só digitada à mão. Três
+peças cuidam disso.
 
-- **`frontend/.agent/SKILL.md`**: a skill que qualquer agente deve ler
-  antes de gerar ou alterar uma tela. Define direção de design (ancorar
-  no assunto real, usar os tokens do `tailwind.config.ts`, nunca cair nos
-  três "looks genéricos" que todo LLM converge sem instrução), as
-  convenções técnicas obrigatórias deste repo (cliente de API único,
-  exibição de fontes em resposta de IA) e o **loop de feedback**:
+### Segurança na sessão do agente (`harness-toolkit`, ferramenta externa)
 
-  ```
-  planejar → gerar → validar (typecheck + lint + build) → autocorrigir
-  → autocrítica → iterar até passar limpo
-  ```
+**Não confundir com o `harness` deste repositório** (credenciais de IA +
+guardrails de geração) — `tech-leads-club/harness-toolkit` é uma
+ferramenta externa e independente que atua em outra camada: hooks no
+próprio Claude Code/Cursor, bloqueando ações destrutivas do agente ANTES
+de acontecer, não depois. Relevante aqui porque já tivemos, nesta mesma
+sessão de desenvolvimento, um token do GitHub colado sem querer no chat —
+o `harness-toolkit` tem uma regra de piso (`secret-access`) que bloqueia
+justamente um agente lendo `.env`/chaves SSH e devolvendo o conteúdo na
+transcrição, entre outras 6 regras de piso (nunca desligáveis por config)
+e 24 "rails" opcionais (lint/teste automático ao final do turno,
+detecção de duplicação de código, etc).
 
-  Isso não é opcional nem cosmético: `npm run build` passando é o piso
-  mínimo para considerar a tarefa concluída, não o objetivo final.
+A licença (Elastic License 2.0) não permite redistribuir o código-fonte
+como serviço hospedado — por isso a integração aqui é **instalar a
+ferramenta de verdade**, nunca copiar/reimplementar o que ela faz:
 
-- **Modelo usado pelo agente é independente do harness de runtime.** O
-  agente que gera código pode (e normalmente deve) usar um modelo forte
-  em coding/tool-use — hoje isso é mais fácil via **OpenRouter**
-  (`harness`, `provider=openrouter`, uma chave só para centenas de
-  modelos), com **Kimi K2** (Moonshot AI, open-weight, forte em
-  benchmarks agênticos/coding) como uma opção configurável sem editar
-  código: `python manage.py configure_ai_provider --provider openrouter
-  --api-key ... --model moonshotai/kimi-k2`. Isso não tem relação com
-  qual modelo `orchestration`/`ingestion` usam em produção — são
-  contextos de uso diferentes, credenciais podem ser as mesmas ou não.
+```bash
+npm i -g @tech-leads-club/harness-toolkit && tlc harness install
+# reinicie o Claude Code/Cursor, depois, na raiz deste repo:
+tlc harness init --minimal
+```
+
+Comandos de lint/teste corretos para este repositório (a ferramenta pede
+isso no assistente de setup, ou configure direto):
+
+```bash
+tlc harness gate test-command bash -c "cd backend_api/Api && python -m pytest"
+tlc harness gate lint-command bash -c "cd backend_api/Api && flake8 --max-line-length=100 --extend-ignore=E203,W503 . && cd ../../frontend && npm run lint && npm run typecheck"
+```
+
+`tlc harness doctor` confirma que a instalação está ativa. Isso é
+opcional e por conta de cada desenvolvedor/agente — não faz parte do
+pipeline de CI deste boilerplate.
+
+### `frontend/.agent/SKILL.md` — o que construir
+
+A skill que qualquer agente deve ler antes de gerar ou alterar uma tela.
+Define direção de design (ancorar no assunto real, usar os tokens do
+`tailwind.config.ts`, nunca cair nos três "looks genéricos" que todo LLM
+converge sem instrução), as convenções técnicas obrigatórias deste repo
+(cliente de API único, exibição de fontes em resposta de IA) e o **loop
+de feedback**:
+
+```
+planejar → gerar → validar (typecheck + lint + build) → autocorrigir
+→ autocrítica → iterar até passar limpo
+```
+
+Isso não é opcional nem cosmético: `npm run build` passando é o piso
+mínimo para considerar a tarefa concluída, não o objetivo final.
+
+### Modelo usado pelo agente
+
+Independente do harness de runtime. O agente que gera código pode (e
+normalmente deve) usar um modelo forte em coding/tool-use — hoje isso é
+mais fácil via **OpenRouter** (`harness`, `provider=openrouter`, uma
+chave só para centenas de modelos), com **Kimi K2** (Moonshot AI,
+open-weight, forte em benchmarks agênticos/coding) como uma opção
+configurável sem editar código: `python manage.py configure_ai_provider
+--provider openrouter --api-key ... --model moonshotai/kimi-k2`. Isso
+não tem relação com qual modelo `orchestration`/`ingestion` usam em
+produção — são contextos de uso diferentes, credenciais podem ser as
+mesmas ou não.
 
 Ao criar uma vertical nova com UI, o fluxo esperado é: descreva a tela
 desejada para o agente → ele lê `frontend/.agent/SKILL.md` → gera →

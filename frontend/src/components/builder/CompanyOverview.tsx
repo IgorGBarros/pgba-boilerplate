@@ -12,6 +12,9 @@ import {
   Settings,
   Code,
   X,
+  Activity,
+  PauseCircle,
+  Wallet,
 } from "lucide-react";
 import {
   listAgents,
@@ -130,13 +133,65 @@ export default function CompanyOverview() {
     }
   }
 
-  if (loading) return <p className="p-6 text-sm text-slate-500">Carregando visão da empresa...</p>;
-  if (error) return <p className="p-6 text-sm text-red-400">{error}</p>;
+  if (loading) {
+    return (
+      <div className="space-y-4 p-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-20 animate-pulse rounded-card border border-white/10 bg-surface-raised" />
+          ))}
+        </div>
+        <div className="mx-auto h-16 max-w-md animate-pulse rounded-card border border-white/10 bg-surface-raised" />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="p-6">
+        <p className="rounded-card border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</p>
+      </div>
+    );
+  }
 
   const topOrchestrators = agents.filter((a) => a.access_level === "ceo" || a.access_level === "general_orchestrator");
+  const workingCount = agents.filter((a) => a.work_status === "working").length;
+  const pausedCount = agents.filter((a) => a.work_status === "paused").length;
+  const totalCostUsd = metrics.reduce((sum, m) => sum + m.cost_usd, 0);
 
   return (
-    <div className="space-y-6 overflow-y-auto p-6">
+    <div className="space-y-6 overflow-y-auto p-4 sm:p-6">
+      {/* Monitoramento — visão rápida de todos os agentes, sem precisar abrir cada setor */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-card border border-white/10 bg-surface-raised p-4">
+          <div className="flex items-center gap-2 text-slate-500">
+            <Users className="h-3.5 w-3.5" />
+            <span className="text-[11px] uppercase tracking-wide">Agentes</span>
+          </div>
+          <p className="mt-1.5 text-2xl font-semibold text-slate-100">{agents.length}</p>
+        </div>
+        <div className="rounded-card border border-white/10 bg-surface-raised p-4">
+          <div className="flex items-center gap-2 text-slate-500">
+            <Activity className={`h-3.5 w-3.5 ${workingCount > 0 ? "text-green-400" : ""}`} />
+            <span className="text-[11px] uppercase tracking-wide">Trabalhando agora</span>
+          </div>
+          <p className={`mt-1.5 text-2xl font-semibold ${workingCount > 0 ? "text-green-400" : "text-slate-100"}`}>{workingCount}</p>
+        </div>
+        <div className="rounded-card border border-white/10 bg-surface-raised p-4">
+          <div className="flex items-center gap-2 text-slate-500">
+            <PauseCircle className="h-3.5 w-3.5" />
+            <span className="text-[11px] uppercase tracking-wide">Pausados</span>
+          </div>
+          <p className="mt-1.5 text-2xl font-semibold text-slate-100">{pausedCount}</p>
+        </div>
+        <div className="rounded-card border border-white/10 bg-surface-raised p-4">
+          <div className="flex items-center gap-2 text-slate-500">
+            <Wallet className="h-3.5 w-3.5" />
+            <span className="text-[11px] uppercase tracking-wide">Custo total</span>
+          </div>
+          <p className="mt-1.5 text-2xl font-semibold text-slate-100">{formatUSD(totalCostUsd)}</p>
+        </div>
+      </div>
+
       {/* Empresa */}
       <div className="mx-auto flex max-w-md items-center gap-3 rounded-card border border-white/10 bg-surface-raised px-5 py-3">
         <Building2 className="h-6 w-6 shrink-0 text-slate-300" />
@@ -171,7 +226,7 @@ export default function CompanyOverview() {
           const Icon = iconForSector(sector.name);
 
           return (
-            <div key={sector.id} className="flex w-64 flex-col rounded-card border border-white/10 bg-surface-raised">
+            <div key={sector.id} className="flex w-full flex-col rounded-card border border-white/10 bg-surface-raised sm:w-64">
               <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
                 <Icon className="h-4 w-4 shrink-0 text-brand-500" />
                 <p className="truncate text-sm font-semibold text-slate-100">{sector.name}</p>
@@ -211,7 +266,7 @@ export default function CompanyOverview() {
 
         {/* Criar setor novo, direto aqui */}
         {creatingSector ? (
-          <div className="flex w-64 flex-col gap-2 rounded-card border border-dashed border-brand-500/40 bg-surface-raised p-3">
+          <div className="flex w-full flex-col gap-2 rounded-card border border-dashed border-brand-500/40 bg-surface-raised p-3 sm:w-64">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-slate-300">Novo setor</p>
               <button onClick={() => setCreatingSector(false)} className="text-slate-500 hover:text-slate-200">
@@ -243,7 +298,7 @@ export default function CompanyOverview() {
         ) : (
           <button
             onClick={() => setCreatingSector(true)}
-            className="flex w-64 flex-col items-center justify-center gap-2 rounded-card border border-dashed border-white/15 text-slate-500 transition hover:border-brand-500/50 hover:text-brand-500"
+            className="flex w-full flex-col items-center justify-center gap-2 rounded-card border border-dashed border-white/15 py-6 text-slate-500 transition hover:border-brand-500/50 hover:text-brand-500 sm:w-64 sm:py-0"
           >
             <Plus className="h-5 w-5" />
             <span className="text-xs">Novo setor</span>

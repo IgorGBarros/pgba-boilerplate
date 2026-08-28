@@ -1,6 +1,6 @@
 // frontend/src/pages/Studio.tsx
 import { useEffect, useRef, useState } from "react";
-import { Rocket, Sparkles, Building2, Plus, Circle } from "lucide-react";
+import { Rocket, Sparkles, Building2, Plus, Circle, MessageSquare, Eye, PanelLeft } from "lucide-react";
 import ChatPanel from "@/components/builder/ChatPanel";
 import PreviewPanel from "@/components/builder/PreviewPanel";
 import HistorySidebar from "@/components/builder/HistorySidebar";
@@ -26,6 +26,7 @@ import type { ChatMessage } from "@/types/builder";
 
 const PRINCIPAL_URL = "http://localhost:5173";
 type StudioView = "generate" | "company";
+type MobilePanel = "chat" | "preview";
 
 /**
  * Painel principal do sistema (ver CLAUDE.md).
@@ -43,18 +44,23 @@ type StudioView = "generate" | "company";
  * um repositório de verdade (agency.create_project, template
  * simple-commercial) — hoje não sincroniza automaticamente com o que foi
  * gerado no workspace local (limitação conhecida, ver CLAUDE.md).
+ *
+ * Responsivo: abaixo do breakpoint `lg`, Chat e Preview nunca ficam lado
+ * a lado (não cabem) — um seletor de painel decide qual mostrar. Em
+ * telas `lg+`, os dois ficam visíveis ao mesmo tempo, como antes.
  */
 export default function Studio() {
   const { messages, setMessages, history, clearAndArchive, deleteConversation, restoreConversation } = useChatPersistence();
   const { settings, updateSettings, resetSettings } = useSettings();
 
   const [view, setView] = useState<StudioView>("generate");
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("chat");
   const [activeProject, setActiveProject] = useState<string | null>(null); // null = Principal
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [logs, setLogs] = useState<GenerateLogEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [files, setFiles] = useState<ProjectFile[]>([]);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [activeConversation, setActiveConversation] = useState<string | null>(null);
   const [isTerminalOpen, setIsTerminalOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -156,6 +162,7 @@ export default function Studio() {
     addMessage({ type: "user", content: prompt });
     addMessage({ type: "plan", content: "Planejando e gerando a página..." });
     setIsLoading(true);
+    setMobilePanel("chat");
 
     const jobId = `job_${Date.now()}`;
     const accessToken = localStorage.getItem("pgba_access_token") ?? undefined;
@@ -209,7 +216,7 @@ export default function Studio() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-57px)] w-full overflow-hidden">
+    <div className="flex h-[calc(100dvh-56px)] w-full overflow-hidden">
       <HistorySidebar
         isCollapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -221,12 +228,19 @@ export default function Studio() {
         onOpenSettings={() => setSettingsOpen(true)}
       />
 
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Seletor de projeto: Principal (este Studio) vs. secundários (processo/porta próprios) */}
-        <div className="flex items-center gap-1 border-b border-white/10 bg-surface px-4 py-1.5">
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-white/10 bg-surface px-3 py-1.5 sm:px-4">
+          <button
+            onClick={() => setSidebarCollapsed(false)}
+            className="mr-1 flex shrink-0 items-center justify-center rounded-card p-1.5 text-slate-400 hover:bg-white/5 hover:text-slate-100 lg:hidden"
+            title="Histórico de conversas"
+          >
+            <PanelLeft className="h-4 w-4" />
+          </button>
           <button
             onClick={() => handleSelectProject(null)}
-            className={`flex items-center gap-1.5 rounded-card px-2.5 py-1 text-[11px] font-medium transition ${
+            className={`shrink-0 rounded-card px-2.5 py-1 text-[11px] font-medium transition ${
               activeProject === null ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-200"
             }`}
           >
@@ -237,60 +251,89 @@ export default function Studio() {
               key={w.name}
               onClick={() => handleSelectProject(w.name)}
               disabled={startingProject === w.name}
-              className={`flex items-center gap-1.5 rounded-card px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 ${
+              className={`flex shrink-0 items-center gap-1.5 rounded-card px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 ${
                 activeProject === w.name ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-200"
               }`}
             >
-              <Circle className={`h-1.5 w-1.5 ${w.running ? "fill-green-400 text-green-400" : "fill-slate-600 text-slate-600"}`} />
+              <Circle className={`h-1.5 w-1.5 shrink-0 ${w.running ? "fill-green-400 text-green-400" : "fill-slate-600 text-slate-600"}`} />
               {w.name}
               {startingProject === w.name && <span className="text-[10px] text-slate-500">(iniciando...)</span>}
             </button>
           ))}
-          <button onClick={handleCreateLocalProject} disabled={!!startingProject} className="flex items-center gap-1 rounded-card px-2.5 py-1 text-[11px] text-slate-500 hover:text-brand-500 disabled:opacity-50" title="Criar projeto local (processo/porta próprios)">
+          <button
+            onClick={handleCreateLocalProject}
+            disabled={!!startingProject}
+            className="flex shrink-0 items-center gap-1 rounded-card px-2.5 py-1 text-[11px] text-slate-500 transition hover:text-brand-500 disabled:opacity-50"
+            title="Criar projeto local (processo/porta próprios)"
+          >
             <Plus className="h-3 w-3" />
-            Projeto local
+            <span className="hidden sm:inline">Projeto local</span>
           </button>
         </div>
 
         {/* Navegação interna (Gerar / Empresa) + Publicar no GitHub */}
-        <div className="flex items-center justify-between border-b border-white/10 bg-surface-raised px-4 py-2">
+        <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-surface-raised px-3 py-2 sm:px-4">
           <div className="flex gap-1">
             <button
               onClick={() => setView("generate")}
-              className={`flex items-center gap-1.5 rounded-card px-3 py-1.5 text-xs font-medium transition ${
-                view === "generate" ? "bg-brand-500 text-white" : "text-slate-400 hover:bg-white/5"
+              className={`flex items-center gap-1.5 rounded-card px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
+                view === "generate" ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5"
               }`}
             >
               <Sparkles className="h-3.5 w-3.5" />
-              Gerar
+              <span className="hidden sm:inline">Gerar</span>
             </button>
             <button
               onClick={() => setView("company")}
-              className={`flex items-center gap-1.5 rounded-card px-3 py-1.5 text-xs font-medium transition ${
-                view === "company" ? "bg-brand-500 text-white" : "text-slate-400 hover:bg-white/5"
+              className={`flex items-center gap-1.5 rounded-card px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
+                view === "company" ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5"
               }`}
             >
               <Building2 className="h-3.5 w-3.5" />
-              Empresa
+              <span className="hidden sm:inline">Empresa</span>
             </button>
           </div>
 
+          {/* Troca de painel — só existe abaixo de `lg`, onde chat+preview não cabem lado a lado */}
+          {view === "generate" && (
+            <div className="flex gap-1 rounded-card bg-black/20 p-0.5 lg:hidden">
+              <button
+                onClick={() => setMobilePanel("chat")}
+                className={`flex items-center gap-1 rounded-[6px] px-2 py-1 text-[11px] font-medium transition ${
+                  mobilePanel === "chat" ? "bg-white/10 text-slate-100" : "text-slate-500"
+                }`}
+              >
+                <MessageSquare className="h-3 w-3" />
+                Chat
+              </button>
+              <button
+                onClick={() => setMobilePanel("preview")}
+                className={`flex items-center gap-1 rounded-[6px] px-2 py-1 text-[11px] font-medium transition ${
+                  mobilePanel === "preview" ? "bg-white/10 text-slate-100" : "text-slate-500"
+                }`}
+              >
+                <Eye className="h-3 w-3" />
+                Preview
+              </button>
+            </div>
+          )}
+
           <button
             onClick={() => setNewProjectOpen(true)}
-            className="flex items-center gap-1.5 rounded-card bg-brand-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
+            className="flex shrink-0 items-center gap-1.5 rounded-card bg-brand-500 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-700 sm:px-3"
             title="Cria um repositório GitHub real com o template simple-commercial (independente do projeto local selecionado acima)"
           >
             <Rocket className="h-3.5 w-3.5" />
-            Publicar no GitHub
+            <span className="hidden sm:inline">Publicar no GitHub</span>
           </button>
         </div>
 
         {view === "generate" ? (
           <div className="flex flex-1 overflow-hidden">
-            <div className="w-[42%] shrink-0">
+            <div className={`${mobilePanel === "chat" ? "flex" : "hidden"} w-full shrink-0 lg:flex lg:w-[38%] xl:w-[34%]`}>
               <ChatPanel messages={messages} isLoading={isLoading} onSend={handleSend} onReset={handleReset} />
             </div>
-            <div className="flex-1">
+            <div className={`${mobilePanel === "preview" ? "flex" : "hidden"} min-w-0 flex-1 lg:flex`}>
               <PreviewPanel previewUrl={previewUrl} files={files} logs={logs} onClearLogs={() => setLogs([])} workspace={activeProject ?? undefined} />
             </div>
           </div>

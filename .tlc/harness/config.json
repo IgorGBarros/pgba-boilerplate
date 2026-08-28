@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/@tech-leads-club/harness-toolkit@0.8/schema.json",
+  "version": 1,
+  "grind": {
+    "testCommand": [
+      "bash",
+      "-c",
+      "cd backend_api/Api && python -m pytest"
+    ],
+    "lintCommand": [
+      "bash",
+      "-c",
+      "cd backend_api/Api && flake8 --max-line-length=100 --extend-ignore=E203,W503 . && cd ../../frontend && npm run lint && npm run typecheck"
+    ]
+  }
+}
