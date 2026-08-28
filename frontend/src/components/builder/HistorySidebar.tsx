@@ -37,9 +37,6 @@ export default function HistorySidebar({
 
   function handleSelect(id: string) {
     onSelectConversation(id);
-    // Em telas pequenas o painel é um overlay — escolher uma conversa
-    // deve fechar, senão cobre o chat que acabou de ser trocado.
-    if (window.innerWidth < 1024) onToggle();
   }
 
   const content = (
@@ -136,22 +133,12 @@ export default function HistorySidebar({
   );
 
   return (
-    <>
-      {/* Fundo escurecido — só existe em telas pequenas, quando o painel está aberto como overlay */}
-      {!isCollapsed && <div className="fixed inset-0 z-30 bg-black/60 lg:hidden" onClick={onToggle} />}
-
-      {/* Telas `lg+`: parte do layout, empurra conteúdo, colapsa pra tira de ícones (48px).
-          Telas menores: escondido quando colapsado (nunca ocupa espaço fixo); quando aberto,
-          vira um painel flutuante por cima de tudo. */}
-      <motion.div
-        animate={{ width: isCollapsed ? 48 : 260 }}
-        transition={{ duration: 0.2 }}
-        className={`h-full flex-col overflow-hidden border-r border-white/10 bg-surface ${
-          isCollapsed ? "hidden lg:flex" : "fixed inset-y-0 left-0 z-40 flex w-72 lg:relative lg:z-auto lg:w-auto"
-        }`}
-      >
-        {content}
-      </motion.div>
-    </>
+    <motion.div
+      animate={{ width: isCollapsed ? 48 : 260 }}
+      transition={{ duration: 0.2 }}
+      className="flex h-full flex-col overflow-hidden border-r border-white/10 bg-surface"
+    >
+      {content}
+    </motion.div>
   );
-} 
+}

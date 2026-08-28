@@ -26,8 +26,33 @@ const TABS: { id: Tab; label: string }[] = [
 // nunca dois números que podem descolar um do outro.
 export const HEADER_HEIGHT_PX = 56;
 
+const params = new URLSearchParams(window.location.search);
+// Modo embutido — usado SÓ pelo preview do próprio Studio quando o
+// projeto selecionado é o "Principal": sem isso, o iframe carregaria o
+// app inteiro de novo (cabeçalho, abas, e a própria aba Estúdio com OUTRO
+// iframe apontando pra si mesma — a "boneca russa" que aparecia na tela).
+// Com `?embed=1`, esconde cabeçalho/abas e mostra só o conteúdo da aba
+// pedida em `?tab=` (`pages` por padrão — é o "produto" de verdade sendo
+// construído, não a ferramenta que constrói).
+const isEmbedded = params.get("embed") === "1";
+const embeddedTab = (params.get("tab") as Tab | null) ?? "pages";
+
 export default function App() {
-  const [tab, setTab] = useState<Tab>("studio");
+  const [tab, setTab] = useState<Tab>(isEmbedded ? embeddedTab : "studio");
+
+  if (isEmbedded) {
+    return (
+      <main className="min-h-screen bg-surface">
+        {tab === "studio" && (
+          <Suspense fallback={null}>
+            <Studio />
+          </Suspense>
+        )}
+        {tab === "knowledge" && <KnowledgeChat />}
+        {tab === "pages" && <GeneratedRouter />}
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-surface">

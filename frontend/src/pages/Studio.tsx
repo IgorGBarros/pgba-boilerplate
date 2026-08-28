@@ -1,6 +1,6 @@
 // frontend/src/pages/Studio.tsx
 import { useEffect, useRef, useState } from "react";
-import { Rocket, Sparkles, Building2, Plus, Circle, MessageSquare, Eye, PanelLeft } from "lucide-react";
+import { Rocket, Sparkles, Building2, Plus, Circle } from "lucide-react";
 import ChatPanel from "@/components/builder/ChatPanel";
 import PreviewPanel from "@/components/builder/PreviewPanel";
 import HistorySidebar from "@/components/builder/HistorySidebar";
@@ -24,9 +24,13 @@ import {
 } from "@/lib/devserver";
 import type { ChatMessage } from "@/types/builder";
 
-const PRINCIPAL_URL = "http://localhost:5173";
+// `?embed=1&tab=pages`: mostra só as páginas geradas, sem cabeçalho/abas
+// do app inteiro — apontar pra "http://localhost:5173" puro faria o
+// iframe carregar o Studio de novo (com sua própria aba Estúdio, com
+// outro iframe apontando pra si mesma — a recursão visual que aparecia
+// na tela quando "Principal" estava selecionado).
+const PRINCIPAL_URL = "http://localhost:5173/?embed=1&tab=pages";
 type StudioView = "generate" | "company";
-type MobilePanel = "chat" | "preview";
 
 /**
  * Painel principal do sistema (ver CLAUDE.md).
@@ -45,22 +49,20 @@ type MobilePanel = "chat" | "preview";
  * simple-commercial) — hoje não sincroniza automaticamente com o que foi
  * gerado no workspace local (limitação conhecida, ver CLAUDE.md).
  *
- * Responsivo: abaixo do breakpoint `lg`, Chat e Preview nunca ficam lado
- * a lado (não cabem) — um seletor de painel decide qual mostrar. Em
- * telas `lg+`, os dois ficam visíveis ao mesmo tempo, como antes.
+ * Uso exclusivo em notebook/desktop (14" ou maior) — sem suporte a
+ * celular. Chat e Preview sempre lado a lado; sem seletor de painel.
  */
 export default function Studio() {
   const { messages, setMessages, history, clearAndArchive, deleteConversation, restoreConversation } = useChatPersistence();
   const { settings, updateSettings, resetSettings } = useSettings();
 
   const [view, setView] = useState<StudioView>("generate");
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("chat");
   const [activeProject, setActiveProject] = useState<string | null>(null); // null = Principal
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [logs, setLogs] = useState<GenerateLogEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [files, setFiles] = useState<ProjectFile[]>([]);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeConversation, setActiveConversation] = useState<string | null>(null);
   const [isTerminalOpen, setIsTerminalOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -162,7 +164,6 @@ export default function Studio() {
     addMessage({ type: "user", content: prompt });
     addMessage({ type: "plan", content: "Planejando e gerando a página..." });
     setIsLoading(true);
-    setMobilePanel("chat");
 
     const jobId = `job_${Date.now()}`;
     const accessToken = localStorage.getItem("pgba_access_token") ?? undefined;
@@ -232,13 +233,6 @@ export default function Studio() {
         {/* Seletor de projeto: Principal (este Studio) vs. secundários (processo/porta próprios) */}
         <div className="flex items-center gap-1 overflow-x-auto border-b border-white/10 bg-surface px-3 py-1.5 sm:px-4">
           <button
-            onClick={() => setSidebarCollapsed(false)}
-            className="mr-1 flex shrink-0 items-center justify-center rounded-card p-1.5 text-slate-400 hover:bg-white/5 hover:text-slate-100 lg:hidden"
-            title="Histórico de conversas"
-          >
-            <PanelLeft className="h-4 w-4" />
-          </button>
-          <button
             onClick={() => handleSelectProject(null)}
             className={`shrink-0 rounded-card px-2.5 py-1 text-[11px] font-medium transition ${
               activeProject === null ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-200"
@@ -294,30 +288,6 @@ export default function Studio() {
             </button>
           </div>
 
-          {/* Troca de painel — só existe abaixo de `lg`, onde chat+preview não cabem lado a lado */}
-          {view === "generate" && (
-            <div className="flex gap-1 rounded-card bg-black/20 p-0.5 lg:hidden">
-              <button
-                onClick={() => setMobilePanel("chat")}
-                className={`flex items-center gap-1 rounded-[6px] px-2 py-1 text-[11px] font-medium transition ${
-                  mobilePanel === "chat" ? "bg-white/10 text-slate-100" : "text-slate-500"
-                }`}
-              >
-                <MessageSquare className="h-3 w-3" />
-                Chat
-              </button>
-              <button
-                onClick={() => setMobilePanel("preview")}
-                className={`flex items-center gap-1 rounded-[6px] px-2 py-1 text-[11px] font-medium transition ${
-                  mobilePanel === "preview" ? "bg-white/10 text-slate-100" : "text-slate-500"
-                }`}
-              >
-                <Eye className="h-3 w-3" />
-                Preview
-              </button>
-            </div>
-          )}
-
           <button
             onClick={() => setNewProjectOpen(true)}
             className="flex shrink-0 items-center gap-1.5 rounded-card bg-brand-500 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-700 sm:px-3"
@@ -330,10 +300,10 @@ export default function Studio() {
 
         {view === "generate" ? (
           <div className="flex flex-1 overflow-hidden">
-            <div className={`${mobilePanel === "chat" ? "flex" : "hidden"} w-full shrink-0 lg:flex lg:w-[38%] xl:w-[34%]`}>
+            <div className="w-[38%] min-w-[380px] shrink-0 xl:w-[34%]">
               <ChatPanel messages={messages} isLoading={isLoading} onSend={handleSend} onReset={handleReset} />
             </div>
-            <div className={`${mobilePanel === "preview" ? "flex" : "hidden"} min-w-0 flex-1 lg:flex`}>
+            <div className="min-w-0 flex-1">
               <PreviewPanel previewUrl={previewUrl} files={files} logs={logs} onClearLogs={() => setLogs([])} workspace={activeProject ?? undefined} />
             </div>
           </div>
