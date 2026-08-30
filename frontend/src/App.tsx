@@ -1,8 +1,10 @@
 // frontend/src/App.tsx
 import { Suspense, lazy, useState } from "react";
-import { Boxes } from "lucide-react";
+import { Boxes, LogOut } from "lucide-react";
 import KnowledgeChat from "@/components/KnowledgeChat";
 import GeneratedRouter from "@/components/GeneratedRouter";
+import LoginScreen from "@/components/LoginScreen";
+import { isLoggedIn, logout } from "@/lib/auth";
 
 // Carregado sob demanda: só quem abre o Estúdio paga o custo de
 // framer-motion + cmdk + react-syntax-highlighter (~700KB) — sem isso, o
@@ -39,6 +41,7 @@ const embeddedTab = (params.get("tab") as Tab | null) ?? "pages";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>(isEmbedded ? embeddedTab : "studio");
+  const [authed, setAuthed] = useState(isLoggedIn());
 
   if (isEmbedded) {
     return (
@@ -54,6 +57,15 @@ export default function App() {
     );
   }
 
+  // Sem isso, toda chamada feita pelo navegador (agentes, setores,
+  // métricas — tudo que agency/CompanyOverview usa) volta 401 "credenciais
+  // não fornecidas": api.ts lê o token do localStorage, que só é
+  // preenchido depois de um login de verdade — nunca pelo PGBA_ACCESS_TOKEN
+  // do .env (isso é usado só pelo devserver, processo separado).
+  if (!authed) {
+    return <LoginScreen onSuccess={() => setAuthed(true)} />;
+  }
+
   return (
     <main className="min-h-screen bg-surface">
       <header
@@ -67,19 +79,24 @@ export default function App() {
           <h1 className="font-display text-base font-semibold tracking-tight sm:text-lg">PGBA</h1>
         </div>
 
-        <nav className="flex min-w-0 gap-1 overflow-x-auto">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`shrink-0 whitespace-nowrap rounded-card px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
-                tab === t.id ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
+        <div className="flex min-w-0 items-center gap-2">
+          <nav className="flex min-w-0 gap-1 overflow-x-auto">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`shrink-0 whitespace-nowrap rounded-card px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
+                  tab === t.id ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+          <button onClick={logout} title="Sair" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-white/5 hover:text-slate-200">
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </header>
 
       {tab === "studio" && (

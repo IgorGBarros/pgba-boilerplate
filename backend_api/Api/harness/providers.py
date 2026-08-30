@@ -19,7 +19,13 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URLS = {
-    "ollama": "http://localhost:11434",
+    # Nome do serviço no docker-compose, não "localhost" — de dentro do
+    # container do backend, "localhost" aponta pro próprio container do
+    # backend, não pro container do Ollama (rede interna do Docker
+    # resolve nomes de serviço, não localhost). Quem roda Django fora de
+    # Docker com Ollama nativo instalado localmente deve sobrescrever via
+    # `--base-url http://localhost:11434` ou `OLLAMA_BASE_URL` no .env.
+    "ollama": "http://ollama:11434",
     "openai": "https://api.openai.com/v1",
     "anthropic": "https://api.anthropic.com/v1",
     "groq": "https://api.groq.com/openai/v1",
