@@ -23,6 +23,7 @@ orquestrador-geral buscam em todos os cérebros do tenant (sem filtro) —
 esse é o "cérebro principal" na prática: não é uma tabela separada, é o
 acesso irrestrito a todas as fontes.
 """
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
@@ -79,6 +80,24 @@ class Agent(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         GENERAL_ORCHESTRATOR = "general_orchestrator", "Orquestrador-Geral (acesso total, medeia entre setores)"
         CEO = "ceo", "CEO (acesso total)"
 
+    class AutonomyLevel(models.IntegerChoices):
+        """
+        Dimensão INDEPENDENTE de `access_level` — aquela decide COM QUEM o
+        agente pode falar; esta decide O QUANTO ele pode agir sozinho antes
+        de precisar de aprovação humana. Um agente pode ter acesso total
+        (CEO) e ainda assim autonomia zero (só observa), ou ser operacional
+        de um setor só e ter autonomia total dentro dele.
+
+        Ver `agency.policy.evaluate_policy()` — cada nível interage com o
+        `risk` (orchestration.registry.RISK_LEVELS) da função que o agente
+        tenta executar.
+        """
+        OBSERVER = 0, "Observador (só monitora/consulta risco baixo)"
+        RECOMMENDER = 1, "Recomendador (analisa e sugere, nunca executa sozinho)"
+        SUPERVISED_EXECUTOR = 2, "Executor Supervisionado (executa só com aprovação, exceto risco baixo)"
+        POLICY_EXECUTOR = 3, "Executor por Política (auto-executa dentro de regras liberadas, nunca crítico)"
+        AUTONOMOUS = 4, "Autônomo (auto-executa até risco crítico, se a política liberar)"
+
     class WorkStatus(models.TextChoices):
         IDLE = "idle", "Ocioso"
         WORKING = "working", "Trabalhando"
@@ -94,6 +113,9 @@ class Agent(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     access_level = models.CharField(
         max_length=25, choices=AccessLevel.choices, default=AccessLevel.OPERATIONAL,
     )
+    # Default deliberadamente o mais seguro (OBSERVER) — autonomia maior é
+    # opt-in explícito de quem administra o tenant, nunca o padrão.
+    autonomy_level = models.IntegerField(choices=AutonomyLevel.choices, default=AutonomyLevel.OBSERVER)
     work_status = models.CharField(max_length=20, choices=WorkStatus.choices, default=WorkStatus.IDLE)
     current_task = models.CharField(max_length=255, blank=True)
     backlog_tasks = models.JSONField(
@@ -247,3 +269,81 @@ class Project(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
 
     def __str__(self):
         return f"{self.name} [{self.status}]"
+
+
+class PolicyRule(TenantMixin, models.Model):
+    """
+    Regra configurável de governança (documento "Agentic Enterprise OS",
+    §13 — "As regras devem ser configuráveis. Não hardcode essas regras.").
+
+    Libera um agente com `autonomy_level` >= `POLICY_EXECUTOR` (3) a
+    auto-executar uma função de um `risk` específico sem aprovação humana.
+    Sem uma regra ativa cobrindo o risco, `agency.policy.evaluate_policy()`
+    sempre exige aprovação para risco médio ou acima — a regra é a exceção
+    explícita, nunca o padrão.
+
+    `sector=None` = regra vale para o tenant inteiro; setor específico
+    restringe só aos agentes daquele setor.
+    """
+
+    RISK_CHOICES = [("medium", "Médio"), ("high", "Alto"), ("critical", "Crítico")]
+
+    sector = models.ForeignKey(
+        Sector, on_delete=models.CASCADE, null=True, blank=True, related_name="policy_rules",
+        help_text="Vazio = regra vale para o tenant inteiro.",
+    )
+    risk = models.CharField(max_length=10, choices=RISK_CHOICES)
+    min_autonomy_level = models.IntegerField(
+        choices=Agent.AutonomyLevel.choices, default=Agent.AutonomyLevel.POLICY_EXECUTOR,
+        help_text="Nível mínimo de autonomia do agente para esta regra liberar execução automática.",
+    )
+    description = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["risk"]
+        indexes = [models.Index(fields=["tenant_id", "risk", "is_active"])]
+
+    def __str__(self):
+        escopo = self.sector.name if self.sector else "tenant inteiro"
+        return f"{self.get_risk_display()} → autonomia {self.min_autonomy_level}+ ({escopo})"
+
+
+class PendingApproval(TenantMixin, models.Model):
+    """
+    Criado quando `agency.policy.evaluate_policy()` bloqueia a execução
+    automática de uma função (autonomia insuficiente ou nenhuma
+    `PolicyRule` liberando aquele risco). A ação fica congelada aqui —
+    `params`/`function_name` guardados intactos — até um humano
+    aprovar ou rejeitar via `agency.services.decide_pending_approval()`.
+
+    Corresponde ao "Human-in-the-loop" do documento (§12) e é a peça que
+    fecha a rastreabilidade do §31: toda ação de risco médio+ tem um
+    registro de quem decidiu e quando, nunca só "a IA fez".
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Aguardando decisão"
+        APPROVED = "approved", "Aprovado"
+        REJECTED = "rejected", "Rejeitado"
+
+    agent = models.ForeignKey(Agent, on_delete=models.CASCADE, related_name="pending_approvals")
+    function_name = models.CharField(max_length=100)
+    params = models.JSONField(default=dict)
+    risk = models.CharField(max_length=10)
+    reason = models.CharField(max_length=255, help_text="Por que a política exigiu aprovação.")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    result = models.JSONField(null=True, blank=True, help_text="Resultado da execução, preenchido só se aprovado.")
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tenant_id", "status"])]
+
+    def __str__(self):
+        return f"{self.function_name} ({self.risk}) — {self.get_status_display()}"

@@ -1,7 +1,7 @@
 # backend_api/Api/agency/serializers.py
 from rest_framework import serializers
 
-from agency.models import Sector, Agent, SectorMessage, Project
+from agency.models import Sector, Agent, SectorMessage, Project, PendingApproval, PolicyRule
 
 
 class SectorSerializer(serializers.ModelSerializer):
@@ -132,3 +132,29 @@ class CreateProjectSerializer(serializers.Serializer):
                 "name só pode conter letras, números, ponto, hífen e underscore (vira o nome do repositório GitHub)."
             )
         return value
+
+
+class PolicyRuleSerializer(serializers.ModelSerializer):
+    sector_name = serializers.CharField(source="sector.name", read_only=True, default=None)
+
+    class Meta:
+        model = PolicyRule
+        fields = ["id", "sector", "sector_name", "risk", "min_autonomy_level", "description", "is_active", "created_at"]
+        read_only_fields = ["id", "sector_name", "created_at"]
+
+
+class PendingApprovalSerializer(serializers.ModelSerializer):
+    agent_name = serializers.CharField(source="agent.name", read_only=True)
+    decided_by_email = serializers.CharField(source="decided_by.email", read_only=True, default=None)
+
+    class Meta:
+        model = PendingApproval
+        fields = [
+            "id", "agent", "agent_name", "function_name", "params", "risk", "reason",
+            "status", "result", "decided_by", "decided_by_email", "created_at", "decided_at",
+        ]
+        read_only_fields = fields
+
+
+class DecidePendingApprovalSerializer(serializers.Serializer):
+    approved = serializers.BooleanField()

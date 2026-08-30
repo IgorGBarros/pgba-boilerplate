@@ -43,6 +43,13 @@ from typing import Callable
 
 logger = logging.getLogger(__name__)
 
+# Classificação de risco de uma ação — quanto maior, maior a governança
+# exigida antes de executar (ver agency.policy). Definido aqui (core),
+# não em `agency`, porque é a própria vertical que registra a função quem
+# sabe o quão arriscada ela é — "criar_pedido_de_compra" não é a mesma
+# coisa que "consultar_estoque".
+RISK_LEVELS = ("low", "medium", "high", "critical")
+
 
 @dataclass
 class QueryFunction:
@@ -54,6 +61,10 @@ class QueryFunction:
     # o dado do titular só é usado por esta função quando houver
     # consentimento ativo para essa finalidade.
     requires_consent_purpose: str | None = None
+    # "low" (padrão) | "medium" | "high" | "critical" — usado por
+    # agency.policy.evaluate_policy() para decidir se um agente pode
+    # executar sozinho ou precisa de aprovação humana antes.
+    risk: str = "low"
 
 
 _REGISTRY: dict[str, QueryFunction] = {}
@@ -64,8 +75,11 @@ def register_query_function(
     description: str,
     parameters: dict | None = None,
     requires_consent_purpose: str | None = None,
+    risk: str = "low",
 ):
     """Decorator: registra uma função de consulta segura, tenant-scoped."""
+    if risk not in RISK_LEVELS:
+        raise ValueError(f"risk deve ser um de {RISK_LEVELS}, recebeu '{risk}'.")
 
     def decorator(func: Callable):
         if name in _REGISTRY:
@@ -76,6 +90,7 @@ def register_query_function(
             parameters=parameters or {},
             handler=func,
             requires_consent_purpose=requires_consent_purpose,
+            risk=risk,
         )
         return func
 

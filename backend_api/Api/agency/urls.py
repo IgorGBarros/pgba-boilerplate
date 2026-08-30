@@ -7,6 +7,8 @@ from agency.views import (
     AgentViewSet,
     SectorMessageViewSet,
     ProjectViewSet,
+    PolicyRuleViewSet,
+    PendingApprovalViewSet,
     MetricsOverviewView,
     MetricsSectorsView,
     MetricsAgentsView,
@@ -18,6 +20,8 @@ router.register("sectors", SectorViewSet, basename="sector")
 router.register("agents", AgentViewSet, basename="agent")
 router.register("sector-messages", SectorMessageViewSet, basename="sector-message")
 router.register("projects", ProjectViewSet, basename="project")
+router.register("policy-rules", PolicyRuleViewSet, basename="policy-rule")
+router.register("pending-approvals", PendingApprovalViewSet, basename="pending-approval")
 
 urlpatterns = [
     path("", include(router.urls)),

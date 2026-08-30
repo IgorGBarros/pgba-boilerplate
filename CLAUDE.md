@@ -274,14 +274,57 @@ construída como uma camada de apresentação por cima deste mesmo modelo de
 dados — sem duplicar `Sector`/`Agent`.
 
 **Sem 3D, mas com visibilidade de quem está trabalhando**:
-`frontend/src/components/AgentStatusBoard.tsx` — painel com polling
-(`GET /api/v1/agency/agents/` a cada 4s) mostrando `work_status`
-(bolinha verde pulsando = `working`, com `current_task`) agrupado por
-setor. Como `ask_as_agent` é síncrono, um agente só fica `working` pela
-duração da própria chamada — pode ser rápido demais para o poll pegar;
-por isso todo agente também mostra `last_active_at` (anotado via
+`frontend/src/components/builder/CompanyOverview.tsx` (dentro do Studio,
+aba "Empresa") — painel com polling mostrando `work_status` (bolinha
+verde pulsando = `working`, com `current_task`) agrupado por setor, mais
+KPIs agregados (total de agentes, trabalhando agora, custo total). Como
+`ask_as_agent` é síncrono, um agente só fica `working` pela duração da
+própria chamada — pode ser rápido demais para o poll pegar; por isso todo
+agente também mostra `last_active_at` (anotado via
 `Max("interactions__created_at")` no `AgentViewSet`), a última interação
 registrada, para não parecer "sempre ocioso" por causa do timing do poll.
+
+### Autonomia e Policy Engine (`Agent.autonomy_level` + `PolicyRule`)
+
+Dimensão **independente** de `access_level`: aquela decide COM QUEM o
+agente fala; `autonomy_level` decide O QUANTO ele age sozinho antes de
+precisar de aprovação humana. Um CEO pode ter acesso total e autonomia
+zero (só observa); um operacional de um setor só pode ter autonomia
+total dentro dele.
+
+```
+Nível (Agent.autonomy_level)     Risco que executa sozinho
+──────────────────────────────   ─────────────────────────────────────
+OBSERVER (0, padrão)             só "low"
+RECOMMENDER (1)                  só "low"
+SUPERVISED_EXECUTOR (2)          só "low"
+POLICY_EXECUTOR (3)              "low"/"medium"/"high" SE PolicyRule liberar
+                                  — "critical" NUNCA, mesmo com regra
+AUTONOMOUS (4)                   qualquer risco SE PolicyRule liberar,
+                                  inclusive "critical"
+```
+
+Cada função registrada em `orchestration.registry` declara seu `risk`
+("low" padrão/"medium"/"high"/"critical") no decorator:
+`@register_query_function(..., risk="high")`. `PolicyRule` (tenant ou
+setor específico) é a exceção configurável que libera um risco pra um
+nível — nunca hardcode "este agente pode fazer X" no código Python.
+
+Quando a política bloqueia, a função **não executa** — vira uma
+`PendingApproval` (fila real, não decorativa: `POST
+/api/v1/agency/pending-approvals/{id}/decide/`, ou pelo Django admin,
+ação "Aprovar selecionadas"). Só quando aprovada a função roda de verdade,
+via o mesmo `orchestration.registry.execute()` do fluxo automático — sem
+isso, a aprovação seria só um status sem efeito real, e a promessa de
+"human-in-the-loop de verdade" ficaria decorativa.
+
+Onde a interceptação acontece: `orchestration.answer_question()` recebe
+um `policy_check` opcional — uma função genérica `(nome, risco) ->
+(bool, motivo)`. O `orchestration` não sabe o que é "autonomia", só chama
+o callback antes de `registry.execute()`. Quem monta esse callback,
+sabendo o que é `Agent.autonomy_level`, é `agency.policy.make_policy_check()`
+— nunca o contrário, mantendo a regra de dependência (vertical conhece
+core, nunca o inverso).
 
 ### "Setor de Desenvolvimento cria um projeto" — `agency.Project` + `integrations`
 

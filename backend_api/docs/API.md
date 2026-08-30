@@ -165,13 +165,17 @@ Prefixo: `/api/v1/agency/`
 |---|---|---|
 | `GET`/`POST` | `sectors/` | Lista/cria setores (`knowledge_source` = cérebro secundário do setor) |
 | `GET`/`PATCH`/`DELETE` | `sectors/{id}/` | Detalhe/edição/remoção de um setor |
-| `GET`/`POST` | `agents/` | Lista/cria agentes (filtra por `?sector=<id>`). `access_level`: `operational`\|`sector_orchestrator`\|`general_orchestrator`\|`ceo`. Cada agente traz `work_status`/`current_task` (estado ao vivo) e `last_active_at` (última interação — cobre o caso do status voltar a `idle` antes do próximo poll) |
+| `GET`/`POST` | `agents/` | Lista/cria agentes (filtra por `?sector=<id>`). `access_level`: `operational`\|`sector_orchestrator`\|`general_orchestrator`\|`ceo`. `autonomy_level`: `0` Observer (padrão) a `4` Autonomous — ver `POST agents/{id}/ask/` e "Autonomia e Policy Engine" no `CLAUDE.md`. Cada agente traz `work_status`/`current_task` (estado ao vivo) e `last_active_at` (última interação — cobre o caso do status voltar a `idle` antes do próximo poll) |
 | `GET`/`PATCH`/`DELETE` | `agents/{id}/` | Detalhe/edição/remoção de um agente |
-| `POST` | `agents/{id}/ask/` | Pergunta via este agente (RAG escopado ao setor, exceto acesso total) |
+| `POST` | `agents/{id}/ask/` | Pergunta via este agente (RAG escopado ao setor, exceto acesso total). Se a função escolhida tiver risco acima do que `autonomy_level` permite, a resposta volta com `status="pending_approval"` em vez de executar — ver `pending-approvals/` |
 | `POST` | `agents/{id}/pause/` | Pausa o agente, preserva a tarefa atual no backlog |
 | `GET`/`POST` | `sector-messages/request/` | Lista mensagens entre setores / solicita envio para outro setor (fica `pending`) |
 | `GET` | `sector-messages/{id}/` | Detalhe de uma mensagem entre setores |
 | `POST` | `sector-messages/{id}/relay/` | Um orquestrador (ou CEO) encaminha a mensagem pendente |
+| `GET`/`POST` | `policy-rules/` | Lista/cria regras que liberam um agente `POLICY_EXECUTOR`+ a auto-executar um risco específico (configurável — nunca hardcoded) |
+| `GET`/`PATCH`/`DELETE` | `policy-rules/{id}/` | Detalhe/edição/remoção de uma regra |
+| `GET` | `pending-approvals/` | Fila de ações bloqueadas pela política, aguardando decisão humana (filtra por `?status=pending\|approved\|rejected`) |
+| `POST` | `pending-approvals/{id}/decide/` | `{"approved": true\|false}` — se aprovado, executa a função de verdade agora (nunca antes) |
 | `GET` | `metrics/overview/` | Custo/tokens/chamadas totais do tenant + mensagens pendentes |
 | `GET` | `metrics/sectors/` | Métricas agregadas por setor (com % de uso do orçamento e se tem cérebro próprio) |
 | `GET` | `metrics/agents/` | Métricas por agente (filtra por `?sector=<id>`) |

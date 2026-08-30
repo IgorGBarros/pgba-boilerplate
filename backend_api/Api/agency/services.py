@@ -19,8 +19,9 @@ from decimal import Decimal
 from django.db.models import Sum, Count, Avg
 from django.utils import timezone
 
-from agency.models import Sector, Agent, AgentInteraction, SectorMessage, Project
+from agency.models import Sector, Agent, AgentInteraction, SectorMessage, Project, PendingApproval
 from integrations.services import create_project_repository, IntegrationConfigError
+from orchestration import registry
 
 # Preço aproximado por 1K tokens (entrada+saída médio), só para dar uma
 # ordem de grandeza no console — não é billing real. Ajuste conforme os
@@ -64,9 +65,13 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
     Ponto de entrada: um Agent faz uma pergunta via `orchestration`, e o
     resultado fica registrado em `AgentInteraction` (tokens/custo
     estimados). O contexto de RAG é restrito pelo setor do agente — ver
-    `_rag_scope_for`.
+    `_rag_scope_for`. Se a ação escolhida pelo modelo tiver risco acima do
+    que o `autonomy_level` do agente permite (ver `agency.policy`), a
+    execução é bloqueada e uma `PendingApproval` é criada em vez de rodar
+    a função — human-in-the-loop de verdade, não decorativo.
     """
     from orchestration.services import answer_question  # import local: agency depende de orchestration, nunca o contrário
+    from agency.policy import make_policy_check
 
     agent = Agent.objects.select_related("sector").get(id=agent_id, tenant_id=tenant_id)
     agent.work_status = Agent.WorkStatus.WORKING
@@ -77,7 +82,19 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
         tenant_id, question,
         use_rag_context=use_rag_context,
         rag_source_ids=_rag_scope_for(agent),
+        policy_check=make_policy_check(agent),
     )
+
+    if result.get("status") == "pending_approval" and result.get("function_called"):
+        fn = registry.get_function(result["function_called"])
+        PendingApproval.objects.create(
+            tenant_id=tenant_id,
+            agent=agent,
+            function_name=result["function_called"],
+            params=result.get("pending_function_params") or {},
+            risk=fn.risk if fn else "critical",
+            reason=result["answer"],
+        )
 
     tokens = _estimate_tokens(question) + _estimate_tokens(result.get("answer", ""))
     price_table = APPROX_PRICE_PER_1K_TOKENS.get(agent.default_provider, Decimal("0.005"))
@@ -97,6 +114,35 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
     agent.save(update_fields=["work_status", "current_task"])
 
     return result
+
+
+def decide_pending_approval(tenant_id, pending_id, approved: bool, decided_by=None) -> "PendingApproval":
+    """
+    Humano aprova ou rejeita uma ação que a política bloqueou. Se
+    aprovada, a função É EXECUTADA agora de verdade (via
+    `orchestration.registry.execute` — nunca pulando o mesmo caminho de
+    execução usado no fluxo automático) e o resultado fica registrado no
+    próprio `PendingApproval`, fechando a rastreabilidade do §31 do
+    documento: dá pra sempre responder "quem aprovou e o que aconteceu".
+    """
+    pending = PendingApproval.objects.get(id=pending_id, tenant_id=tenant_id)
+    if pending.status != PendingApproval.Status.PENDING:
+        raise ValueError(f"Esta ação já foi decidida ({pending.get_status_display()}).")
+
+    pending.decided_by = decided_by
+    pending.decided_at = timezone.now()
+
+    if approved:
+        pending.status = PendingApproval.Status.APPROVED
+        try:
+            pending.result = registry.execute(pending.function_name, tenant_id, pending.params)
+        except (LookupError, ValueError) as exc:
+            pending.result = {"error": str(exc)}
+    else:
+        pending.status = PendingApproval.Status.REJECTED
+
+    pending.save(update_fields=["status", "decided_by", "decided_at", "result"])
+    return pending
 
 
 # ---------------------------------------------------------------------------

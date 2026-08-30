@@ -79,6 +79,7 @@ PERGUNTA: {question}
 def answer_question(
     tenant_id, question: str, user=None, use_rag_context: bool = True,
     rag_source_ids: list[int] | None = None,
+    policy_check=None,
 ) -> dict:
     """
     Ponto de entrada único do módulo. Retorna:
@@ -90,6 +91,13 @@ def answer_question(
     uma vertical (ex: `agency`) restringir de quais KnowledgeSource(s) o
     contexto de RAG pode vir, sem o `orchestration` precisar saber nada
     sobre o conceito de "setor" da vertical.
+
+    `policy_check`: callback opcional `(function_name, risk) -> (bool, str)`
+    — chamado logo antes de `registry.execute()`. Se retornar `(False, motivo)`,
+    a função NÃO é executada e a resposta volta com `status="pending_approval"`.
+    Este módulo não sabe o que o callback verifica (nível de autonomia, regra
+    de negócio, o que for) — quem decide isso é `agency.policy`, nunca aqui.
+    Mantém a regra de dependência: vertical conhece core, nunca o contrário.
     """
     if not tenant_id:
         raise ValueError("answer_question requer tenant_id explícito.")
@@ -117,6 +125,20 @@ def answer_question(
 
     function_result: dict = {}
     if function_name:
+        fn = registry.get_function(function_name)
+        if fn and policy_check:
+            allowed, reason = policy_check(function_name, fn.risk)
+            if not allowed:
+                log.status = QueryLog.Status.PENDING_APPROVAL
+                log.function_called = function_name
+                log.function_params = params
+                log.error_message = reason
+                _finish(log, start)
+                return {
+                    "answer": f"Essa ação precisa de aprovação humana antes de executar: {reason}",
+                    "function_called": function_name, "sources": [], "status": log.status,
+                    "pending_function_params": params,
+                }
         try:
             function_result = registry.execute(function_name, tenant_id, params)
             log.function_called = function_name

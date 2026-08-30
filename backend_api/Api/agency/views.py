@@ -6,17 +6,19 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.mixins import TenantContextMixin
-from agency.models import Sector, Agent, SectorMessage, Project
+from agency.models import Sector, Agent, SectorMessage, Project, PendingApproval, PolicyRule
 from agency.serializers import (
     SectorSerializer, AgentSerializer, AskAsAgentSerializer,
     SectorMessageSerializer, RequestCrossSectorSerializer, RelayMessageSerializer,
     ProjectSerializer, CreateProjectSerializer,
+    PolicyRuleSerializer, PendingApprovalSerializer, DecidePendingApprovalSerializer,
 )
 from agency.services import (
     ask_as_agent,
     request_cross_sector_message,
     relay_message,
     create_project,
+    decide_pending_approval,
     AccessDeniedError,
     get_overview,
     get_sector_metrics,
@@ -187,6 +189,50 @@ class ProjectViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ReadOnlyMod
             private=data.get("private", True),
         )
         return Response(ProjectSerializer(project).data, status=status.HTTP_201_CREATED)
+
+
+class PolicyRuleViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
+    """CRUD das regras de política (§13 do documento — configurável, nunca hardcoded)."""
+
+    queryset = PolicyRule.objects.all()
+    serializer_class = PolicyRuleSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class PendingApprovalViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ReadOnlyModelViewSet):
+    """
+    Fila de aprovação humana (§12 — human-in-the-loop). Só leitura + a
+    action `decide/` — não dá pra editar uma aprovação já registrada,
+    só consultar e decidir uma vez (ver agency.services.decide_pending_approval).
+    """
+
+    queryset = PendingApproval.objects.all()
+    serializer_class = PendingApprovalSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        status_filter = self.request.query_params.get("status")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs
+
+    @action(detail=True, methods=["post"])
+    def decide(self, request, pk=None):
+        """POST /api/v1/agency/pending-approvals/{id}/decide/ — {"approved": true|false}"""
+        pending = self.get_object()
+        serializer = DecidePendingApprovalSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            decided = decide_pending_approval(
+                tenant_id=request.tenant_id, pending_id=pending.id,
+                approved=serializer.validated_data["approved"], decided_by=request.user,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+
+        return Response(PendingApprovalSerializer(decided).data)
 
 
 class MetricsOverviewView(TenantContextMixin, APIView):

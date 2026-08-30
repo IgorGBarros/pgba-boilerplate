@@ -22,6 +22,7 @@ class QueryLog(TenantMixin, models.Model):
         FUNCTION_ERROR = "function_error", "Erro ao executar função"
         LLM_ERROR = "llm_error", "Erro no modelo de IA"
         REJECTED = "rejected", "Função não encontrada/negada"
+        PENDING_APPROVAL = "pending_approval", "Aguardando aprovação humana (policy engine)"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True

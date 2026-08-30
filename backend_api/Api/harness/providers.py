@@ -119,6 +119,23 @@ def _chat_ollama(cred, model, messages, temperature, json_mode, timeout):
         )
         resp.raise_for_status()
         return resp.json().get("message", {}).get("content", "").strip()
+    except httpx.HTTPStatusError as exc:
+        # O Ollama devolve o motivo real no corpo (ex: "model 'llama3' not
+        # found, try pulling it first") — sem isso, só aparecia o texto
+        # genérico do httpx ("Client error '404 Not Found' for url...."),
+        # que não dizia o que fazer pra corrigir.
+        try:
+            detail = exc.response.json().get("error", exc.response.text)
+        except Exception:
+            detail = exc.response.text or str(exc)
+        hint = (
+            f" — modelo '{model}' provavelmente não foi baixado neste Ollama. "
+            f"Rode: docker compose exec ollama ollama pull {model}"
+            if exc.response.status_code == 404
+            else ""
+        )
+        logger.error("Erro Ollama chat (%s): %s", exc.response.status_code, detail)
+        raise ProviderConfigError(f"{detail}{hint}") from exc
     except httpx.HTTPError as exc:
         logger.error("Erro Ollama chat: %s", exc)
         raise ProviderConfigError(str(exc)) from exc
