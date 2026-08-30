@@ -347,3 +347,75 @@ class PendingApproval(TenantMixin, models.Model):
 
     def __str__(self):
         return f"{self.function_name} ({self.risk}) — {self.get_status_display()}"
+
+
+class Task(TenantMixin, AuditMixin, models.Model):
+    """
+    Unidade de trabalho de um agente, com ciclo de vida real — diferente
+    de `Agent.current_task` (só uma string curta pra exibição). Permite o
+    que `PendingApproval` não cobre: intervir NO MEIO da execução, não só
+    bloquear antes dela começar.
+
+    Fluxo (`agency.tasks`):
+        CREATED → IN_PROGRESS → [CEO interrompe] → PAUSED_CEO
+                              → [CEO dá nova instrução] → ADAPTED → (segue)
+                              → APPROVED (opcionalmente dispara PR no GitHub)
+                              → REJECTED
+
+    `version` sobe a cada interrupção — cada versão tem um `TaskSnapshot`
+    correspondente, então "adaptar" nunca perde o progresso anterior: o
+    novo prompt é construído citando o snapshot da versão de onde parou.
+    """
+
+    class Status(models.TextChoices):
+        CREATED = "created", "Criada"
+        IN_PROGRESS = "in_progress", "Em andamento"
+        PAUSED_CEO = "paused_ceo", "Pausada pelo CEO"
+        ADAPTED = "adapted", "Adaptada (nova instrução, retomando)"
+        APPROVED = "approved", "Aprovada"
+        REJECTED = "rejected", "Rejeitada"
+
+    agent = models.ForeignKey(Agent, on_delete=models.CASCADE, related_name="tasks")
+    # Nulo = tarefa não tem relação com nenhum repositório (ex: só uma
+    # análise/relatório). Preenchido = obrigatório pra approve_task poder
+    # disparar PR de verdade (usa Project.github_full_name como destino).
+    project = models.ForeignKey(
+        Project, on_delete=models.SET_NULL, null=True, blank=True, related_name="tasks",
+    )
+    brief = models.TextField(help_text="O que a tarefa pede — o prompt original do agente.")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.CREATED)
+    progress = models.FloatField(default=0.0, help_text="0.0 a 1.0 — só informativo, não trava nada.")
+    current_files = models.JSONField(default=list, blank=True, help_text="Paths dos arquivos que a tarefa produziu até agora.")
+    result = models.JSONField(default=dict, blank=True, help_text="Saída estruturada da execução (plan/steps/output/needs_review) ou {'error': ...}.")
+    version = models.PositiveIntegerField(default=1)
+    task_type = models.CharField(max_length=50, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tenant_id", "agent", "status"])]
+
+    def __str__(self):
+        return f"[{self.status}] {self.brief[:60]}"
+
+
+class TaskSnapshot(models.Model):
+    """
+    Estado exato de uma Task no momento de uma interrupção — permite
+    `adapt_and_resume` citar o progresso anterior sem perder trabalho já
+    feito. Não é TenantMixin porque sempre se acessa via `task`, que já é
+    tenant-scoped; evita duplicar o filtro.
+    """
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="snapshots")
+    version = models.PositiveIntegerField()
+    context = models.JSONField(help_text="brief/progress/current_files/status no momento da interrupção.")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-version"]
+        unique_together = [("task", "version")]
+
+    def __str__(self):
+        return f"Snapshot v{self.version} de Task #{self.task_id}"

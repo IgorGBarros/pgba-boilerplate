@@ -176,6 +176,13 @@ Prefixo: `/api/v1/agency/`
 | `GET`/`PATCH`/`DELETE` | `policy-rules/{id}/` | Detalhe/edição/remoção de uma regra |
 | `GET` | `pending-approvals/` | Fila de ações bloqueadas pela política, aguardando decisão humana (filtra por `?status=pending\|approved\|rejected`) |
 | `POST` | `pending-approvals/{id}/decide/` | `{"approved": true\|false}` — se aprovado, executa a função de verdade agora (nunca antes) |
+| `GET`/`POST` | `tasks/` | Lista/cria tarefas (filtra por `?status=` e `?agent=`) — ciclo de vida completo, complementar ao policy engine |
+| `GET` | `tasks/{id}/` | Detalhe de uma tarefa, incluindo os `snapshots` (histórico de interrupções) |
+| `POST` | `tasks/{id}/interrupt/` | `{"instructions": "..."}` — pausa a tarefa, salva snapshot do estado atual |
+| `POST` | `tasks/{id}/adapt/` | `{"new_brief": "..."}` — só em tarefa pausada; monta novo prompt citando o snapshot |
+| `POST` | `tasks/{id}/execute/` | Dispara a execução via o modelo configurado no harness (`CHAT_PROVIDER`/`OLLAMA_CHAT_MODEL`) — só a partir de `created`/`adapted` |
+| `POST` | `tasks/{id}/approve/` | `{"files": {"path": "conteúdo"}, "trigger_git": true}` — se a tarefa tiver `project`, cria branch+PR real no GitHub |
+| `POST` | `tasks/{id}/reject/` | `{"reason": "..."}` (opcional) |
 | `GET` | `metrics/overview/` | Custo/tokens/chamadas totais do tenant + mensagens pendentes |
 | `GET` | `metrics/sectors/` | Métricas agregadas por setor (com % de uso do orçamento e se tem cérebro próprio) |
 | `GET` | `metrics/agents/` | Métricas por agente (filtra por `?sector=<id>`) |
@@ -263,6 +270,19 @@ nome do repositório).
 
 `status` é `ok` (\<80%), `warn` (80–99%), `over` (≥100%) ou
 `sem_orcamento` (setor sem `monthly_budget_usd` definido).
+
+### Tempo real (WebSocket)
+
+```
+ws://<host>/ws/agency/?token=<JWT access token>
+```
+
+Token vai na URL, não em header `Authorization` — WebSocket nativo do
+navegador não permite header customizado na conexão. Sem token válido,
+fecha com código `4001`. Um cliente conectado recebe todo evento de
+`Task`/`Agent` do próprio tenant, formato `{"kind": "task"|"agent", ...}`
+(mesmo shape de `TaskSerializer`/`AgentSerializer`). Ver "Tempo real
+(Django Channels)" no `CLAUDE.md` para o design completo.
 
 ## `integrations` — credenciais de infraestrutura/deploy
 

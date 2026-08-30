@@ -269,11 +269,7 @@ Endpoints de métricas (`/api/v1/agency/metrics/overview|sectors|agents|budgets/
 e de comunicação (`/api/v1/agency/sector-messages/request|{id}/relay/`) —
 ver `docs/API.md` para o contrato completo.
 
-Se um projeto realmente precisar da visualização 3D, ela pode ser
-construída como uma camada de apresentação por cima deste mesmo modelo de
-dados — sem duplicar `Sector`/`Agent`.
-
-**Sem 3D, mas com visibilidade de quem está trabalhando**:
+**Visão 2D (KPIs + lista)**:
 `frontend/src/components/builder/CompanyOverview.tsx` (dentro do Studio,
 aba "Empresa") — painel com polling mostrando `work_status` (bolinha
 verde pulsando = `working`, com `current_task`) agrupado por setor, mais
@@ -283,6 +279,24 @@ própria chamada — pode ser rápido demais para o poll pegar; por isso todo
 agente também mostra `last_active_at` (anotado via
 `Max("interactions__created_at")` no `AgentViewSet`), a última interação
 registrada, para não parecer "sempre ocioso" por causa do timing do poll.
+
+**Visão 3D (Fase 1 — salas + agentes parados)**:
+`frontend/src/components/builder/CompanyOffice3D.tsx` (aba "Escritório
+3D" do Studio) — Three.js via `@react-three/fiber`/`@react-three/drei`,
+carregado sob demanda (`React.lazy`, ~960KB só quem abre a aba paga).
+Cada `Sector` vira uma sala (posição determinística em grade, cor fixa
+por índice — nunca aleatória, pra não trocar a cada recarga); cada
+`Agent` é um avatar simples (cápsula + esfera) posicionado estaticamente
+dentro da sala do seu setor, com brilho verde quando `work_status ==
+"working"` (mostra `current_task` acima da cabeça), cinza quando `idle`,
+amarelo quando `paused`. Mesmo polling de 5s da `CompanyOverview` — dado
+real, nunca simulado.
+
+**O que falta desta fase pra próxima (deliberadamente não implementado
+ainda)**: movimento/pathfinding entre estações, animação de "andar",
+"envelope voando" pra mensagens entre setores (`SectorMessage`) — a
+Fase 2 combinada quando a Fase 1 foi decidida. Não implementar isso agora
+foi intencional, não uma limitação técnica descoberta depois.
 
 ### Autonomia e Policy Engine (`Agent.autonomy_level` + `PolicyRule`)
 
@@ -325,6 +339,84 @@ o callback antes de `registry.execute()`. Quem monta esse callback,
 sabendo o que é `Agent.autonomy_level`, é `agency.policy.make_policy_check()`
 — nunca o contrário, mantendo a regra de dependência (vertical conhece
 core, nunca o inverso).
+
+### Ciclo de vida de Task (`agency.tasks`) — intervir durante a execução
+
+Complementar ao Policy Engine: aquele bloqueia **antes** de uma ação
+executar; isto intervém **durante/depois** — pausar uma tarefa em
+andamento, dar uma instrução nova sem perder o progresso, aprovar
+disparando PR de verdade no GitHub, ou rejeitar. Adaptado do protótipo
+`escritorio_virtual_agentes` (mesmo autor, projeto anterior — lá era
+FastAPI + estado em memória + Obsidian; aqui é Django + Postgres, nunca
+perde estado num restart).
+
+```
+CREATED → IN_PROGRESS → [CEO interrompe] → PAUSED_CEO
+                       → [CEO dá nova instrução] → ADAPTED → (segue)
+                       → APPROVED (dispara branch+PR se tiver Project)
+                       → REJECTED
+```
+
+`interrupt_task()` salva um `TaskSnapshot` (brief/progresso/arquivos no
+momento exato) **antes** de mudar o status — é esse snapshot que
+`adapt_and_resume()` cita no novo prompt, pra quem for executar de novo
+continuar do ponto onde parou, não do zero. `version` sobe a cada
+interrupção; cada versão tem seu próprio snapshot.
+
+`approve_task()` só dispara Git de verdade (branch nova + PR — nunca
+commit direto na base, pra dar pra revisar/reverter uma tarefa isolada
+das outras) se a Task tiver um `project` com `github_full_name`
+preenchido. Falha de Git (token errado, repositório fora do ar) nunca
+desfaz a aprovação já registrada — é uma decisão humana, não deveria ser
+revertida por um problema de infraestrutura.
+
+**`execute_task()`** é quem de fato roda a tarefa (faltava quando o resto
+do ciclo foi escrito) — mesma resolução de provider/model que
+`harness.views.GenerateCodeView` usa (`CHAT_PROVIDER`/`OLLAMA_CHAT_MODEL`
+nas settings, nunca uma segunda forma de escolher modelo). Só roda a
+partir de `CREATED`/`ADAPTED`; resposta que não parseia como JSON cai
+como texto puro com `needs_review=True` em vez de derrubar a tarefa
+inteira; falha do provedor (Ollama fora do ar etc.) marca `REJECTED` e
+sempre libera o agente (`work_status` volta a `idle`) — nunca fica
+"working" pra sempre por causa de uma falha externa. Sem status
+"aguardando revisão" dedicado no modelo: tarefa concluída fica
+`IN_PROGRESS` com `progress=1.0`, que já é o que `approve_task`/
+`reject_task` esperam (aceitam qualquer status que não seja
+`APPROVED`/`REJECTED`).
+
+### Tempo real (Django Channels) — substitui polling, não convive com ele
+
+Toda mudança de `Task`/`Agent.work_status` é publicada via WebSocket
+(`agency/realtime.py` → `agency/consumers.py`), não só gravada no banco.
+Existe porque `CompanyOverview`/`CompanyOffice3D` faziam polling a cada
+4-5s antes disso — funcional, mas nem em tempo real de verdade nem
+barato em request.
+
+```
+ws://<host>/ws/agency/?token=<JWT access token>
+```
+
+O token vai na URL, não num header `Authorization` — API nativa de
+WebSocket do navegador não permite header customizado na conexão. É
+validado manualmente em `agency/ws_auth.py`, com a MESMA lib
+(`rest_framework_simplejwt`) que autentica o resto da API REST; nunca um
+segundo mecanismo de autenticação. Conexão sem token (ou com token
+inválido/expirado) fecha com código `4001`.
+
+Um grupo Channels por tenant (`tenant_{uuid}`) — todo evento do tenant
+chega pra qualquer cliente conectado. Mensagens: `{"kind": "task", ...}`
+ou `{"kind": "agent", ...}`, mesmo formato do `TaskSerializer`/
+`AgentSerializer` (nunca um segundo formato de serialização pra
+WebSocket). `agency/realtime.py` nunca deixa uma falha de broadcast
+(Redis fora do ar, etc.) derrubar a operação principal — loga e segue.
+
+Infraestrutura: `channels` + `channels-redis`, mesmo Redis do Celery
+(banco lógico `/1`, separado do `/0` do Celery só pra não misturar fila
+de mensagens com fila de tarefas assíncronas — `REALTIME_REDIS_URL` no
+`.env` se precisar apontar em separado). `ASGI_APPLICATION` no
+`config/asgi.py` roteia HTTP (Django normal) e WebSocket (Channels)
+juntos — em produção, precisa rodar via `daphne`/`uvicorn`, não
+`gunicorn` sozinho (gunicorn não fala ASGI/WebSocket nativamente).
 
 ### "Setor de Desenvolvimento cria um projeto" — `agency.Project` + `integrations`
 

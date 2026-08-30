@@ -29,5 +29,8 @@ python manage.py migrate --noinput
 echo "Coletando arquivos estáticos..."
 python manage.py collectstatic --noinput || echo "[WARN] collectstatic falhou, continuando..."
 
-echo "Iniciando Gunicorn..."
-exec gunicorn --bind 0.0.0.0:8000 --workers 3 --timeout 120 config.wsgi:application
+echo "Iniciando Daphne (ASGI — HTTP + WebSocket juntos)..."
+# gunicorn (WSGI puro) nunca serviria /ws/agency/ — WebSocket exige um
+# servidor ASGI de verdade. config/asgi.py já roteia HTTP e WebSocket na
+# mesma aplicação, então um único processo Daphne cobre os dois.
+exec daphne -b 0.0.0.0 -p 8000 config.asgi:application

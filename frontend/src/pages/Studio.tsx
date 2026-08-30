@@ -1,6 +1,6 @@
 // frontend/src/pages/Studio.tsx
-import { useEffect, useRef, useState } from "react";
-import { Rocket, Sparkles, Building2, Plus, Circle, AlertTriangle } from "lucide-react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Rocket, Sparkles, Building2, Box, Plus, Circle, AlertTriangle } from "lucide-react";
 import ChatPanel from "@/components/builder/ChatPanel";
 import PreviewPanel from "@/components/builder/PreviewPanel";
 import HistorySidebar from "@/components/builder/HistorySidebar";
@@ -25,13 +25,17 @@ import {
 } from "@/lib/devserver";
 import type { ChatMessage } from "@/types/builder";
 
+// Carregado sob demanda: Three.js + @react-three/fiber são pesados —
+// só quem abre a aba "Escritório 3D" paga esse custo.
+const CompanyOffice3D = lazy(() => import("@/components/builder/CompanyOffice3D"));
+
 // `?embed=1&tab=pages`: mostra só as páginas geradas, sem cabeçalho/abas
 // do app inteiro — apontar pra "http://localhost:5173" puro faria o
 // iframe carregar o Studio de novo (com sua própria aba Estúdio, com
 // outro iframe apontando pra si mesma — a recursão visual que aparecia
 // na tela quando "Principal" estava selecionado).
 const PRINCIPAL_URL = "http://localhost:5173/?embed=1&tab=pages";
-type StudioView = "generate" | "company";
+type StudioView = "generate" | "company" | "office3d";
 
 /**
  * Painel principal do sistema (ver CLAUDE.md).
@@ -302,6 +306,15 @@ export default function Studio() {
               <Building2 className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Empresa</span>
             </button>
+            <button
+              onClick={() => setView("office3d")}
+              className={`flex items-center gap-1.5 rounded-card px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
+                view === "office3d" ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5"
+              }`}
+            >
+              <Box className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Escritório 3D</span>
+            </button>
           </div>
 
           <button
@@ -314,7 +327,7 @@ export default function Studio() {
           </button>
         </div>
 
-        {view === "generate" ? (
+        {view === "generate" && (
           <div className="flex flex-1 overflow-hidden">
             <div className="w-[38%] min-w-[380px] shrink-0 xl:w-[34%]">
               <ChatPanel messages={messages} isLoading={isLoading} onSend={handleSend} onReset={handleReset} />
@@ -323,8 +336,12 @@ export default function Studio() {
               <PreviewPanel previewUrl={previewUrl} files={files} logs={logs} onClearLogs={() => setLogs([])} workspace={activeProject ?? undefined} />
             </div>
           </div>
-        ) : (
-          <CompanyOverview key={companyRefreshKey} />
+        )}
+        {view === "company" && <CompanyOverview key={companyRefreshKey} />}
+        {view === "office3d" && (
+          <Suspense fallback={<p className="p-6 text-sm text-slate-500">Carregando o escritório 3D...</p>}>
+            <CompanyOffice3D key={companyRefreshKey} />
+          </Suspense>
         )}
       </div>
 

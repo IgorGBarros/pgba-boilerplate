@@ -1,7 +1,7 @@
 # backend_api/Api/agency/serializers.py
 from rest_framework import serializers
 
-from agency.models import Sector, Agent, SectorMessage, Project, PendingApproval, PolicyRule
+from agency.models import Sector, Agent, SectorMessage, Project, PendingApproval, PolicyRule, Task, TaskSnapshot
 
 
 class SectorSerializer(serializers.ModelSerializer):
@@ -158,3 +158,48 @@ class PendingApprovalSerializer(serializers.ModelSerializer):
 
 class DecidePendingApprovalSerializer(serializers.Serializer):
     approved = serializers.BooleanField()
+
+
+class TaskSnapshotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskSnapshot
+        fields = ["id", "version", "context", "created_at"]
+        read_only_fields = fields
+
+
+class TaskSerializer(serializers.ModelSerializer):
+    agent_name = serializers.CharField(source="agent.name", read_only=True)
+    project_name = serializers.CharField(source="project.name", read_only=True, default=None)
+    snapshots = TaskSnapshotSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Task
+        fields = [
+            "id", "agent", "agent_name", "project", "project_name", "brief", "status",
+            "progress", "current_files", "result", "version", "task_type", "snapshots", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "status", "result", "version", "snapshots", "created_at", "updated_at"]
+
+
+class CreateTaskSerializer(serializers.Serializer):
+    agent_id = serializers.IntegerField()
+    project_id = serializers.IntegerField(required=False, allow_null=True)
+    brief = serializers.CharField(max_length=4000)
+    task_type = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
+
+
+class InterruptTaskSerializer(serializers.Serializer):
+    instructions = serializers.CharField(max_length=2000)
+
+
+class AdaptTaskSerializer(serializers.Serializer):
+    new_brief = serializers.CharField(max_length=4000)
+
+
+class ApproveTaskSerializer(serializers.Serializer):
+    files = serializers.DictField(child=serializers.CharField(), required=False, default=dict)
+    trigger_git = serializers.BooleanField(required=False, default=True)
+
+
+class RejectTaskSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")

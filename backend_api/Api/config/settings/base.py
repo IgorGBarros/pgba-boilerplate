@@ -20,6 +20,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "channels",
     "rest_framework",
     "rest_framework_simplejwt",
     "corsheaders",
@@ -110,6 +111,19 @@ MEDIA_ROOT = BASE_DIR / "media"
 # 🔄 Celery
 CELERY_BROKER_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
+# 📡 Tempo real (WebSocket via Django Channels) — status de Agent/Task
+# em tempo real, sem polling. Mesmo Redis do Celery (bancos lógicos
+# diferentes, /1 em vez de /0, só para não misturar filas de mensagens
+# com filas de tarefas assíncronas).
+ASGI_APPLICATION = "config.asgi.application"
+_REALTIME_REDIS_URL = os.environ.get("REALTIME_REDIS_URL", os.environ.get("REDIS_URL", "redis://localhost:6379/0").rsplit("/", 1)[0] + "/1")
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {"hosts": [_REALTIME_REDIS_URL]},
+    },
+}
 
 # 🧠 IA Local-First & RAG (módulo ingestion)
 # Por padrão, tudo roda localmente via Ollama — nenhum dado do tenant sai

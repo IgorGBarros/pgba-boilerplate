@@ -6,12 +6,17 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.mixins import TenantContextMixin
-from agency.models import Sector, Agent, SectorMessage, Project, PendingApproval, PolicyRule
+from agency.models import Sector, Agent, SectorMessage, Project, PendingApproval, PolicyRule, Task
 from agency.serializers import (
     SectorSerializer, AgentSerializer, AskAsAgentSerializer,
     SectorMessageSerializer, RequestCrossSectorSerializer, RelayMessageSerializer,
     ProjectSerializer, CreateProjectSerializer,
     PolicyRuleSerializer, PendingApprovalSerializer, DecidePendingApprovalSerializer,
+    TaskSerializer, CreateTaskSerializer, InterruptTaskSerializer, AdaptTaskSerializer,
+    ApproveTaskSerializer, RejectTaskSerializer,
+)
+from agency.tasks import (
+    create_task, execute_task, interrupt_task, adapt_and_resume, approve_task, reject_task, TaskStateError,
 )
 from agency.services import (
     ask_as_agent,
@@ -233,6 +238,97 @@ class PendingApprovalViewSet(TenantContextMixin, TenantScopedMixin, viewsets.Rea
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
 
         return Response(PendingApprovalSerializer(decided).data)
+
+
+class TaskViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
+    """
+    Ciclo de vida de Task (ver agency/tasks.py) — complementar ao
+    PendingApproval: aquele bloqueia ANTES de executar, este intervém
+    DURANTE/DEPOIS (interromper, adaptar com nova instrução, aprovar
+    disparando PR real no GitHub, ou rejeitar).
+    """
+
+    queryset = Task.objects.select_related("agent", "project").prefetch_related("snapshots").all()
+    serializer_class = TaskSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        status_filter = self.request.query_params.get("status")
+        agent_filter = self.request.query_params.get("agent")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if agent_filter:
+            qs = qs.filter(agent_id=agent_filter)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        serializer = CreateTaskSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        task = create_task(tenant_id=request.tenant_id, **serializer.validated_data)
+        return Response(TaskSerializer(task).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def execute(self, request, pk=None):
+        """POST tasks/{id}/execute/ — dispara a execução via o modelo configurado no harness."""
+        from harness.providers import ProviderConfigError
+
+        task = self.get_object()
+        try:
+            updated = execute_task(request.tenant_id, task.id)
+        except TaskStateError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except ProviderConfigError as exc:
+            return Response({"detail": f"Falha ao consultar o modelo: {exc}"}, status=502)
+        return Response(TaskSerializer(updated).data)
+
+    @action(detail=True, methods=["post"])
+    def interrupt(self, request, pk=None):
+        """POST tasks/{id}/interrupt/ — {"instructions": "..."}"""
+        task = self.get_object()
+        serializer = InterruptTaskSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            updated = interrupt_task(request.tenant_id, task.id, serializer.validated_data["instructions"])
+        except TaskStateError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(TaskSerializer(updated).data)
+
+    @action(detail=True, methods=["post"])
+    def adapt(self, request, pk=None):
+        """POST tasks/{id}/adapt/ — {"new_brief": "..."}"""
+        task = self.get_object()
+        serializer = AdaptTaskSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            updated = adapt_and_resume(request.tenant_id, task.id, serializer.validated_data["new_brief"])
+        except TaskStateError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(TaskSerializer(updated).data)
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        """POST tasks/{id}/approve/ — {"files": {"path": "conteúdo"}, "trigger_git": true}"""
+        task = self.get_object()
+        serializer = ApproveTaskSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = approve_task(request.tenant_id, task.id, **serializer.validated_data)
+        except TaskStateError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response({**TaskSerializer(result["task"]).data, "pr_url": result["pr_url"]})
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        """POST tasks/{id}/reject/ — {"reason": "..."} (opcional)"""
+        task = self.get_object()
+        serializer = RejectTaskSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            updated = reject_task(request.tenant_id, task.id, **serializer.validated_data)
+        except TaskStateError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(TaskSerializer(updated).data)
 
 
 class MetricsOverviewView(TenantContextMixin, APIView):
