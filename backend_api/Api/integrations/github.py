@@ -143,3 +143,56 @@ def push_template_files(
         )
         sent.append(path)
     return sent
+
+
+def create_branch(token: str, owner: str, repo: str, branch: str, from_branch: str = "main") -> dict:
+    """
+    Cria uma branch nova a partir do HEAD de `from_branch`. Usado pelo
+    fluxo de aprovação de tarefa (agency.tasks.approve_task): cada tarefa
+    aprovada vira uma branch própria + PR, nunca commit direto em main —
+    dá pra revisar/reverter uma tarefa sem afetar as outras.
+    """
+    ref_url = f"{GITHUB_API}/repos/{owner}/{repo}/git/ref/heads/{from_branch}"
+    try:
+        ref_resp = httpx.get(ref_url, headers=_headers(token), timeout=15.0)
+        ref_resp.raise_for_status()
+        base_sha = ref_resp.json()["object"]["sha"]
+
+        create_resp = httpx.post(
+            f"{GITHUB_API}/repos/{owner}/{repo}/git/refs",
+            headers=_headers(token),
+            json={"ref": f"refs/heads/{branch}", "sha": base_sha},
+            timeout=15.0,
+        )
+        create_resp.raise_for_status()
+        return create_resp.json()
+    except httpx.HTTPStatusError as exc:
+        # Branch já existe é um caso normal (reaproveitar de uma tentativa
+        # anterior), não um erro — qualquer outro status é erro de verdade.
+        if exc.response is not None and exc.response.status_code == 422:
+            logger.info("Branch '%s' já existe em %s/%s — reaproveitando.", branch, owner, repo)
+            return {"ref": f"refs/heads/{branch}", "already_existed": True}
+        detail = exc.response.json().get("message", exc.response.text) if exc.response is not None else str(exc)
+        raise GitHubError(f"Falha ao criar branch '{branch}': {detail}") from exc
+    except httpx.HTTPError as exc:
+        raise GitHubError(f"Falha ao criar branch '{branch}': {exc}") from exc
+
+
+def create_pull_request(
+    token: str, owner: str, repo: str, branch: str, title: str, body: str = "", base: str = "main",
+) -> dict:
+    """Abre um PR de `branch` para `base`. Retorna o JSON da API (inclui `html_url`)."""
+    try:
+        resp = httpx.post(
+            f"{GITHUB_API}/repos/{owner}/{repo}/pulls",
+            headers=_headers(token),
+            json={"title": title, "body": body, "head": branch, "base": base},
+            timeout=20.0,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.json().get("message", exc.response.text) if exc.response is not None else str(exc)
+        raise GitHubError(f"Falha ao abrir PR de '{branch}': {detail}") from exc
+    except httpx.HTTPError as exc:
+        raise GitHubError(f"Falha ao abrir PR de '{branch}': {exc}") from exc

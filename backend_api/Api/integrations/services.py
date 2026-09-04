@@ -70,3 +70,32 @@ def create_project_repository(
         "clone_url": repo["clone_url"],
         "files_pushed": files_pushed,
     }
+
+
+def create_task_branch_and_pr(
+    tenant_id, github_full_name: str, branch: str, files: dict[str, str], commit_message: str,
+    pr_title: str, pr_body: str = "", base_branch: str = "main",
+) -> dict:
+    """
+    Usado por `agency.tasks.approve_task`: uma tarefa aprovada vira uma
+    branch própria (nunca commit direto na base) + PR — dá pra revisar e
+    reverter uma tarefa isoladamente das outras.
+
+    `github_full_name`: "owner/repo" (vem de `agency.Project.github_full_name`).
+    Retorna: {"branch", "pr_url", "pr_number"}.
+    """
+    from integrations.github import create_branch, push_template_files, create_pull_request, GitHubError
+
+    cred = get_credential(tenant_id, ServiceCredential.Provider.GITHUB)
+    owner, repo_name = github_full_name.split("/", 1)
+
+    try:
+        create_branch(cred.token, owner, repo_name, branch, from_branch=base_branch)
+        push_template_files(cred.token, owner, repo_name, files, branch=branch)
+        pr = create_pull_request(
+            cred.token, owner, repo_name, branch=branch, title=pr_title, body=pr_body, base=base_branch,
+        )
+    except GitHubError as exc:
+        raise IntegrationConfigError(str(exc)) from exc
+
+    return {"branch": branch, "pr_url": pr["html_url"], "pr_number": pr["number"]}

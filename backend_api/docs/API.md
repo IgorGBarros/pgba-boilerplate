@@ -280,7 +280,7 @@ ws://<host>/ws/agency/?token=<JWT access token>
 Token vai na URL, não em header `Authorization` — WebSocket nativo do
 navegador não permite header customizado na conexão. Sem token válido,
 fecha com código `4001`. Um cliente conectado recebe todo evento de
-`Task`/`Agent` do próprio tenant, formato `{"kind": "task"|"agent", ...}`
+`Task`/`Agent`/`PendingApproval` do próprio tenant, formato `{"kind": "task"|"agent"|"pending_approval", ...}`
 (mesmo shape de `TaskSerializer`/`AgentSerializer`). Ver "Tempo real
 (Django Channels)" no `CLAUDE.md` para o design completo.
 

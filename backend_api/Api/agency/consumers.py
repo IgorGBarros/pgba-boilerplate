@@ -30,3 +30,6 @@ class AgencyConsumer(AsyncJsonWebsocketConsumer):
 
     async def agent_update(self, event):
         await self.send_json(event["data"])
+
+    async def pending_approval_update(self, event):
+        await self.send_json(event["data"])

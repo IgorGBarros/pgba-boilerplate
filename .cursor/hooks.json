@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "node C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs shim session-start",
+        "timeout": 10
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "node C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs shim session-end",
+        "timeout": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "node C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs shim tool-before",
+        "timeout": 10
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "node C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs shim tool-before",
+        "timeout": 10
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": "node C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs shim tool-before",
+        "timeout": 10
+      }
+    ],
+    "beforeReadFile": [
+      {
+        "command": "node C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs shim tool-before",
+        "timeout": 5
+      }
+    ],
+    "subagentStart": [
+      {
+        "command": "node C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs shim subagent-start",
+        "timeout": 5
+      }
+    ],
+    "stop": [
+      {
+        "command": "node C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs shim stop",
+        "timeout": 120,
+        "loop_limit": 5
+      }
+    ],
+    "afterAgentResponse": [
+      {
+        "command": "node C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs shim response-after",
+        "timeout": 5,
+        "matcher": "AgentResponse"
+      }
+    ]
+  }
+}

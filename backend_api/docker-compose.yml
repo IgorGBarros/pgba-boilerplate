@@ -52,6 +52,13 @@ services:
       - ./Api:/app/Api
       # Monte seu(s) vault(s) do Obsidian aqui para o sync poder lê-los:
       - ${OBSIDIAN_VAULT_PATH:-./vaults}:/vaults:ro
+      # Templates de projeto (React/Vite/TS) moram em frontend/ — é
+      # conteúdo de frontend de verdade, não deveria estar fisicamente
+      # dentro da árvore do backend Python. Montado só-leitura porque
+      # agency.services só LÊ esses arquivos pra empurrar pro GitHub via
+      # API (nunca escreve, nunca roda `npm`/`.mjs` neles — isso é 100%
+      # Python + httpx, sem Node.js envolvido nesta etapa).
+      - ../frontend/project-templates:/app/project-templates:ro
 
   celery_worker:
     build:

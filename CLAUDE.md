@@ -404,11 +404,12 @@ segundo mecanismo de autenticação. Conexão sem token (ou com token
 inválido/expirado) fecha com código `4001`.
 
 Um grupo Channels por tenant (`tenant_{uuid}`) — todo evento do tenant
-chega pra qualquer cliente conectado. Mensagens: `{"kind": "task", ...}`
-ou `{"kind": "agent", ...}`, mesmo formato do `TaskSerializer`/
-`AgentSerializer` (nunca um segundo formato de serialização pra
-WebSocket). `agency/realtime.py` nunca deixa uma falha de broadcast
-(Redis fora do ar, etc.) derrubar a operação principal — loga e segue.
+chega pra qualquer cliente conectado. Mensagens: `{"kind": "task", ...}`,
+`{"kind": "agent", ...}` ou `{"kind": "pending_approval", ...}` — mesmo
+formato do `TaskSerializer`/`AgentSerializer`/`PendingApprovalSerializer`
+(nunca um segundo formato de serialização pra WebSocket).
+`agency/realtime.py` nunca deixa uma falha de broadcast (Redis fora do
+ar, etc.) derrubar a operação principal — loga e segue.
 
 Infraestrutura: `channels` + `channels-redis`, mesmo Redis do Celery
 (banco lógico `/1`, separado do `/0` do Celery só pra não misturar fila
@@ -444,14 +445,24 @@ responde essa pergunta"; `integrations` resolve "qual token cria esse
 repositório".
 
 **O projeto criado usa o template `simple-commercial`
-(`agency/project_templates/simple_commercial/`), NUNCA o boilerplate
+(`frontend/project-templates/simple_commercial/`), NUNCA o boilerplate
 PGBA completo.** É deliberado: um produto simples para o cliente
 comercializar (deploy em Vercel + Supabase, sem servidor próprio pra
 manter) não precisa de multi-tenant, LGPD formal, RAG ou agentes — isso é
 peso que só a plataforma interna (este boilerplate) justifica carregar.
-O template fica dentro do app `agency` (não na raiz do repo) de propósito:
-garante que vai junto na imagem Docker, já que o `Dockerfile` só copia
-`Api/`.
+
+O template mora fisicamente em `frontend/` — é conteúdo React/Vite/TS de
+verdade, não deveria estar dentro da árvore do backend Python. O
+Dockerfile do backend só copia `Api/` pra dentro da imagem, então
+`docker-compose.yml` monta `frontend/project-templates` como volume
+só-leitura em `/app/project-templates` no container do `backend`;
+`agency.services._load_simple_commercial_template()` lê de lá (variável
+`PROJECT_TEMPLATES_PATH`, só precisa ser setada rodando fora do Docker —
+ver `.env.example`). Continua **100% Python + httpx**
+(`integrations.github.push_template_files`) — nenhum `.mjs`/Node.js
+participa desta etapa; não confundir com `frontend/scripts/generator.mjs`
+(gera uma página dentro do app já em execução, fluxo completamente
+diferente).
 
 Repositório criado via **Contents API do GitHub** (`PUT .../contents/{path}`
 por arquivo), não `git clone`+`push` — evita depender do binário `git`

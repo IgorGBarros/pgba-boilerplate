@@ -14,12 +14,15 @@ guardrails). Este módulo adiciona três coisas por cima disso:
 """
 from __future__ import annotations
 
+import os
+
 from decimal import Decimal
 
 from django.db.models import Sum, Count, Avg
 from django.utils import timezone
 
 from agency.models import Sector, Agent, AgentInteraction, SectorMessage, Project, PendingApproval
+from agency.realtime import broadcast_pending_approval_update
 from integrations.services import create_project_repository, IntegrationConfigError
 from orchestration import registry
 
@@ -87,7 +90,7 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
 
     if result.get("status") == "pending_approval" and result.get("function_called"):
         fn = registry.get_function(result["function_called"])
-        PendingApproval.objects.create(
+        pending = PendingApproval.objects.create(
             tenant_id=tenant_id,
             agent=agent,
             function_name=result["function_called"],
@@ -95,6 +98,7 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
             risk=fn.risk if fn else "critical",
             reason=result["answer"],
         )
+        broadcast_pending_approval_update(pending)
 
     tokens = _estimate_tokens(question) + _estimate_tokens(result.get("answer", ""))
     price_table = APPROX_PRICE_PER_1K_TOKENS.get(agent.default_provider, Decimal("0.005"))
@@ -142,6 +146,7 @@ def decide_pending_approval(tenant_id, pending_id, approved: bool, decided_by=No
         pending.status = PendingApproval.Status.REJECTED
 
     pending.save(update_fields=["status", "decided_by", "decided_at", "result"])
+    broadcast_pending_approval_update(pending)
     return pending
 
 
@@ -322,15 +327,32 @@ def _budget_status(usage_percent: float | None) -> str:
 
 def _load_simple_commercial_template(project_name: str) -> dict[str, str]:
     """
-    Lê `agency/project_templates/simple_commercial/` (fica dentro do app
-    de propósito — garante que o template vai junto na imagem Docker,
-    já que o Dockerfile só copia `Api/`) e substitui o placeholder do
-    nome do projeto. `package-lock.json` é excluído (será regenerado no
-    primeiro `npm install` de quem for trabalhar no projeto).
+    Lê o template de `frontend/project-templates/simple_commercial/` —
+    fica fisicamente em `frontend/` (é conteúdo React/Vite/TS de
+    verdade), montado só-leitura no container do backend via
+    docker-compose (`PROJECT_TEMPLATES_PATH`, default
+    `/app/project-templates` — o caminho do volume; fora do Docker,
+    aponte para `../frontend/project-templates` no `.env`).
+
+    100% Python + httpx daqui pra frente (`integrations.github.
+    push_template_files`) — nenhum `.mjs`/Node.js entra nesse fluxo, só
+    lê os arquivos do disco e empurra pro GitHub via API. `package-lock.
+    json` é excluído (será regenerado no primeiro `npm install` de quem
+    for trabalhar no projeto).
     """
     import pathlib
 
-    template_dir = pathlib.Path(__file__).parent / "project_templates" / "simple_commercial"
+    templates_root = pathlib.Path(os.environ.get("PROJECT_TEMPLATES_PATH", "/app/project-templates"))
+    template_dir = templates_root / "simple_commercial"
+
+    if not template_dir.is_dir():
+        raise FileNotFoundError(
+            f"Template não encontrado em '{template_dir}'. Dentro do Docker isso é o volume "
+            f"montado (ver docker-compose.yml, serviço 'backend') e deveria sempre existir. "
+            f"Rodando fora do Docker (ex: pytest local), defina PROJECT_TEMPLATES_PATH "
+            f"apontando para a pasta 'frontend/project-templates' do repositório."
+        )
+
     files: dict[str, str] = {}
 
     for path in template_dir.rglob("*"):

@@ -21,7 +21,11 @@ python-decouple>=3.8,<4.0
 
 # Audit & Compliance (LGPD)
 django-simple-history>=3.4,<4.0
-cryptography>=41.0,<44.0
+cryptography>=41.0,<51.0
+# ^ teto alargado de <44.0 pra <51.0: daphne (abaixo) traz pyopenssl como
+# dependência transitiva (suporte TLS pro WebSocket), que exige uma
+# cryptography mais nova. Testado manualmente que o uso de Fernet em
+# harness/crypto.py continua idêntico na 50.x.
 
 # API Docs
 drf-spectacular>=0.26,<0.28
@@ -30,6 +34,15 @@ drf-spectacular>=0.26,<0.28
 celery>=5.3,<6.0
 redis>=4.5,<6.0
 django-celery-beat>=2.5,<3.0
+
+# Tempo real (agency.Task, Agent.work_status) — substitui polling por
+# push via WebSocket. Usa o mesmo Redis do Celery (banco lógico
+# diferente, ver REALTIME_REDIS_URL). daphne também serve HTTP no lugar
+# do gunicorn (ver entrypoint.sh) — WebSocket exige um servidor ASGI de
+# verdade, gunicorn/WSGI não fala esse protocolo.
+channels>=4.1,<5.0
+channels-redis>=4.2,<5.0
+daphne>=4.1,<5.0
 
 # 🧠 RAG / IA local-first / Obsidian (módulo ingestion)
 pgvector>=0.3,<0.4          # VectorField + índices HNSW no Django/Postgres
@@ -54,3 +67,7 @@ black>=23.0,<24.0
 flake8>=6.1,<7.0
 isort>=5.12,<6.0
 pre-commit>=3.4,<4.0
+
+channels>=4.1,<5.0
+channels-redis>=4.2,<5.0
+daphne>=4.1,<5.0

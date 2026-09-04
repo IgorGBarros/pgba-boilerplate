@@ -63,6 +63,15 @@ class SectorOrchestratorFactory(AgentFactory):
     access_level = "sector_orchestrator"
 
 
+class ProjectFactory(DjangoModelFactory):
+    class Meta:
+        model = "agency.Project"
+
+    name = factory.Sequence(lambda n: f"projeto-{n}")
+    tenant_id = factory.Faker("uuid4")
+    status = "ready"
+
+
 class GeneralOrchestratorFactory(DjangoModelFactory):
     """Orquestrador-geral — sem setor, acesso total, medeia qualquer par de setores."""
 

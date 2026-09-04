@@ -36,3 +36,9 @@ def broadcast_agent_update(agent) -> None:
     from agency.serializers import AgentSerializer
 
     _group_send(agent.tenant_id, "agent.update", {"kind": "agent", **AgentSerializer(agent).data})
+
+
+def broadcast_pending_approval_update(pending) -> None:
+    from agency.serializers import PendingApprovalSerializer
+
+    _group_send(pending.tenant_id, "pending_approval.update", {"kind": "pending_approval", **PendingApprovalSerializer(pending).data})

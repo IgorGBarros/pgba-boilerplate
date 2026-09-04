@@ -1,0 +1,94 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs",
+              "shim",
+              "session-start"
+            ]
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs",
+              "shim",
+              "session-end"
+            ]
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs",
+              "shim",
+              "tool-before"
+            ]
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs",
+              "shim",
+              "subagent-start"
+            ]
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs",
+              "shim",
+              "stop"
+            ]
+          }
+        ]
+      }
+    ],
+    "MessageDisplay": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:\\Users\\ig0r_\\.tlc\\harness\\bin\\tlc-exec.mjs",
+              "shim",
+              "response-after"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

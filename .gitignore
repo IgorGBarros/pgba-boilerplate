@@ -25,6 +25,11 @@ dist-ssr/
 *.tsbuildinfo
 *.local
 
+# Projetos secundários criados pelo Studio (cada um com processo/porta
+# própria e seu próprio node_modules) — são saída local, não código-fonte.
+frontend/workspace/*
+!frontend/workspace/.gitkeep
+
 # === Segredos / configuração local ===
 # Nunca comitar .env real — só o .env.example fica versionado.
 .env
@@ -52,7 +57,3 @@ Thumbs.db
 *.tgz
 .turbo/
 .cache/
-
-.tlc/harness/state/
-.cursor/hooks.json
-.claude/settings.json
