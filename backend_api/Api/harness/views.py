@@ -95,11 +95,10 @@ class GenerateCodeView(TenantContextMixin, APIView):
             )
 
         provider = getattr(settings, "CHAT_PROVIDER", "ollama")
-        model = getattr(settings, "OLLAMA_CHAT_MODEL", "llama3")
 
         try:
             raw = chat_completion(
-                request.tenant_id, provider, model,
+                request.tenant_id, provider, None,  # model=None -> resolve por get_credential().default_model
                 messages=[
                     {"role": "system", "content": data.get("system_prompt") or DEFAULT_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},

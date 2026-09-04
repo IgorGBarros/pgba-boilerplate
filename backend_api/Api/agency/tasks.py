@@ -76,7 +76,6 @@ def execute_task(tenant_id, task_id) -> Task:
     broadcast_task_update(task)
 
     provider = getattr(settings, "CHAT_PROVIDER", "ollama")
-    model = getattr(settings, "OLLAMA_CHAT_MODEL", "llama3")
 
     def _finish_with_error(detail: dict):
         task.status = Task.Status.REJECTED
@@ -91,7 +90,7 @@ def execute_task(tenant_id, task_id) -> Task:
 
     try:
         raw = chat_completion(
-            tenant_id, provider, model,
+            tenant_id, provider, None,  # model=None -> resolve por get_credential().default_model
             messages=[
                 {"role": "system", "content": DEFAULT_TASK_SYSTEM_PROMPT},
                 {"role": "user", "content": task.brief},

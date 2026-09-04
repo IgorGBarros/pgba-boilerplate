@@ -77,7 +77,12 @@ class AgentViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet)
             question=data["question"],
             use_rag_context=data["use_rag_context"],
         )
-        http_status = status.HTTP_200_OK if result["status"] == "ok" else status.HTTP_502_BAD_GATEWAY
+        # "pending_approval" é um resultado NORMAL (o Policy Engine
+        # funcionou como deveria — bloqueou e criou a PendingApproval),
+        # não uma falha técnica. Só function_error/llm_error/rejected são
+        # de fato erro (o modelo/execução falhou).
+        is_success = result["status"] in ("ok", "pending_approval")
+        http_status = status.HTTP_200_OK if is_success else status.HTTP_502_BAD_GATEWAY
         return Response(result, status=http_status)
 
     @action(detail=True, methods=["post"])

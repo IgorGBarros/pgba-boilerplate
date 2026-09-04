@@ -109,6 +109,27 @@ export async function askStructured(
   });
 }
 
+export interface AgentAskResult {
+  answer: string;
+  function_called: string | null;
+  sources: { document: string; source: string }[];
+  status: "ok" | "function_error" | "llm_error" | "rejected" | "pending_approval";
+  pending_function_params?: Record<string, unknown>;
+}
+
+/**
+ * Pergunta via UM agente específico (RAG escopado ao setor dele, exceto
+ * acesso total; sujeito ao Policy Engine — se a função exigir mais
+ * autonomia do que o agente tem, `status` volta "pending_approval" em
+ * vez de executar, e a ação some pra `listPendingApprovals()`).
+ */
+export async function askAsAgent(agentId: number, question: string, useRagContext = true): Promise<AgentAskResult> {
+  return request<AgentAskResult>(`/api/v1/agency/agents/${agentId}/ask/`, {
+    method: "POST",
+    body: JSON.stringify({ question, use_rag_context: useRagContext }),
+  });
+}
+
 // --- agency (agentes & setores) -------------------------------------------
 
 export type AgentWorkStatus = "idle" | "working" | "paused";

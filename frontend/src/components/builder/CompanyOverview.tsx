@@ -15,6 +15,8 @@ import {
   Activity,
   PauseCircle,
   Wallet,
+  MessageCircle,
+  Loader2,
 } from "lucide-react";
 import {
   listAgents,
@@ -23,11 +25,13 @@ import {
   getSectorMetrics,
   listKnowledgeSources,
   createSector,
+  askAsAgent,
   type Agent,
   type Sector,
   type Project,
   type SectorMetric,
   type KnowledgeSource,
+  type AgentAskResult,
   ApiError,
 } from "@/lib/api";
 import { useRealtime } from "@/lib/useRealtime";
@@ -87,6 +91,7 @@ export default function CompanyOverview() {
   const [loading, setLoading] = useState(true);
 
   const [creatingSector, setCreatingSector] = useState(false);
+  const [askingAgent, setAskingAgent] = useState<Agent | null>(null);
   const [newSectorName, setNewSectorName] = useState("");
   const [newSectorDescription, setNewSectorDescription] = useState("");
   const [creating, setCreating] = useState(false);
@@ -262,13 +267,18 @@ export default function CompanyOverview() {
                   <p className="text-xs text-slate-500">Nenhum agente ainda.</p>
                 ) : (
                   sectorAgents.map((agent) => (
-                    <div key={agent.id} className="flex items-center gap-2 rounded-md bg-white/5 px-2 py-1.5">
+                    <button
+                      key={agent.id}
+                      onClick={() => setAskingAgent(agent)}
+                      className="flex w-full items-center gap-2 rounded-md bg-white/5 px-2 py-1.5 text-left transition hover:bg-white/10"
+                    >
                       <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[agent.work_status]}`} />
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="truncate text-xs text-slate-200">{agent.name}</p>
                         <p className="truncate text-[10px] text-slate-500">{agent.role}</p>
                       </div>
-                    </div>
+                      <MessageCircle className="h-3 w-3 shrink-0 text-slate-600" />
+                    </button>
                   ))
                 )}
               </div>
@@ -359,6 +369,100 @@ export default function CompanyOverview() {
       <div className="mx-auto flex max-w-2xl items-center gap-2 rounded-card border border-white/10 bg-black/20 px-4 py-2.5 text-[11px] text-slate-500">
         <ShieldCheck className="h-4 w-4 shrink-0 text-slate-400" />
         Isolamento por tenant · Auditoria automática · LGPD (ConsentRecord) — sempre ativos, não configuráveis por aqui
+      </div>
+
+      {askingAgent && <AskAgentModal agent={askingAgent} onClose={() => setAskingAgent(null)} />}
+    </div>
+  );
+}
+
+interface AskAgentModalProps {
+  agent: Agent;
+  onClose: () => void;
+}
+
+/**
+ * Único ponto da interface que chama agency.ask_as_agent — sem isso, o
+ * Policy Engine, os níveis de autonomia e o RAG escopado por setor
+ * nunca eram de fato exercitados por ninguém usando o Studio (só por
+ * teste automatizado ou chamada manual de API).
+ */
+function AskAgentModal({ agent, onClose }: AskAgentModalProps) {
+  const [question, setQuestion] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<AgentAskResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!question.trim()) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await askAsAgent(agent.id, question.trim());
+      setResult(res);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Falha ao perguntar ao agente.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg space-y-4 rounded-card border border-white/10 bg-surface-raised p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-100">Perguntar para {agent.name}</h3>
+            <p className="text-[11px] text-slate-500">{agent.role}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-200">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <textarea
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            rows={3}
+            required
+            autoFocus
+            placeholder="O que você quer perguntar a este agente?"
+            className="w-full resize-none rounded-md border border-white/10 bg-surface px-3 py-2 text-sm text-slate-100 focus:border-brand-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={loading || !question.trim()}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:opacity-40"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+            {loading ? "Perguntando..." : "Perguntar"}
+          </button>
+        </form>
+
+        {error && <p className="rounded-card border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>}
+
+        {result && result.status === "pending_approval" && (
+          <div className="rounded-card border border-yellow-500/20 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-400">
+            Esta ação precisa de aprovação humana antes de executar — veja a aba
+            "Aprovações". {result.answer}
+          </div>
+        )}
+
+        {result && result.status === "ok" && (
+          <div className="rounded-card border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200">
+            {result.answer}
+            {result.function_called && (
+              <p className="mt-1.5 text-[10px] text-slate-500">função usada: {result.function_called}</p>
+            )}
+          </div>
+        )}
+
+        {result && (result.status === "function_error" || result.status === "llm_error" || result.status === "rejected") && (
+          <div className="rounded-card border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">{result.answer}</div>
+        )}
       </div>
     </div>
   );

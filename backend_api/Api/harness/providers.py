@@ -90,22 +90,39 @@ def get_credential(tenant_id, provider: str) -> ResolvedCredential:
 
 
 def chat_completion(
-    tenant_id, provider: str, model: str, messages: list[dict],
+    tenant_id, provider: str, model: str | None, messages: list[dict],
     temperature: float = 0.3, json_mode: bool = False, timeout: float = 45.0,
 ) -> str:
     """
     Chamada de chat unificada. Retorna o texto da resposta (já extraído).
     Único ponto do projeto que deveria montar essa requisição — nunca
     duplicar isso em `ingestion` ou `orchestration`.
+
+    `model=None` (ou vazio) resolve o modelo pela MESMA credencial que
+    `get_credential()` já usou pra `base_url`/`api_key` — nunca uma
+    segunda fonte de configuração. Antes disso, cada chamador lia direto
+    de `settings.OLLAMA_CHAT_MODEL`, ignorando o `default_model` que
+    `configure_ai_provider`/Django admin salvam no banco: rodar o comando
+    de configuração não tinha efeito nenhum na prática, porque nada
+    olhava pro valor que ele salvava — só pro `.env`, que ninguém era
+    instruído a atualizar também.
     """
     cred = get_credential(tenant_id, provider)
 
+    resolved_model = model or cred.default_model or getattr(settings, f"{provider.upper()}_CHAT_MODEL", "")
+    if not resolved_model:
+        raise ProviderConfigError(
+            f"Nenhum modelo configurado para '{provider}' — defina em "
+            f"`configure_ai_provider --provider {provider} --model ...` "
+            f"(recomendado) ou em {provider.upper()}_CHAT_MODEL no .env."
+        )
+
     if provider == "ollama":
-        return _chat_ollama(cred, model, messages, temperature, json_mode, timeout)
+        return _chat_ollama(cred, resolved_model, messages, temperature, json_mode, timeout)
     if provider in OPENAI_COMPATIBLE:
-        return _chat_openai_compatible(cred, model, messages, temperature, json_mode, timeout)
+        return _chat_openai_compatible(cred, resolved_model, messages, temperature, json_mode, timeout)
     if provider == "anthropic":
-        return _chat_anthropic(cred, model, messages, temperature, timeout)
+        return _chat_anthropic(cred, resolved_model, messages, temperature, timeout)
 
     raise ProviderConfigError(f"Provedor '{provider}' não suportado.")
 
