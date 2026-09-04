@@ -29,7 +29,7 @@ class AgentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Agent
         fields = [
-            "id", "sector", "sector_name", "name", "role", "access_level",
+            "id", "sector", "sector_name", "name", "role", "access_level", "autonomy_level",
             "work_status", "current_task", "backlog_tasks", "last_active_at",
             "default_provider", "default_model", "created_at",
         ]

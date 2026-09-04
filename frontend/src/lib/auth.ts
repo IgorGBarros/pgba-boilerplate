@@ -6,6 +6,10 @@ export function isLoggedIn(): boolean {
   return !!localStorage.getItem(TOKEN_KEY);
 }
 
+export function getAccessToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
 export function saveTokens(access: string, refresh: string) {
   localStorage.setItem(TOKEN_KEY, access);
   localStorage.setItem(REFRESH_KEY, refresh);

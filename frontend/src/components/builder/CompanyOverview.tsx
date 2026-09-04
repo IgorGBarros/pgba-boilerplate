@@ -30,8 +30,12 @@ import {
   type KnowledgeSource,
   ApiError,
 } from "@/lib/api";
+import { useRealtime } from "@/lib/useRealtime";
 
-const POLL_INTERVAL_MS = 5000;
+// Setores/métricas/projetos/fontes mudam bem menos que work_status de
+// agente — esse poll é só uma rede de segurança agora; o status ao vivo
+// do agente vem pelo WebSocket (useRealtime), não mais por aqui.
+const POLL_INTERVAL_MS = 30000;
 
 const STATUS_DOT: Record<Agent["work_status"], string> = {
   working: "bg-green-400 animate-pulse",
@@ -116,6 +120,20 @@ export default function CompanyOverview() {
     return () => clearInterval(interval);
   }, []);
 
+  const { connected, lastAgentEvent } = useRealtime();
+
+  // Substitui o agente inteiro pela versão nova assim que o evento chega
+  // — nunca espera o próximo poll de 30s pra refletir work_status/
+  // current_task mudando.
+  useEffect(() => {
+    if (!lastAgentEvent) return;
+    setAgents((prev) => {
+      const exists = prev.some((a) => a.id === lastAgentEvent.id);
+      if (exists) return prev.map((a) => (a.id === lastAgentEvent.id ? lastAgentEvent : a));
+      return [...prev, lastAgentEvent];
+    });
+  }, [lastAgentEvent]);
+
   async function handleCreateSector() {
     if (!newSectorName.trim()) return;
     setCreating(true);
@@ -160,6 +178,13 @@ export default function CompanyOverview() {
 
   return (
     <div className="space-y-6 overflow-y-auto p-4 sm:p-6">
+      <div className="flex justify-end">
+        <span className={`flex items-center gap-1.5 text-[11px] ${connected ? "text-green-400" : "text-slate-500"}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-green-400" : "bg-slate-600"}`} />
+          {connected ? "Tempo real conectado" : "Reconectando..."}
+        </span>
+      </div>
+
       {/* Monitoramento — visão rápida de todos os agentes, sem precisar abrir cada setor */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-card border border-white/10 bg-surface-raised p-4">

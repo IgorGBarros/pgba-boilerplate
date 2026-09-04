@@ -3,8 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Text, RoundedBox } from "@react-three/drei";
 import { listAgents, listSectors, type Agent, type Sector, ApiError } from "@/lib/api";
+import { useRealtime } from "@/lib/useRealtime";
 
-const POLL_INTERVAL_MS = 5000;
+// Setor muda bem menos que work_status de agente — esse poll é rede de
+// segurança agora; o status ao vivo do agente vem pelo WebSocket.
+const POLL_INTERVAL_MS = 30000;
 const ROOM_SIZE = 6;
 const ROOM_GAP = 1.5;
 const ROOMS_PER_ROW = 3;
@@ -148,6 +151,17 @@ export default function CompanyOffice3D() {
       clearInterval(interval);
     };
   }, []);
+
+  const { lastAgentEvent } = useRealtime();
+
+  useEffect(() => {
+    if (!lastAgentEvent) return;
+    setAgents((prev) => {
+      const exists = prev.some((a) => a.id === lastAgentEvent.id);
+      if (exists) return prev.map((a) => (a.id === lastAgentEvent.id ? lastAgentEvent : a));
+      return [...prev, lastAgentEvent];
+    });
+  }, [lastAgentEvent]);
 
   const agentsBySector = useMemo(() => {
     const map = new Map<number, Agent[]>();
