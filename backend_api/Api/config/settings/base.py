@@ -135,6 +135,11 @@ EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "768"))
 CHAT_PROVIDER = os.environ.get("CHAT_PROVIDER", "ollama")  # ollama | openai | anthropic | groq | openrouter
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_CHAT_MODEL = os.environ.get("OLLAMA_CHAT_MODEL", "llama3")
+# 45s (o padrão antigo, fixo no código) era curto demais pra gerar uma
+# página inteira num modelo de alguns GB em CPU sem GPU — aumente aqui
+# se seu hardware for mais lento (ou diminua se tiver GPU e quiser falhar
+# rápido em vez de esperar).
+CHAT_TIMEOUT_SECONDS = float(os.environ.get("CHAT_TIMEOUT_SECONDS", "120"))
 
 # Credenciais de fallback lidas do .env (usadas só quando não há
 # AIProviderCredential configurada no banco — ver harness/providers.py e

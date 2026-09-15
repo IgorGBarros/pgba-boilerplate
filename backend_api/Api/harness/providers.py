@@ -91,7 +91,7 @@ def get_credential(tenant_id, provider: str) -> ResolvedCredential:
 
 def chat_completion(
     tenant_id, provider: str, model: str | None, messages: list[dict],
-    temperature: float = 0.3, json_mode: bool = False, timeout: float = 45.0,
+    temperature: float = 0.3, json_mode: bool = False, timeout: float | None = None,
 ) -> str:
     """
     Chamada de chat unificada. Retorna o texto da resposta (já extraído).
@@ -106,6 +106,11 @@ def chat_completion(
     de configuração não tinha efeito nenhum na prática, porque nada
     olhava pro valor que ele salvava — só pro `.env`, que ninguém era
     instruído a atualizar também.
+
+    `timeout=None` resolve de `CHAT_TIMEOUT_SECONDS` (.env, padrão 120s)
+    — 45s fixo era curto demais pra gerar uma página inteira num modelo
+    de alguns GB rodando em CPU sem GPU; hardware varia demais entre
+    quem usa isso pra fixar um número só que sirva pra todo mundo.
     """
     cred = get_credential(tenant_id, provider)
 
@@ -117,12 +122,14 @@ def chat_completion(
             f"(recomendado) ou em {provider.upper()}_CHAT_MODEL no .env."
         )
 
+    resolved_timeout = timeout if timeout is not None else getattr(settings, "CHAT_TIMEOUT_SECONDS", 120.0)
+
     if provider == "ollama":
-        return _chat_ollama(cred, resolved_model, messages, temperature, json_mode, timeout)
+        return _chat_ollama(cred, resolved_model, messages, temperature, json_mode, resolved_timeout)
     if provider in OPENAI_COMPATIBLE:
-        return _chat_openai_compatible(cred, resolved_model, messages, temperature, json_mode, timeout)
+        return _chat_openai_compatible(cred, resolved_model, messages, temperature, json_mode, resolved_timeout)
     if provider == "anthropic":
-        return _chat_anthropic(cred, resolved_model, messages, temperature, timeout)
+        return _chat_anthropic(cred, resolved_model, messages, temperature, resolved_timeout)
 
     raise ProviderConfigError(f"Provedor '{provider}' não suportado.")
 

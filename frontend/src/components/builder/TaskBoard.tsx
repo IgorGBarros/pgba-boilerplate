@@ -258,10 +258,25 @@ interface NewTaskModalProps {
 }
 
 function NewTaskModal({ agents, onClose, onCreated }: NewTaskModalProps) {
-  const [agentId, setAgentId] = useState<number | "">(agents[0]?.id ?? "");
+  const [agentId, setAgentId] = useState<number | "">("");
   const [brief, setBrief] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Sem isso, se o modal abrir ANTES da lista de agentes terminar de
+  // carregar (corrida comum: clicar "Nova tarefa" rápido demais depois
+  // da página abrir), `agentId` ficava travado em "" pra sempre — o
+  // `useState` só roda o valor inicial UMA vez, nunca de novo quando
+  // `agents` muda de [] pra populado. O <select> ainda MOSTRAVA um
+  // agente selecionado (comportamento nativo do HTML quando o `value`
+  // controlado não bate com nenhuma option), mas o clique em "Criar
+  // tarefa" sempre voltava silenciosamente sem mandar nada — `agentId`
+  // continuava "" por dentro, mesmo parecendo preenchido na tela.
+  useEffect(() => {
+    if (agentId === "" && agents.length > 0) {
+      setAgentId(agents[0].id);
+    }
+  }, [agents, agentId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
