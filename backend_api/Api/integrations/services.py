@@ -32,6 +32,29 @@ def get_credential(tenant_id, provider: str) -> ServiceCredential:
     return cred
 
 
+def get_project_repository(tenant_id, github_full_name: str) -> dict:
+    """
+    Confirma que um repositório existente é acessível — usado por
+    `agency.services.import_project` (registrar um projeto que já
+    existia, sem criar repositório novo). Retorna
+    {"html_url", "full_name"}.
+    """
+    from integrations.github import get_repository, GitHubError
+
+    cred = get_credential(tenant_id, ServiceCredential.Provider.GITHUB)
+
+    if "/" not in github_full_name:
+        raise IntegrationConfigError(f"'{github_full_name}' não está no formato owner/repo.")
+    owner, repo_name = github_full_name.split("/", 1)
+
+    try:
+        repo = get_repository(cred.token, owner, repo_name)
+    except GitHubError as exc:
+        raise IntegrationConfigError(str(exc)) from exc
+
+    return {"html_url": repo["html_url"], "full_name": repo["full_name"]}
+
+
 def create_project_repository(
     tenant_id, name: str, description: str = "", private: bool = True, template_files: dict[str, str] | None = None,
 ) -> dict:

@@ -121,6 +121,17 @@ class CreateProjectSerializer(serializers.Serializer):
     description = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="")
     private = serializers.BooleanField(required=False, default=True)
 
+    def validate_requesting_agent_id(self, value):
+        from agency.models import Agent
+
+        tenant_id = self.context["request"].tenant_id
+        if not Agent.objects.filter(tenant_id=tenant_id, id=value).exists():
+            raise serializers.ValidationError(
+                f"Agente {value} não existe (ou não pertence a este tenant) — confira o "
+                f"dev_agent_id no seu config.json, agentes podem ter sido recriados."
+            )
+        return value
+
     def validate_name(self, value):
         import re
 
@@ -131,6 +142,32 @@ class CreateProjectSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "name só pode conter letras, números, ponto, hífen e underscore (vira o nome do repositório GitHub)."
             )
+        return value
+
+
+class ImportProjectSerializer(serializers.Serializer):
+    requesting_agent_id = serializers.IntegerField()
+    name = serializers.CharField(max_length=100)
+    description = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="")
+
+    def validate_requesting_agent_id(self, value):
+        from agency.models import Agent
+
+        tenant_id = self.context["request"].tenant_id
+        if not Agent.objects.filter(tenant_id=tenant_id, id=value).exists():
+            raise serializers.ValidationError(
+                f"Agente {value} não existe (ou não pertence a este tenant) — confira o "
+                f"dev_agent_id no seu config.json, agentes podem ter sido recriados."
+            )
+        return value
+    github_full_name = serializers.CharField(max_length=200)
+
+    def validate_github_full_name(self, value):
+        import re
+
+        value = (value or "").strip()
+        if not re.match(r"^[\w.-]+/[\w.-]+$", value):
+            raise serializers.ValidationError("github_full_name precisa estar no formato owner/repo.")
         return value
 
 

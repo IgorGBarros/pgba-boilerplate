@@ -33,6 +33,31 @@ def _headers(token: str) -> dict:
     }
 
 
+def get_repository(token: str, owner: str, repo: str) -> dict:
+    """
+    Confirma que um repositório existe de verdade e retorna o JSON da
+    API (`html_url`, `full_name`, etc.) — usado por `import_project`
+    pra nunca marcar um projeto como pronto sem checar a realidade
+    primeiro (mesmo princípio de `create_repository`: nunca confiar
+    cegamente no que foi digitado).
+    """
+    url = f"{GITHUB_API}/repos/{owner}/{repo}"
+    try:
+        resp = httpx.get(url, headers=_headers(token), timeout=20.0)
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPStatusError as exc:
+        if exc.response is not None and exc.response.status_code == 404:
+            raise GitHubError(
+                f"Repositório '{owner}/{repo}' não encontrado — confira se o nome está "
+                f"certo e se o token configurado tem acesso a ele."
+            ) from exc
+        detail = exc.response.json().get("message", exc.response.text) if exc.response is not None else str(exc)
+        raise GitHubError(f"Falha ao consultar repositório: {detail}") from exc
+    except httpx.HTTPError as exc:
+        raise GitHubError(f"Falha ao consultar repositório: {exc}") from exc
+
+
 def create_repository(
     token: str, name: str, description: str = "", private: bool = True, org: str | None = None,
 ) -> dict:

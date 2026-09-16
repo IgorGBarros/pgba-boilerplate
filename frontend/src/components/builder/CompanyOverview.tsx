@@ -260,6 +260,15 @@ export default function CompanyOverview() {
               <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2.5">
                 <Icon className="h-4 w-4 shrink-0 text-brand-500" />
                 <p className="truncate text-sm font-semibold text-slate-100">{sector.name}</p>
+                <span
+                  className={`ml-auto flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] ${
+                    sector.knowledge_source_name ? "bg-green-500/15 text-green-400" : "bg-slate-500/15 text-slate-500"
+                  }`}
+                  title={sector.knowledge_source_name ? `RAG: ${sector.knowledge_source_name}` : "Sem fonte de conhecimento configurada"}
+                >
+                  <Database className="h-2.5 w-2.5" />
+                  {sector.knowledge_source_name ?? "sem RAG"}
+                </span>
               </div>
 
               <div className="flex-1 space-y-1.5 p-3">

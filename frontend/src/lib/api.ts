@@ -168,6 +168,7 @@ export interface Sector {
   description: string;
   monthly_budget_usd: string;
   knowledge_source: number | null;
+  knowledge_source_name: string | null;
   agents_count: number;
 }
 
@@ -250,6 +251,24 @@ export async function createProject(params: {
       name: params.name,
       description: params.description ?? "",
       private: !params.isPublic,
+    }),
+  });
+}
+
+/** Registra um projeto que JÁ EXISTIA — nunca cria repositório novo, confirma de verdade que o repositório é acessível antes de marcar como pronto. */
+export async function importProject(params: {
+  requestingAgentId: number;
+  name: string;
+  githubFullName: string;
+  description?: string;
+}): Promise<Project> {
+  return request<Project>("/api/v1/agency/projects/import/", {
+    method: "POST",
+    body: JSON.stringify({
+      requesting_agent_id: params.requestingAgentId,
+      name: params.name,
+      github_full_name: params.githubFullName,
+      description: params.description ?? "",
     }),
   });
 }
@@ -374,5 +393,96 @@ export async function decidePendingApproval(pendingId: number, approved: boolean
   return request<PendingApproval>(`/api/v1/agency/pending-approvals/${pendingId}/decide/`, {
     method: "POST",
     body: JSON.stringify({ approved }),
+  });
+}
+
+// --- agency: policy rules (governança configurável, §13) --------------
+
+export type PolicyRuleRisk = "medium" | "high" | "critical";
+
+export interface PolicyRule {
+  id: number;
+  sector: number | null;
+  sector_name: string | null;
+  risk: PolicyRuleRisk;
+  min_autonomy_level: AgentAutonomyLevel;
+  description: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export async function listPolicyRules(): Promise<PolicyRule[]> {
+  return requestList<PolicyRule>("/api/v1/agency/policy-rules/");
+}
+
+export async function createPolicyRule(params: {
+  sector: number | null;
+  risk: PolicyRuleRisk;
+  minAutonomyLevel: AgentAutonomyLevel;
+  description?: string;
+}): Promise<PolicyRule> {
+  return request<PolicyRule>("/api/v1/agency/policy-rules/", {
+    method: "POST",
+    body: JSON.stringify({
+      sector: params.sector,
+      risk: params.risk,
+      min_autonomy_level: params.minAutonomyLevel,
+      description: params.description ?? "",
+    }),
+  });
+}
+
+export async function updatePolicyRule(id: number, params: { isActive: boolean }): Promise<PolicyRule> {
+  return request<PolicyRule>(`/api/v1/agency/policy-rules/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_active: params.isActive }),
+  });
+}
+
+export async function deletePolicyRule(id: number): Promise<void> {
+  await request<void>(`/api/v1/agency/policy-rules/${id}/`, { method: "DELETE" });
+}
+
+// --- agency: comunicação entre setores (sempre mediada) ----------------
+
+export type SectorMessageStatus = "pending" | "answered" | "rejected";
+
+export interface SectorMessage {
+  id: number;
+  from_agent: number;
+  from_agent_name: string;
+  to_sector: number;
+  to_sector_name: string;
+  relayed_by: number | null;
+  relayed_by_name: string | null;
+  content: string;
+  response: string;
+  status: SectorMessageStatus;
+  rejection_reason: string;
+  created_at: string;
+  answered_at: string | null;
+}
+
+export async function listSectorMessages(status?: SectorMessageStatus): Promise<SectorMessage[]> {
+  const query = status ? `?status=${status}` : "";
+  return requestList<SectorMessage>(`/api/v1/agency/sector-messages/${query}`);
+}
+
+/** Só registra o pedido (status=pending) — precisa de relay() por um orquestrador pra ser respondida. */
+export async function requestSectorMessage(fromAgentId: number, toSectorId: number, content: string): Promise<SectorMessage> {
+  return request<SectorMessage>("/api/v1/agency/sector-messages/request/", {
+    method: "POST",
+    body: JSON.stringify({ from_agent_id: fromAgentId, to_sector_id: toSectorId, content }),
+  });
+}
+
+/** relayingAgentId precisa ter can_relay=true (sector_orchestrator/general_orchestrator/ceo) — operacional é rejeitado com 403. */
+export async function relaySectorMessage(messageId: number, relayingAgentId: number, answeringAgentId?: number): Promise<SectorMessage> {
+  return request<SectorMessage>(`/api/v1/agency/sector-messages/${messageId}/relay/`, {
+    method: "POST",
+    body: JSON.stringify({
+      relaying_agent_id: relayingAgentId,
+      ...(answeringAgentId ? { answering_agent_id: answeringAgentId } : {}),
+    }),
   });
 }

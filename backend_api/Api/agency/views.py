@@ -10,7 +10,7 @@ from agency.models import Sector, Agent, SectorMessage, Project, PendingApproval
 from agency.serializers import (
     SectorSerializer, AgentSerializer, AskAsAgentSerializer,
     SectorMessageSerializer, RequestCrossSectorSerializer, RelayMessageSerializer,
-    ProjectSerializer, CreateProjectSerializer,
+    ProjectSerializer, CreateProjectSerializer, ImportProjectSerializer,
     PolicyRuleSerializer, PendingApprovalSerializer, DecidePendingApprovalSerializer,
     TaskSerializer, CreateTaskSerializer, InterruptTaskSerializer, AdaptTaskSerializer,
     ApproveTaskSerializer, RejectTaskSerializer,
@@ -23,6 +23,7 @@ from agency.services import (
     request_cross_sector_message,
     relay_message,
     create_project,
+    import_project,
     decide_pending_approval,
     AccessDeniedError,
     get_overview,
@@ -187,7 +188,7 @@ class ProjectViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ReadOnlyMod
         status vem como `failed` com `error_message` preenchido, nunca
         um 500 cru (ver `agency.services.create_project`).
         """
-        serializer = CreateProjectSerializer(data=request.data)
+        serializer = CreateProjectSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
@@ -197,6 +198,37 @@ class ProjectViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ReadOnlyMod
             name=data["name"],
             description=data.get("description", ""),
             private=data.get("private", True),
+        )
+        return Response(ProjectSerializer(project).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["post"], url_path="import")
+    def import_project_action(self, request):
+        """
+        POST /api/v1/agency/projects/import/
+        {
+          "requesting_agent_id": 1,
+          "name": "projeto-que-ja-existia",
+          "github_full_name": "SeuUsuario/repo-que-ja-existe",
+          "description": "opcional"
+        }
+
+        Registra um projeto QUE JÁ EXISTIA — nunca cria repositório
+        novo, nunca envia template. Confirma que o repositório é
+        acessível de verdade antes de marcar como pronto (ver
+        `agency.services.import_project`). Mesmo contrato de resposta
+        do `create/`: sempre 201, `status=failed` com `error_message`
+        em vez de erro cru se o repositório não for encontrado.
+        """
+        serializer = ImportProjectSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        project = import_project(
+            tenant_id=request.tenant_id,
+            requesting_agent_id=data["requesting_agent_id"],
+            name=data["name"],
+            github_full_name=data["github_full_name"],
+            description=data.get("description", ""),
         )
         return Response(ProjectSerializer(project).data, status=status.HTTP_201_CREATED)
 

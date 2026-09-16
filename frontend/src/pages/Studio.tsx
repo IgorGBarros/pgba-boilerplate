@@ -1,6 +1,6 @@
 // frontend/src/pages/Studio.tsx
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { Rocket, Sparkles, Building2, Box, Plus, Circle, AlertTriangle, ListChecks, ShieldAlert } from "lucide-react";
+import { Rocket, Sparkles, Building2, Box, Plus, Circle, AlertTriangle, ListChecks, ShieldAlert, ShieldCheck, MessagesSquare } from "lucide-react";
 import ChatPanel from "@/components/builder/ChatPanel";
 import PreviewPanel from "@/components/builder/PreviewPanel";
 import HistorySidebar from "@/components/builder/HistorySidebar";
@@ -9,6 +9,8 @@ import SettingsModal from "@/components/builder/SettingsModal";
 import CompanyOverview from "@/components/builder/CompanyOverview";
 import TaskBoard from "@/components/builder/TaskBoard";
 import ApprovalsQueue from "@/components/builder/ApprovalsQueue";
+import PolicyRulesPanel from "@/components/builder/PolicyRulesPanel";
+import SectorMessagesPanel from "@/components/builder/SectorMessagesPanel";
 import NewProjectModal from "@/components/builder/NewProjectModal";
 import { useChatPersistence } from "@/hooks/useChatPersistence";
 import { useSettings } from "@/hooks/useSettings";
@@ -37,7 +39,7 @@ const CompanyOffice3D = lazy(() => import("@/components/builder/CompanyOffice3D"
 // outro iframe apontando pra si mesma — a recursão visual que aparecia
 // na tela quando "Principal" estava selecionado).
 const PRINCIPAL_URL = "http://localhost:5173/?embed=1&tab=pages";
-type StudioView = "generate" | "company" | "office3d" | "tasks" | "approvals";
+type StudioView = "generate" | "company" | "office3d" | "tasks" | "approvals" | "policies" | "messages";
 
 /**
  * Painel principal do sistema (ver CLAUDE.md).
@@ -335,6 +337,24 @@ export default function Studio() {
               <ShieldAlert className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Aprovações</span>
             </button>
+            <button
+              onClick={() => setView("policies")}
+              className={`flex items-center gap-1.5 rounded-card px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
+                view === "policies" ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5"
+              }`}
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Políticas</span>
+            </button>
+            <button
+              onClick={() => setView("messages")}
+              className={`flex items-center gap-1.5 rounded-card px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
+                view === "messages" ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5"
+              }`}
+            >
+              <MessagesSquare className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Mensagens</span>
+            </button>
           </div>
 
           <button
@@ -365,6 +385,8 @@ export default function Studio() {
         )}
         {view === "tasks" && <TaskBoard />}
         {view === "approvals" && <ApprovalsQueue />}
+        {view === "policies" && <PolicyRulesPanel />}
+        {view === "messages" && <SectorMessagesPanel />}
       </div>
 
       <CommandPalette

@@ -23,7 +23,7 @@ from django.utils import timezone
 
 from agency.models import Sector, Agent, AgentInteraction, SectorMessage, Project, PendingApproval
 from agency.realtime import broadcast_pending_approval_update
-from integrations.services import create_project_repository, IntegrationConfigError
+from integrations.services import create_project_repository, get_project_repository, IntegrationConfigError
 from orchestration import registry
 
 # Preço aproximado por 1K tokens (entrada+saída médio), só para dar uma
@@ -391,6 +391,42 @@ def create_project(
         repo = create_project_repository(
             tenant_id, name=name, description=description, private=private, template_files=template_files,
         )
+    except IntegrationConfigError as exc:
+        project.status = Project.Status.FAILED
+        project.error_message = str(exc)
+        project.save(update_fields=["status", "error_message"])
+        return project
+
+    project.status = Project.Status.READY
+    project.github_repo_url = repo["html_url"]
+    project.github_full_name = repo["full_name"]
+    project.save(update_fields=["status", "github_repo_url", "github_full_name"])
+    return project
+
+
+def import_project(
+    tenant_id, requesting_agent_id, name: str, github_full_name: str, description: str = "",
+) -> Project:
+    """
+    Registra um projeto que JÁ EXISTIA (repositório GitHub real, criado
+    por fora do PGBA) na gestão do sistema — nunca cria repositório
+    novo, nunca envia template. Diferente de `create_project`: aqui
+    `github_full_name` vem de quem chama, não é gerado.
+
+    Confirma que o repositório existe de verdade (`get_project_repository`)
+    antes de marcar como pronto — nunca grava `status=ready` só porque
+    o nome foi digitado, sem checar a API do GitHub.
+
+    Mesmo padrão de nunca levantar exceção pro chamador: grava
+    `status=failed` + `error_message` e retorna assim mesmo.
+    """
+    project = Project.objects.create(
+        tenant_id=tenant_id, name=name, description=description,
+        requested_by_id=requesting_agent_id, status=Project.Status.PENDING,
+    )
+
+    try:
+        repo = get_project_repository(tenant_id, github_full_name)
     except IntegrationConfigError as exc:
         project.status = Project.Status.FAILED
         project.error_message = str(exc)
