@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -238,6 +239,16 @@ def build_context_prompt(chunks: Iterable[RetrievedChunk]) -> str:
 # Sincronização do Obsidian
 # ---------------------------------------------------------------------------
 
+def _json_safe_frontmatter(value):
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _json_safe_frontmatter(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe_frontmatter(v) for v in value]
+    return value
+
+
 def sync_obsidian_source(source) -> dict:
     """
     Varre o vault do Obsidian configurado em `source.config['vault_path']`,
@@ -293,7 +304,7 @@ def sync_obsidian_source(source) -> dict:
                 "title": post.metadata.get("title") or md_file.stem,
                 "content": post.content,
                 "content_hash": content_hash,
-                "metadata": {"frontmatter": post.metadata, "tags": list(note_tags)},
+                "metadata": {"frontmatter": _json_safe_frontmatter(post.metadata), "tags": list(note_tags)},
                 "status": Document.Status.PENDING,
             },
         )
@@ -310,7 +321,7 @@ def sync_obsidian_source(source) -> dict:
         document.title = post.metadata.get("title") or md_file.stem
         document.content = post.content
         document.content_hash = content_hash
-        document.metadata = {"frontmatter": post.metadata, "tags": list(note_tags)}
+        document.metadata = {"frontmatter": _json_safe_frontmatter(post.metadata), "tags": list(note_tags)}
         document.status = Document.Status.PENDING
         document.save()
         index_document(document)
