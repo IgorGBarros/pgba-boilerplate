@@ -229,6 +229,12 @@ class InterruptTaskSerializer(serializers.Serializer):
     instructions = serializers.CharField(max_length=2000)
 
 
+class ReportTaskResultSerializer(serializers.Serializer):
+    success = serializers.BooleanField()
+    result = serializers.JSONField(default=dict)
+    current_files = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+
+
 class AdaptTaskSerializer(serializers.Serializer):
     new_brief = serializers.CharField(max_length=4000)
 

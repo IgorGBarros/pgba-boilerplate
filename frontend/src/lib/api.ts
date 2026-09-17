@@ -365,6 +365,26 @@ export async function rejectTask(taskId: number, reason?: string): Promise<Task>
   });
 }
 
+/**
+ * Fecha uma Task cujo trabalho de verdade aconteceu FORA do Django —
+ * hoje, geração de página via devserver/generator.mjs (Node, roda
+ * typecheck/lint de verdade, fora do alcance do backend Python). Nunca
+ * chama modelo nenhum no backend — só registra o que já aconteceu.
+ */
+export async function reportTaskResult(
+  taskId: number,
+  params: { success: boolean; result: Record<string, unknown>; currentFiles?: string[] },
+): Promise<Task> {
+  return request<Task>(`/api/v1/agency/tasks/${taskId}/report-result/`, {
+    method: "POST",
+    body: JSON.stringify({
+      success: params.success,
+      result: params.result,
+      current_files: params.currentFiles ?? [],
+    }),
+  });
+}
+
 // --- agency: pending approvals (policy engine) ------------------------
 
 export interface PendingApproval {

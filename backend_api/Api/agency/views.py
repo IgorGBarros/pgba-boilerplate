@@ -12,11 +12,11 @@ from agency.serializers import (
     SectorMessageSerializer, RequestCrossSectorSerializer, RelayMessageSerializer,
     ProjectSerializer, CreateProjectSerializer, ImportProjectSerializer,
     PolicyRuleSerializer, PendingApprovalSerializer, DecidePendingApprovalSerializer,
-    TaskSerializer, CreateTaskSerializer, InterruptTaskSerializer, AdaptTaskSerializer,
+    TaskSerializer, CreateTaskSerializer, InterruptTaskSerializer, AdaptTaskSerializer, ReportTaskResultSerializer,
     ApproveTaskSerializer, RejectTaskSerializer,
 )
 from agency.tasks import (
-    create_task, execute_task, interrupt_task, adapt_and_resume, approve_task, reject_task, TaskStateError,
+    create_task, execute_task, interrupt_task, adapt_and_resume, approve_task, reject_task, report_task_result, TaskStateError,
 )
 from agency.services import (
     ask_as_agent,
@@ -317,6 +317,28 @@ class TaskViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         except ProviderConfigError as exc:
             return Response({"detail": f"Falha ao consultar o modelo: {exc}"}, status=502)
+        return Response(TaskSerializer(updated).data)
+
+    @action(detail=True, methods=["post"], url_path="report-result")
+    def report_result(self, request, pk=None):
+        """
+        POST tasks/{id}/report-result/ — {"success": bool, "result": {...}, "current_files": [...]}
+
+        Pra trabalho que aconteceu FORA do Django (hoje: geracao de
+        pagina via generator.mjs no devserver, que roda typecheck/lint
+        de verdade em Node — o backend Python nao tem como fazer isso).
+        Nunca chama modelo nenhum aqui, so registra o que ja aconteceu.
+        """
+        task = self.get_object()
+        serializer = ReportTaskResultSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            updated = report_task_result(
+                request.tenant_id, task.id, data["success"], data["result"], data.get("current_files"),
+            )
+        except TaskStateError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response(TaskSerializer(updated).data)
 
     @action(detail=True, methods=["post"])

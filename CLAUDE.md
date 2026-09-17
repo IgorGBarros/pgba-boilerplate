@@ -384,6 +384,47 @@ sempre libera o agente (`work_status` volta a `idle`) — nunca fica
 `reject_task` esperam (aceitam qualquer status que não seja
 `APPROVED`/`REJECTED`).
 
+**`report_task_result()`** é o caminho alternativo a `execute_task()` —
+pra quando o trabalho real de uma Task acontece **fora do Django**
+(hoje, o único caso real: geração de página via
+`frontend/scripts/generator.mjs` no devserver, que roda Node de verdade
+com acesso a sistema de arquivo e `npm run typecheck`/`lint` — o backend
+Python não tem como fazer isso). Nunca chama modelo nenhum aqui, só
+registra um resultado que já aconteceu:
+`POST /api/v1/agency/tasks/{id}/report-result/` com
+`{"success": bool, "result": {...}, "current_files": [...]}` — mesmas
+regras de estado de `execute_task` (só a partir de `CREATED`/`ADAPTED`,
+libera o agente ao final, publica em tempo real).
+
+### Setor "Desenvolvimento" e hierarquia de comunicação humano→agentes
+
+Diferente dos outros 5 setores (que modelam a **empresa cliente**, ver
+"Primeiro Vertical" no documento original), `Desenvolvimento` modela o
+time que constrói **este próprio boilerplate** — criado via
+`seed_company.py` junto com `Orquestrador de Desenvolvimento`
+(`access_level=sector_orchestrator`), `AI Backend` e `AI Frontend`
+(ambos `operational`).
+
+**Regra de comunicação, definida pelo operador humano** (não é uma
+constraint técnica nova — reaproveita 100% o `SectorMessage`/`relay()`
+que já existe, testado, seção 7 acima): o humano só fala diretamente com
+o `Orquestrador de Desenvolvimento`. Se o pedido é sobre o próprio
+boilerplate, o orquestrador trata dentro do próprio time
+(`AI Backend`/`AI Frontend`, ou delega pro Claude Code local rodar de
+verdade). Se o pedido pertence a outro setor, ele usa
+`request_cross_sector_message()` + `relay_message()` pra passar pro
+orquestrador daquele setor — nunca o humano fala direto com o time de
+outro setor, nunca um agente operacional media (`can_relay=False`
+sempre rejeita com 403, já testado).
+
+A tela "Gerar" do Studio ainda não cria uma `Task` real pro
+`AI Frontend` antes de chamar o devserver — isso está identificado como
+lacuna, não implementado ainda (ver seção "O que este boilerplate
+deliberadamente NÃO faz"). O pipeline de geração em si
+(`generator.mjs`) já funciona e já valida de verdade (typecheck →
+autocorreção → lint) — a lacuna é só a ausência de `Task`/`Agent`
+envolvidos, não o pipeline de geração em si.
+
 ### Tempo real (Django Channels) — substitui polling, não convive com ele
 
 Toda mudança de `Task`/`Agent.work_status` é publicada via WebSocket
@@ -625,3 +666,44 @@ tarefa incompleta, não como "pronto com ressalvas".
   pipeline (`orchestration`) só responde perguntas; qualquer ação
   (escrever, cobrar, cancelar) deve ser implementada com confirmação
   humana explícita na camada de vertical.
+
+## 13. Aviso pra qualquer agente de código lendo isto — nunca invente rota/comando
+
+Já aconteceu, de verdade, nesta base: um agente rodando com um modelo
+local via Ollama (`-Provider ollama` no perfil PowerShell) recebeu uma
+descrição do sistema e devolveu um "plano técnico" **plausível, bem
+formatado, e majoritariamente inventado** — rotas, comandos e conceitos
+que soam exatamente como algo que existiria aqui, mas nunca foram
+escritos em nenhum arquivo. O padrão: ele acerta o diagnóstico
+conceitual (ex: "a geração de página está desconectada dos agentes") e
+erra a implementação específica (rotas, nomes de comando) sempre que não
+leu o arquivo real primeiro — texto plausível preenchendo a lacuna de
+não ter checado.
+
+**Regra pra qualquer agente (Claude Code local incluso), antes de
+afirmar como algo funciona**: rode `grep`/leia o arquivo real primeiro.
+Nunca proponha uma rota, comando de management ou nome de função sem
+confirmar que ele existe (`grep -rn "nome" backend_api/Api/`). Se não
+achar, diga explicitamente "isso não existe ainda" em vez de descrever
+como se existisse.
+
+Confirmado, por grep real no código, que **não existem** (não invente
+implementação em cima disso, mesmo que pareça fazer sentido):
+
+- `POST /projects/{id}/activate` ou qualquer rota de "trocar de tenant"
+  — trocar de projeto ativo é responsabilidade do **frontend** (estado
+  local de qual `agency.Project` está selecionado), nunca uma troca de
+  variável de ambiente global no backend. O tenant vem do JWT do
+  usuário logado, não é algo que se "troca" numa sessão.
+- `POST /harness/delegate/` — delegação entre setores é
+  `agency.services.request_cross_sector_message()` +
+  `relay_message()` (endpoints reais: `sector-messages/request/` e
+  `sector-messages/{id}/relay/`), nada em `harness/`.
+- `configure_ai_provider` escolhendo gateway de pagamento — esse
+  comando só configura credencial de IA (`AIProviderCredential`).
+  `payments/` é stub vazio (ver seção 12), sem nenhum comando de
+  configuração ainda.
+- Qualquer conceito de "identidade visual por projeto lida de
+  `tailwind.config.ts` dinamicamente" — não existe no modelo
+  `agency.Project`; o design de cada tela é responsabilidade da skill
+  em `frontend/.agent/SKILL.md`, não um dado armazenado por projeto.

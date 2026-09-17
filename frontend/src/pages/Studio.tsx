@@ -1,6 +1,6 @@
 // frontend/src/pages/Studio.tsx
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { Rocket, Sparkles, Building2, Box, Plus, Circle, AlertTriangle, ListChecks, ShieldAlert, ShieldCheck, MessagesSquare } from "lucide-react";
+import { Rocket, Sparkles, Building2, Box, Plus, Circle, AlertTriangle, ListChecks, ShieldAlert, ShieldCheck, MessagesSquare, Download } from "lucide-react";
 import ChatPanel from "@/components/builder/ChatPanel";
 import PreviewPanel from "@/components/builder/PreviewPanel";
 import HistorySidebar from "@/components/builder/HistorySidebar";
@@ -12,8 +12,10 @@ import ApprovalsQueue from "@/components/builder/ApprovalsQueue";
 import PolicyRulesPanel from "@/components/builder/PolicyRulesPanel";
 import SectorMessagesPanel from "@/components/builder/SectorMessagesPanel";
 import NewProjectModal from "@/components/builder/NewProjectModal";
+import ImportProjectModal from "@/components/builder/ImportProjectModal";
 import { useChatPersistence } from "@/hooks/useChatPersistence";
 import { useSettings } from "@/hooks/useSettings";
+import { listAgents, createTask, reportTaskResult, type Agent } from "@/lib/api";
 import {
   connectGenerateStream,
   triggerGeneratePage,
@@ -65,7 +67,7 @@ export default function Studio() {
   const { messages, setMessages, history, clearAndArchive, deleteConversation, restoreConversation } = useChatPersistence();
   const { settings, updateSettings, resetSettings } = useSettings();
 
-  const [view, setView] = useState<StudioView>("generate");
+  const [view, setView] = useState<StudioView>("company");
   const [activeProject, setActiveProject] = useState<string | null>(null); // null = Principal
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [logs, setLogs] = useState<GenerateLogEvent[]>([]);
@@ -76,9 +78,16 @@ export default function Studio() {
   const [isTerminalOpen, setIsTerminalOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [importProjectOpen, setImportProjectOpen] = useState(false);
   const [companyRefreshKey, setCompanyRefreshKey] = useState(0);
   const [startingProject, setStartingProject] = useState<string | null>(null);
   const [devServerDown, setDevServerDown] = useState(false);
+  // Achado uma vez, no mount — usado pra criar uma Task real antes de
+  // gerar página (ver handleSend). Se ficar null (seed_company nunca
+  // rodou, ou o agente foi renomeado), handleSend cai de volta pro
+  // comportamento antigo, sem Task nenhuma — nunca bloqueia a geração
+  // por causa disso, governança é aditiva aqui, não um portão.
+  const [frontendAgentId, setFrontendAgentId] = useState<number | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const activeWorkspace = workspaces.find((w) => w.name === activeProject) ?? null;
@@ -114,6 +123,18 @@ export default function Studio() {
     refreshFiles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProject]);
+
+  useEffect(() => {
+    listAgents()
+      .then((agents) => {
+        const frontend = agents.find((a: Agent) => a.name === "AI Frontend");
+        if (frontend) setFrontendAgentId(frontend.id);
+      })
+      .catch(() => {
+        // Silencioso de propósito — sem agente, handleSend só não cria
+        // Task, gera a página igual sempre gerou.
+      });
+  }, []);
 
   function addMessage(msg: Omit<ChatMessage, "id" | "timestamp">) {
     setMessages((prev) => [...prev, { ...msg, id: crypto.randomUUID(), timestamp: new Date() }]);
@@ -180,6 +201,24 @@ export default function Studio() {
     addMessage({ type: "plan", content: "Planejando e gerando a página..." });
     setIsLoading(true);
 
+    // Task real pro AI Frontend ANTES de gerar — assim a governança
+    // (aba Tarefas, aprovação) vê isso desde o início, não só depois de
+    // pronto. Nunca bloqueia a geração: se o agente não foi achado (ver
+    // useEffect acima) ou a criação falhar por qualquer motivo, segue
+    // sem Task nenhuma — exatamente o comportamento de antes desta
+    // mudança.
+    let taskId: number | null = null;
+    if (frontendAgentId !== null) {
+      try {
+        const task = await createTask({ agentId: frontendAgentId, brief: prompt, taskType: "gerar_pagina" });
+        taskId = task.id;
+      } catch {
+        // Silencioso de propósito — geração de página não deveria falhar
+        // só porque o registro de governança falhou.
+      }
+    }
+
+    const generatedFiles: string[] = [];
     const jobId = `job_${Date.now()}`;
     const accessToken = localStorage.getItem("pgba_access_token") ?? undefined;
 
@@ -188,6 +227,7 @@ export default function Studio() {
 
       if (event.stage === "write") {
         addMessage({ type: "assistant", content: event.message, fileName: event.result?.filePath });
+        if (event.result?.filePath) generatedFiles.push(event.result.filePath);
       } else if (event.stage === "validate" && event.message.includes("falhou")) {
         addMessage({ type: "fix", content: event.message });
       } else if (event.stage === "done") {
@@ -196,10 +236,23 @@ export default function Studio() {
         setIsLoading(false);
         refreshFiles();
         source.close();
+        if (taskId !== null) {
+          reportTaskResult(taskId, {
+            success: true,
+            result: { summary: "Página gerada e validada (typecheck/lint) com sucesso.", prompt },
+            currentFiles: generatedFiles,
+          }).catch(() => {
+            // Idem — falha ao registrar nunca deveria desfazer uma
+            // geração que já funcionou.
+          });
+        }
       } else if (event.stage === "error") {
         addMessage({ type: "error", content: event.message });
         setIsLoading(false);
         source.close();
+        if (taskId !== null) {
+          reportTaskResult(taskId, { success: false, result: { error: event.message } }).catch(() => {});
+        }
       }
     });
     eventSourceRef.current = source;
@@ -207,9 +260,13 @@ export default function Studio() {
     try {
       await triggerGeneratePage({ jobId, prompt, accessToken, workspace: activeProject ?? undefined });
     } catch (err) {
-      addMessage({ type: "error", content: err instanceof Error ? err.message : "Falha ao iniciar geração." });
+      const message = err instanceof Error ? err.message : "Falha ao iniciar geração.";
+      addMessage({ type: "error", content: message });
       setIsLoading(false);
       source.close();
+      if (taskId !== null) {
+        reportTaskResult(taskId, { success: false, result: { error: message } }).catch(() => {});
+      }
     }
   }
 
@@ -357,14 +414,24 @@ export default function Studio() {
             </button>
           </div>
 
-          <button
-            onClick={() => setNewProjectOpen(true)}
-            className="flex shrink-0 items-center gap-1.5 rounded-card bg-brand-500 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-700 sm:px-3"
-            title="Cria um repositório GitHub real com o template simple-commercial (independente do projeto local selecionado acima)"
-          >
-            <Rocket className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Publicar no GitHub</span>
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => setImportProjectOpen(true)}
+              className="flex items-center gap-1.5 rounded-card border border-white/10 px-2.5 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/5 sm:px-3"
+              title="Registra um repositório GitHub que já existe (nunca cria um novo) — mesmo new-pgba -Import do PowerShell"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Importar Projeto</span>
+            </button>
+            <button
+              onClick={() => setNewProjectOpen(true)}
+              className="flex items-center gap-1.5 rounded-card bg-brand-500 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-700 sm:px-3"
+              title="Cria um repositório GitHub real com o template simple-commercial (independente do projeto local selecionado acima)"
+            >
+              <Rocket className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Publicar no GitHub</span>
+            </button>
+          </div>
         </div>
 
         {view === "generate" && (
@@ -399,6 +466,7 @@ export default function Studio() {
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onUpdate={updateSettings} onReset={resetSettings} />
 
       <NewProjectModal isOpen={newProjectOpen} onClose={() => setNewProjectOpen(false)} onCreated={() => setCompanyRefreshKey((k) => k + 1)} />
+      <ImportProjectModal isOpen={importProjectOpen} onClose={() => setImportProjectOpen(false)} onImported={() => setCompanyRefreshKey((k) => k + 1)} />
     </div>
   );
 }

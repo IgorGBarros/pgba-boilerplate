@@ -28,6 +28,11 @@ SECTORS = [
     ("Compras", "Sourcing de fornecedores, RFQ, cotacoes, pedidos de compra."),
     ("Financeiro", "Contas a pagar/receber, fluxo de caixa, margem."),
     ("Controladoria", "Governanca, politicas, auditoria, compliance."),
+    # Diferente dos 5 acima (que modelam a EMPRESA CLIENTE, ver "Primeiro
+    # Vertical" secao 45), este modela o desenvolvimento do proprio PGBA
+    # Boilerplate — o unico setor que o usuario humano fala diretamente
+    # (ver CLAUDE.md, "Hierarquia de comunicacao de desenvolvimento").
+    ("Desenvolvimento", "Desenvolvimento do proprio PGBA Boilerplate e automacoes internas."),
 ]
 
 # (nome do agente, cargo, setor ou None, access_level)
@@ -44,6 +49,14 @@ AGENTS = [
     # O setor "Controladoria" continua existindo — so nao e a "casa" fixa
     # deste agente especifico.
     ("AI Controller", "Controller", None, Agent.AccessLevel.GENERAL_ORCHESTRATOR),
+    # Unico ponto de contato do usuario humano para trabalho de
+    # desenvolvimento — sector_orchestrator porque ele PRECISA poder
+    # relayar (SectorMessage.relay, ver agency/services.py) pedidos que
+    # sejam de outro setor pro orquestrador daquele setor, nunca falar
+    # direto com o time de outro setor.
+    ("Orquestrador de Desenvolvimento", "Orquestrador Dev", "Desenvolvimento", Agent.AccessLevel.SECTOR_ORCHESTRATOR),
+    ("AI Backend", "Backend", "Desenvolvimento", Agent.AccessLevel.OPERATIONAL),
+    ("AI Frontend", "Frontend", "Desenvolvimento", Agent.AccessLevel.OPERATIONAL),
 ]
 
 

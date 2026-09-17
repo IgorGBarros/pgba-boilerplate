@@ -141,6 +141,43 @@ def update_progress(tenant_id, task_id, progress: float) -> Task:
     return task
 
 
+def report_task_result(
+    tenant_id, task_id, success: bool, result: dict, current_files: list | None = None,
+) -> Task:
+    """
+    Fecha uma Task cujo trabalho de verdade aconteceu FORA do Django —
+    hoje, o único caso real é geração de página (`generator.mjs` no
+    devserver: escreve arquivo, roda typecheck/lint/autocorreção, tudo
+    em Node, fora do alcance do backend Python). Diferente de
+    `execute_task` (que chama `chat_completion` e SEMPRE produz o
+    resultado aqui dentro), esta função só REGISTRA um resultado que já
+    aconteceu — nunca invoca modelo nenhum.
+
+    Só aceita a partir de CREATED ou ADAPTED (mesma regra de
+    `execute_task` — nunca fecha uma Task que já foi decidida ou que já
+    está em outro estado intermediário).
+    """
+    task = Task.objects.select_related("agent").get(tenant_id=tenant_id, id=task_id)
+    if task.status not in (Task.Status.CREATED, Task.Status.ADAPTED):
+        raise TaskStateError(f"Task {task_id} está em '{task.status}' — report_task_result só aceita a partir de created/adapted.")
+
+    task.result = result
+    task.current_files = current_files or []
+    task.progress = 1.0 if success else 0.0
+    task.status = Task.Status.IN_PROGRESS if success else Task.Status.REJECTED
+    task.updated_at = timezone.now()
+    task.save(update_fields=["result", "current_files", "progress", "status", "updated_at"])
+    broadcast_task_update(task)
+
+    agent = task.agent
+    agent.work_status = Agent.WorkStatus.IDLE
+    agent.current_task = ""
+    agent.save(update_fields=["work_status", "current_task"])
+    broadcast_agent_update(agent)
+
+    return task
+
+
 def interrupt_task(tenant_id, task_id, ceo_instructions: str) -> Task:
     """
     CEO interrompe uma tarefa em andamento. Salva o estado exato (brief,
