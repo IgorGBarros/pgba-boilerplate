@@ -382,7 +382,7 @@ def create_project(
     mostrar, nunca um 500 cru.
     """
     project = Project.objects.create(
-        tenant_id=tenant_id, name=name, description=description,
+        tenant_id=tenant_id, name=name, description=description, origin=Project.Origin.CREATED,
         requested_by_id=requesting_agent_id, status=Project.Status.PENDING,
     )
 
@@ -391,7 +391,7 @@ def create_project(
         repo = create_project_repository(
             tenant_id, name=name, description=description, private=private, template_files=template_files,
         )
-    except IntegrationConfigError as exc:
+    except (IntegrationConfigError, FileNotFoundError) as exc:
         project.status = Project.Status.FAILED
         project.error_message = str(exc)
         project.save(update_fields=["status", "error_message"])
@@ -421,7 +421,7 @@ def import_project(
     `status=failed` + `error_message` e retorna assim mesmo.
     """
     project = Project.objects.create(
-        tenant_id=tenant_id, name=name, description=description,
+        tenant_id=tenant_id, name=name, description=description, origin=Project.Origin.IMPORTED,
         requested_by_id=requesting_agent_id, status=Project.Status.PENDING,
     )
 

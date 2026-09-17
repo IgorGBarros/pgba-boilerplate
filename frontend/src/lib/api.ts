@@ -221,10 +221,13 @@ export async function listKnowledgeSources(): Promise<KnowledgeSource[]> {
 
 export type ProjectStatus = "pending" | "ready" | "failed";
 
+export type ProjectOrigin = "created" | "imported";
+
 export interface Project {
   id: number;
   name: string;
   description: string;
+  origin: ProjectOrigin;
   requested_by: number | null;
   requested_by_name: string | null;
   status: ProjectStatus;

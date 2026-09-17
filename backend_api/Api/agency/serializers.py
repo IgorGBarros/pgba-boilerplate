@@ -106,7 +106,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
         fields = [
-            "id", "name", "description", "requested_by", "requested_by_name",
+            "id", "name", "description", "origin", "requested_by", "requested_by_name",
             "status", "github_repo_url", "github_full_name", "error_message", "created_at",
         ]
         read_only_fields = [

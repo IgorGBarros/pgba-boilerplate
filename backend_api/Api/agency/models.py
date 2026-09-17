@@ -251,8 +251,13 @@ class Project(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         READY = "ready", "Repositório criado"
         FAILED = "failed", "Falhou"
 
+    class Origin(models.TextChoices):
+        CREATED = "created", "Criado (template novo)"
+        IMPORTED = "imported", "Importado (repositório já existia)"
+
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
+    origin = models.CharField(max_length=20, choices=Origin.choices, default=Origin.CREATED)
     requested_by = models.ForeignKey(
         Agent, on_delete=models.SET_NULL, null=True, blank=True, related_name="requested_projects",
         help_text="Agente (tipicamente do setor de Desenvolvimento) que processou o pedido.",
