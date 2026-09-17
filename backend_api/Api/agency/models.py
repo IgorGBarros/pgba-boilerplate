@@ -258,6 +258,11 @@ class Project(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     origin = models.CharField(max_length=20, choices=Origin.choices, default=Origin.CREATED)
+    # Nome da pasta em frontend/workspace/<nome>/ — vinculada no MOMENTO
+    # da criação/importação (nunca "projeto solto" sem pasta local
+    # correspondente). Mesma regra de segurança do Task.workspace: só o
+    # nome da pasta, nunca um caminho completo.
+    workspace = models.CharField(max_length=100, blank=True)
     requested_by = models.ForeignKey(
         Agent, on_delete=models.SET_NULL, null=True, blank=True, related_name="requested_projects",
         help_text="Agente (tipicamente do setor de Desenvolvimento) que processou o pedido.",

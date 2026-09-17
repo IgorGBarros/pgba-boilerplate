@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { X, Download, Loader2 } from "lucide-react";
 import { listAgents, importProject, type Agent, ApiError } from "@/lib/api";
+import { createWorkspace } from "@/lib/devserver";
 
 interface ImportProjectModalProps {
   isOpen: boolean;
@@ -10,11 +11,11 @@ interface ImportProjectModalProps {
 }
 
 /**
- * Equivalente em UI do que `new-pgba -Name "..." -Import -GithubFullName
- * "usuario/repo" -Description "..."` já faz no PowerShell — mesmo
- * endpoint (`agency.services.import_project`), mesma confirmação real
- * contra a API do GitHub antes de marcar como pronto (nunca cria
- * repositório novo, só registra um que já existe).
+ * "Importar" também sempre cria os DOIS lados juntos agora: uma pasta
+ * local nova (`createWorkspace`, a partir do `workspace-template` —
+ * NUNCA clona o conteúdo real do repositório, isso exigiria git clone
+ * de verdade, fora do escopo atual) + o registro do `Project` já
+ * confirmado contra a API real do GitHub, vinculado a essa pasta.
  */
 export default function ImportProjectModal({ isOpen, onClose, onImported }: ImportProjectModalProps) {
   const [name, setName] = useState("");
@@ -23,6 +24,7 @@ export default function ImportProjectModal({ isOpen, onClose, onImported }: Impo
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentId, setAgentId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState<"" | "pasta" | "github">("");
   const [error, setError] = useState<string | null>(null);
   const [successUrl, setSuccessUrl] = useState<string | null>(null);
 
@@ -46,23 +48,39 @@ export default function ImportProjectModal({ isOpen, onClose, onImported }: Impo
     setError(null);
     setSuccessUrl(null);
 
+    setStep("pasta");
+    let realWorkspaceName: string;
+    try {
+      const ws = await createWorkspace(name.trim());
+      realWorkspaceName = ws.name;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao criar a pasta local.");
+      setLoading(false);
+      setStep("");
+      return;
+    }
+
+    setStep("github");
     try {
       const project = await importProject({
-        requestingAgentId: agentId,
-        name: name.trim(),
-        githubFullName: githubFullName.trim(),
-        description: description.trim(),
+        requestingAgentId: agentId, name: name.trim(), githubFullName: githubFullName.trim(),
+        description: description.trim(), workspace: realWorkspaceName,
       });
       if (project.status === "ready") {
         setSuccessUrl(project.github_repo_url);
         onImported();
       } else {
-        setError(project.error_message || "Falha ao importar o projeto — o repositório existe e o token tem acesso a ele?");
+        setError(
+          `Pasta local criada (frontend/workspace/${realWorkspaceName}/), mas não confirmei o repositório: ${
+            project.error_message || "motivo desconhecido"
+          }`,
+        );
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Falha ao importar o projeto.");
     } finally {
       setLoading(false);
+      setStep("");
     }
   }
 
@@ -90,7 +108,11 @@ export default function ImportProjectModal({ isOpen, onClose, onImported }: Impo
 
         {successUrl ? (
           <div className="space-y-3 p-5">
-            <p className="text-sm text-green-400">✅ Projeto importado com sucesso — repositório confirmado de verdade na API do GitHub.</p>
+            <p className="text-sm text-green-400">✅ Projeto importado — pasta local criada e repositório confirmado de verdade.</p>
+            <p className="text-[11px] text-slate-500">
+              A pasta local começa vazia (template novo) — ela ainda não tem o código real do repositório, isso exigiria clonar de
+              verdade, o que não fazemos ainda.
+            </p>
             <a href={successUrl} target="_blank" rel="noopener noreferrer" className="block truncate rounded-md bg-black/30 px-3 py-2 text-xs text-brand-500 underline">
               {successUrl}
             </a>
@@ -101,7 +123,7 @@ export default function ImportProjectModal({ isOpen, onClose, onImported }: Impo
         ) : (
           <div className="space-y-4 p-5">
             <div>
-              <label className="mb-1 block text-xs uppercase tracking-wide text-slate-400">Nome (só pra gestão interna, não muda o repositório)</label>
+              <label className="mb-1 block text-xs uppercase tracking-wide text-slate-400">Nome (pasta local, só pra gestão interna)</label>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -158,7 +180,7 @@ export default function ImportProjectModal({ isOpen, onClose, onImported }: Impo
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              {loading ? "Confirmando repositório..." : "Importar projeto"}
+              {step === "pasta" ? "Criando pasta local..." : step === "github" ? "Confirmando repositório..." : "Importar projeto"}
             </button>
           </div>
         )}

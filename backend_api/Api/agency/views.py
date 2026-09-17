@@ -198,6 +198,7 @@ class ProjectViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ReadOnlyMod
             name=data["name"],
             description=data.get("description", ""),
             private=data.get("private", True),
+            workspace=data.get("workspace", ""),
         )
         return Response(ProjectSerializer(project).data, status=status.HTTP_201_CREATED)
 
@@ -229,6 +230,7 @@ class ProjectViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ReadOnlyMod
             name=data["name"],
             github_full_name=data["github_full_name"],
             description=data.get("description", ""),
+            workspace=data.get("workspace", ""),
         )
         return Response(ProjectSerializer(project).data, status=status.HTTP_201_CREATED)
 

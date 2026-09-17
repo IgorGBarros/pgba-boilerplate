@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { X, Rocket, Loader2 } from "lucide-react";
 import { listAgents, createProject, type Agent, ApiError } from "@/lib/api";
+import { createWorkspace } from "@/lib/devserver";
 
 interface NewProjectModalProps {
   isOpen: boolean;
@@ -10,10 +11,12 @@ interface NewProjectModalProps {
 }
 
 /**
- * O "crie um projeto" do Lovable — só que de verdade: cria um
- * repositório GitHub real com o template `simple-commercial` via
- * `agency.services.create_project` (mesmo fluxo do `new-pgba` no
- * PowerShell, agora também acessível pela UI).
+ * "Criar projeto novo" agora é sempre as DUAS coisas juntas, nesta
+ * ordem: 1) pasta local (`createWorkspace`, devserver — pega o nome
+ * REAL, já sanitizado, que ele decidiu usar); 2) só então o `Project`
+ * no Django (`agency.services.create_project`), já com esse nome
+ * gravado em `workspace`. Nunca existe mais um "projeto solto" sem
+ * pasta local correspondente — se o passo 1 falhar, nem tenta o passo 2.
  */
 export default function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalProps) {
   const [name, setName] = useState("");
@@ -22,6 +25,7 @@ export default function NewProjectModal({ isOpen, onClose, onCreated }: NewProje
   const [agentId, setAgentId] = useState<number | null>(null);
   const [isPublic, setIsPublic] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState<"" | "pasta" | "github">("");
   const [error, setError] = useState<string | null>(null);
   const [successUrl, setSuccessUrl] = useState<string | null>(null);
 
@@ -43,18 +47,38 @@ export default function NewProjectModal({ isOpen, onClose, onCreated }: NewProje
     setError(null);
     setSuccessUrl(null);
 
+    setStep("pasta");
+    let realWorkspaceName: string;
     try {
-      const project = await createProject({ requestingAgentId: agentId, name: name.trim(), description, isPublic });
+      const ws = await createWorkspace(name.trim());
+      realWorkspaceName = ws.name;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao criar a pasta local.");
+      setLoading(false);
+      setStep("");
+      return;
+    }
+
+    setStep("github");
+    try {
+      const project = await createProject({
+        requestingAgentId: agentId, name: name.trim(), description, isPublic, workspace: realWorkspaceName,
+      });
       if (project.status === "ready") {
         setSuccessUrl(project.github_repo_url);
         onCreated();
       } else {
-        setError(project.error_message || "Falha ao criar o projeto.");
+        setError(
+          `Pasta local criada (frontend/workspace/${realWorkspaceName}/), mas o GitHub falhou: ${
+            project.error_message || "motivo desconhecido"
+          }`,
+        );
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Falha ao criar o projeto.");
     } finally {
       setLoading(false);
+      setStep("");
     }
   }
 
@@ -81,7 +105,7 @@ export default function NewProjectModal({ isOpen, onClose, onCreated }: NewProje
 
         {successUrl ? (
           <div className="space-y-3 p-5">
-            <p className="text-sm text-green-400">✅ Projeto criado com sucesso.</p>
+            <p className="text-sm text-green-400">✅ Projeto criado — pasta local e repositório GitHub vinculados.</p>
             <a href={successUrl} target="_blank" rel="noopener noreferrer" className="block truncate rounded-md bg-black/30 px-3 py-2 text-xs text-brand-500 underline">
               {successUrl}
             </a>
@@ -92,7 +116,7 @@ export default function NewProjectModal({ isOpen, onClose, onCreated }: NewProje
         ) : (
           <div className="space-y-4 p-5">
             <div>
-              <label className="mb-1 block text-xs uppercase tracking-wide text-slate-400">Nome (vira o repositório GitHub)</label>
+              <label className="mb-1 block text-xs uppercase tracking-wide text-slate-400">Nome (pasta local e repositório GitHub)</label>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -141,7 +165,7 @@ export default function NewProjectModal({ isOpen, onClose, onCreated }: NewProje
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
-              {loading ? "Criando..." : "Criar projeto"}
+              {step === "pasta" ? "Criando pasta local..." : step === "github" ? "Criando repositório GitHub..." : "Criar projeto"}
             </button>
           </div>
         )}

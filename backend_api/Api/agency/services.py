@@ -366,7 +366,7 @@ def _load_simple_commercial_template(project_name: str) -> dict[str, str]:
 
 
 def create_project(
-    tenant_id, requesting_agent_id, name: str, description: str = "", private: bool = True,
+    tenant_id, requesting_agent_id, name: str, description: str = "", private: bool = True, workspace: str = "",
 ) -> Project:
     """
     Ponto de entrada: "setor de Desenvolvimento, crie um projeto X".
@@ -382,7 +382,7 @@ def create_project(
     mostrar, nunca um 500 cru.
     """
     project = Project.objects.create(
-        tenant_id=tenant_id, name=name, description=description, origin=Project.Origin.CREATED,
+        tenant_id=tenant_id, name=name, description=description, origin=Project.Origin.CREATED, workspace=workspace,
         requested_by_id=requesting_agent_id, status=Project.Status.PENDING,
     )
 
@@ -405,7 +405,7 @@ def create_project(
 
 
 def import_project(
-    tenant_id, requesting_agent_id, name: str, github_full_name: str, description: str = "",
+    tenant_id, requesting_agent_id, name: str, github_full_name: str, description: str = "", workspace: str = "",
 ) -> Project:
     """
     Registra um projeto que JÁ EXISTIA (repositório GitHub real, criado
@@ -421,7 +421,7 @@ def import_project(
     `status=failed` + `error_message` e retorna assim mesmo.
     """
     project = Project.objects.create(
-        tenant_id=tenant_id, name=name, description=description, origin=Project.Origin.IMPORTED,
+        tenant_id=tenant_id, name=name, description=description, origin=Project.Origin.IMPORTED, workspace=workspace,
         requested_by_id=requesting_agent_id, status=Project.Status.PENDING,
     )
 

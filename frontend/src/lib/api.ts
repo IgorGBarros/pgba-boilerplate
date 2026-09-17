@@ -228,6 +228,7 @@ export interface Project {
   name: string;
   description: string;
   origin: ProjectOrigin;
+  workspace: string;
   requested_by: number | null;
   requested_by_name: string | null;
   status: ProjectStatus;
@@ -246,6 +247,7 @@ export async function createProject(params: {
   name: string;
   description?: string;
   isPublic?: boolean;
+  workspace?: string;
 }): Promise<Project> {
   return request<Project>("/api/v1/agency/projects/create/", {
     method: "POST",
@@ -254,6 +256,7 @@ export async function createProject(params: {
       name: params.name,
       description: params.description ?? "",
       private: !params.isPublic,
+      workspace: params.workspace ?? "",
     }),
   });
 }
@@ -264,6 +267,7 @@ export async function importProject(params: {
   name: string;
   githubFullName: string;
   description?: string;
+  workspace?: string;
 }): Promise<Project> {
   return request<Project>("/api/v1/agency/projects/import/", {
     method: "POST",
@@ -272,6 +276,7 @@ export async function importProject(params: {
       name: params.name,
       github_full_name: params.githubFullName,
       description: params.description ?? "",
+      workspace: params.workspace ?? "",
     }),
   });
 }
