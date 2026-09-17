@@ -1,6 +1,6 @@
 // frontend/src/pages/Studio.tsx
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { Rocket, Sparkles, Building2, Box, Plus, Circle, AlertTriangle, ListChecks, ShieldAlert, ShieldCheck, MessagesSquare, Download, FolderTree } from "lucide-react";
+import { Rocket, Sparkles, Building2, Box, Boxes, AlertTriangle, ListChecks, ShieldAlert, MessagesSquare, Download, FolderTree, ScrollText } from "lucide-react";
 import ChatPanel from "@/components/builder/ChatPanel";
 import PreviewPanel from "@/components/builder/PreviewPanel";
 import HistorySidebar from "@/components/builder/HistorySidebar";
@@ -8,8 +8,9 @@ import CommandPalette from "@/components/builder/CommandPalette";
 import SettingsModal from "@/components/builder/SettingsModal";
 import CompanyOverview from "@/components/builder/CompanyOverview";
 import TaskBoard from "@/components/builder/TaskBoard";
-import ApprovalsQueue from "@/components/builder/ApprovalsQueue";
-import PolicyRulesPanel from "@/components/builder/PolicyRulesPanel";
+import GovernancePanel from "@/components/builder/GovernancePanel";
+import LogsPanel from "@/components/builder/LogsPanel";
+import KnowledgePanel from "@/components/builder/KnowledgePanel";
 import SectorMessagesPanel from "@/components/builder/SectorMessagesPanel";
 import NewProjectModal from "@/components/builder/NewProjectModal";
 import ImportProjectModal from "@/components/builder/ImportProjectModal";
@@ -22,7 +23,6 @@ import {
   triggerGeneratePage,
   listProjectFiles,
   listWorkspaces,
-  createWorkspace,
   startWorkspace,
   waitForServerReady,
   isDevServerReachable,
@@ -42,7 +42,7 @@ const CompanyOffice3D = lazy(() => import("@/components/builder/CompanyOffice3D"
 // outro iframe apontando pra si mesma — a recursão visual que aparecia
 // na tela quando "Principal" estava selecionado).
 const PRINCIPAL_URL = "http://localhost:5173/?embed=1&tab=pages";
-type StudioView = "generate" | "company" | "office3d" | "tasks" | "approvals" | "policies" | "messages" | "projects";
+type StudioView = "generate" | "company" | "office3d" | "tasks" | "governance" | "messages" | "projects" | "logs" | "knowledge";
 
 /**
  * Painel principal do sistema (ver CLAUDE.md).
@@ -89,6 +89,12 @@ export default function Studio() {
   // comportamento antigo, sem Task nenhuma — nunca bloqueia a geração
   // por causa disso, governança é aditiva aqui, não um portão.
   const [frontendAgentId, setFrontendAgentId] = useState<number | null>(null);
+  // Gerar não abre mais sozinho: só fica disponível depois que a aba
+  // Projetos manda abrir Principal ou um projeto específico
+  // (handleOpenGerar) — sem isso, mostra estado vazio pedindo pra
+  // selecionar primeiro. Evita "gerar solto" sem saber em cima de qual
+  // pasta está trabalhando.
+  const [hasOpenedGerar, setHasOpenedGerar] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const activeWorkspace = workspaces.find((w) => w.name === activeProject) ?? null;
@@ -172,29 +178,17 @@ export default function Studio() {
     }
   }
 
-  async function handleCreateLocalProject() {
-    const name = prompt("Nome do novo projeto (vira uma pasta local + porta própria):");
-    if (!name?.trim()) return;
-
-    addMessage({ type: "plan", content: `Criando projeto local "${name}" (npm install pode levar alguns segundos)...` });
-    setStartingProject(name.trim());
-    try {
-      await createWorkspace(name.trim());
-      const started = await startWorkspace(name.trim());
-      const ready = await waitForServerReady(`http://localhost:${started.port}`);
-      await refreshWorkspaces();
-      setActiveProject(started.name);
-      addMessage({
-        type: ready ? "assistant" : "error",
-        content: ready
-          ? `Projeto "${started.name}" no ar em http://localhost:${started.port}.`
-          : `Projeto "${started.name}" criado mas não respondeu a tempo — tente selecioná-lo de novo em alguns segundos.`,
-      });
-    } catch (err) {
-      addMessage({ type: "error", content: err instanceof Error ? err.message : "Falha ao criar projeto local." });
-    } finally {
-      setStartingProject(null);
-    }
+  /**
+   * Chamada pela aba Projetos quando o usuário clica "Abrir Gerar" num
+   * item selecionado — nunca disparada pelo próprio Gerar. Isso é a
+   * peça que fecha "Gerar só aparece depois de selecionar um projeto":
+   * sem passar por aqui, `hasOpenedGerar` continua false e a tela
+   * mostra o estado vazio em vez do chat.
+   */
+  function handleOpenGerar(workspaceName: string | null) {
+    setHasOpenedGerar(true);
+    handleSelectProject(workspaceName);
+    setView("generate");
   }
 
   async function handleSend(prompt: string) {
@@ -312,41 +306,6 @@ export default function Studio() {
           </div>
         )}
 
-        {/* Seletor de projeto: Principal (este Studio) vs. secundários (processo/porta próprios) */}
-        <div className="flex items-center gap-1 overflow-x-auto border-b border-white/10 bg-surface px-3 py-1.5 sm:px-4">
-          <button
-            onClick={() => handleSelectProject(null)}
-            className={`shrink-0 rounded-card px-2.5 py-1 text-[11px] font-medium transition ${
-              activeProject === null ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-200"
-            }`}
-          >
-            Principal
-          </button>
-          {workspaces.map((w) => (
-            <button
-              key={w.name}
-              onClick={() => handleSelectProject(w.name)}
-              disabled={startingProject === w.name}
-              className={`flex shrink-0 items-center gap-1.5 rounded-card px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 ${
-                activeProject === w.name ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-200"
-              }`}
-            >
-              <Circle className={`h-1.5 w-1.5 shrink-0 ${w.running ? "fill-green-400 text-green-400" : "fill-slate-600 text-slate-600"}`} />
-              {w.name}
-              {startingProject === w.name && <span className="text-[10px] text-slate-500">(iniciando...)</span>}
-            </button>
-          ))}
-          <button
-            onClick={handleCreateLocalProject}
-            disabled={!!startingProject}
-            className="flex shrink-0 items-center gap-1 rounded-card px-2.5 py-1 text-[11px] text-slate-500 transition hover:text-brand-500 disabled:opacity-50"
-            title="Criar projeto local (processo/porta próprios)"
-          >
-            <Plus className="h-3 w-3" />
-            <span className="hidden sm:inline">Projeto local</span>
-          </button>
-        </div>
-
         {/* Navegação interna (Gerar / Empresa) + Publicar no GitHub */}
         <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-surface-raised px-3 py-2 sm:px-4">
           <div className="flex gap-1">
@@ -396,22 +355,31 @@ export default function Studio() {
               <span className="hidden sm:inline">Tarefas</span>
             </button>
             <button
-              onClick={() => setView("approvals")}
+              onClick={() => setView("governance")}
               className={`flex items-center gap-1.5 rounded-card px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
-                view === "approvals" ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5"
+                view === "governance" ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5"
               }`}
             >
               <ShieldAlert className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Aprovações</span>
+              <span className="hidden sm:inline">Aprovações e Políticas</span>
             </button>
             <button
-              onClick={() => setView("policies")}
+              onClick={() => setView("logs")}
               className={`flex items-center gap-1.5 rounded-card px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
-                view === "policies" ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5"
+                view === "logs" ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5"
               }`}
             >
-              <ShieldCheck className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Políticas</span>
+              <ScrollText className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Logs</span>
+            </button>
+            <button
+              onClick={() => setView("knowledge")}
+              className={`flex items-center gap-1.5 rounded-card px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
+                view === "knowledge" ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5"
+              }`}
+            >
+              <Boxes className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Conhecimento</span>
             </button>
             <button
               onClick={() => setView("messages")}
@@ -444,13 +412,42 @@ export default function Studio() {
           </div>
         </div>
 
-        {view === "generate" && (
-          <div className="flex flex-1 overflow-hidden">
-            <div className="w-[38%] min-w-[380px] shrink-0 xl:w-[34%]">
-              <ChatPanel messages={messages} isLoading={isLoading} onSend={handleSend} onReset={handleReset} />
+        {view === "generate" && !hasOpenedGerar && (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+            <Sparkles className="h-8 w-8 text-slate-600" />
+            <p className="text-sm font-medium text-slate-300">Selecione um projeto primeiro</p>
+            <p className="max-w-sm text-xs text-slate-500">
+              Gerar página precisa saber em qual pasta trabalhar — abra o Motor Principal ou um projeto na aba
+              Projetos, e clique em "Abrir Gerar" ali.
+            </p>
+            <button
+              onClick={() => setView("projects")}
+              className="mt-2 flex items-center gap-1.5 rounded-card bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+            >
+              <FolderTree className="h-4 w-4" />
+              Ir pra Projetos
+            </button>
+          </div>
+        )}
+        {view === "generate" && hasOpenedGerar && (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex items-center gap-1.5 border-b border-white/10 bg-black/20 px-4 py-1.5 text-[11px] text-slate-400">
+              <FolderTree className="h-3 w-3" />
+              Trabalhando em: <span className="font-medium text-slate-200">{activeProject ?? "Motor Principal"}</span>
+              {startingProject === activeProject && startingProject !== null && (
+                <span className="flex items-center gap-1 text-yellow-400">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-yellow-400" />
+                  iniciando...
+                </span>
+              )}
             </div>
-            <div className="min-w-0 flex-1">
-              <PreviewPanel previewUrl={previewUrl} files={files} logs={logs} onClearLogs={() => setLogs([])} workspace={activeProject ?? undefined} />
+            <div className="flex flex-1 overflow-hidden">
+              <div className="w-[38%] min-w-[380px] shrink-0 xl:w-[34%]">
+                <ChatPanel messages={messages} isLoading={isLoading} onSend={handleSend} onReset={handleReset} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <PreviewPanel previewUrl={previewUrl} files={files} logs={logs} onClearLogs={() => setLogs([])} workspace={activeProject ?? undefined} />
+              </div>
             </div>
           </div>
         )}
@@ -461,10 +458,11 @@ export default function Studio() {
           </Suspense>
         )}
         {view === "tasks" && <TaskBoard />}
-        {view === "approvals" && <ApprovalsQueue />}
-        {view === "policies" && <PolicyRulesPanel />}
+        {view === "governance" && <GovernancePanel />}
+        {view === "logs" && <LogsPanel />}
+        {view === "knowledge" && <KnowledgePanel />}
         {view === "messages" && <SectorMessagesPanel />}
-        {view === "projects" && <ProjectsTree />}
+        {view === "projects" && <ProjectsTree onOpenGerar={handleOpenGerar} />}
       </div>
 
       <CommandPalette

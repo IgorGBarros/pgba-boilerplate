@@ -219,6 +219,50 @@ export async function listKnowledgeSources(): Promise<KnowledgeSource[]> {
   return requestList<KnowledgeSource>("/api/v1/ingestion/sources/");
 }
 
+export type DocumentStatus = "pending" | "processing" | "indexed" | "error";
+
+export interface KnowledgeDocument {
+  id: number;
+  source: number;
+  source_name: string;
+  external_id: string;
+  title: string;
+  status: DocumentStatus;
+  error_message: string;
+  metadata: { uploaded_filename?: string; extraction_warning?: string; [key: string]: unknown };
+  indexed_at: string | null;
+  updated_at: string;
+}
+
+export async function listDocuments(sourceId?: number): Promise<KnowledgeDocument[]> {
+  const query = sourceId ? `?source=${sourceId}` : "";
+  return requestList<KnowledgeDocument>(`/api/v1/ingestion/documents/${query}`);
+}
+
+/**
+ * Upload de arquivo de verdade (PDF/imagem/documento) — nunca passa
+ * pelo `request()` genérico, porque ele força
+ * `Content-Type: application/json`, o que quebra o boundary do
+ * multipart. Deixa o navegador montar o header sozinho.
+ */
+export async function uploadDocumentFile(sourceId: number, file: File): Promise<KnowledgeDocument & { extraction_warning: string }> {
+  const token = getAccessToken();
+  const formData = new FormData();
+  formData.append("source_id", String(sourceId));
+  formData.append("file", file);
+
+  const res = await fetch(`${API_URL}/api/v1/ingestion/documents/upload-file/`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, body.detail ?? body.file?.[0] ?? `Erro ${res.status}`);
+  }
+  return res.json();
+}
+
 export type ProjectStatus = "pending" | "ready" | "failed";
 
 export type ProjectOrigin = "created" | "imported";

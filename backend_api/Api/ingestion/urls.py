@@ -6,6 +6,7 @@ from ingestion.views import (
     KnowledgeSourceViewSet,
     DocumentViewSet,
     DocumentUploadView,
+    DocumentFileUploadView,
     RAGQueryView,
 )
 
@@ -14,7 +15,8 @@ router.register("sources", KnowledgeSourceViewSet, basename="knowledge-source")
 router.register("documents", DocumentViewSet, basename="document")
 
 urlpatterns = [
-    path("", include(router.urls)),
     path("documents/upload/", DocumentUploadView.as_view(), name="document-upload"),
+    path("documents/upload-file/", DocumentFileUploadView.as_view(), name="document-upload-file"),
     path("query/", RAGQueryView.as_view(), name="rag-query"),
+    path("", include(router.urls)),
 ]

@@ -11,22 +11,36 @@ import {
   approveTask,
   rejectTask,
   type Task,
-  type TaskStatus,
   type Agent,
   ApiError,
 } from "@/lib/api";
 import { useRealtime } from "@/lib/useRealtime";
 
-const STATUS_LABEL: Record<TaskStatus, string> = {
-  created: "Criada",
-  in_progress: "Em andamento",
-  paused_ceo: "Pausada",
-  adapted: "Adaptada",
-  approved: "Aprovada",
-  rejected: "Rejeitada",
-};
+type Column = "fila" | "execucao" | "revisao" | "concluido";
 
-const STATUS_COLOR: Record<TaskStatus, string> = {
+const COLUMNS: { id: Column; label: string }[] = [
+  { id: "fila", label: "Fila" },
+  { id: "execucao", label: "Em execução" },
+  { id: "revisao", label: "Revisão" },
+  { id: "concluido", label: "Concluído" },
+];
+
+/**
+ * Não existe uma coluna "revisão" separada no modelo real — uma tarefa
+ * concluída fica em IN_PROGRESS com progress=1.0 (ver agency/tasks.py).
+ * Essa função é só a projeção visual dos status reais em 4 colunas,
+ * nunca um status novo — created/adapted → fila; in_progress
+ * (progress<1) + paused_ceo → execução; in_progress (progress>=1) →
+ * revisão; approved/rejected → concluído.
+ */
+function columnFor(task: Task): Column {
+  if (task.status === "created" || task.status === "adapted") return "fila";
+  if (task.status === "paused_ceo") return "execucao";
+  if (task.status === "in_progress") return task.progress >= 1 ? "revisao" : "execucao";
+  return "concluido";
+}
+
+const STATUS_COLOR: Record<Task["status"], string> = {
   created: "bg-slate-500/15 text-slate-400",
   in_progress: "bg-blue-500/15 text-blue-400",
   paused_ceo: "bg-yellow-500/15 text-yellow-400",
@@ -35,14 +49,21 @@ const STATUS_COLOR: Record<TaskStatus, string> = {
   rejected: "bg-red-500/15 text-red-400",
 };
 
+const STATUS_LABEL: Record<Task["status"], string> = {
+  created: "Criada",
+  in_progress: "Em andamento",
+  paused_ceo: "Pausada",
+  adapted: "Adaptada",
+  approved: "Aprovada",
+  rejected: "Rejeitada",
+};
+
 /**
- * Visualiza e controla o ciclo de vida completo de agency.Task — criar,
- * executar (dispara o modelo configurado no harness), interromper no
- * meio (CEO pausa e dá nova instrução), adaptar (retoma com o ajuste),
- * aprovar (se tiver projeto vinculado, cria PR de verdade no GitHub) ou
- * rejeitar. Atualiza em tempo real via WebSocket — sem isso, o board
- * ficaria mostrando "em andamento" indefinidamente até o próximo fetch
- * manual, mesmo depois da tarefa já ter terminado no backend.
+ * Kanban do ciclo de vida completo de agency.Task — criar, executar
+ * (dispara o modelo configurado no harness), interromper no meio (CEO
+ * pausa e dá nova instrução), adaptar (retoma com o ajuste), aprovar
+ * (se tiver projeto vinculado, cria PR de verdade no GitHub) ou
+ * rejeitar. Atualiza em tempo real via WebSocket.
  */
 export default function TaskBoard() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -70,9 +91,6 @@ export default function TaskBoard() {
     refresh();
   }, []);
 
-  // Sem isso, cada tarefa ficaria congelada no status do último fetch
-  // manual — é exatamente o polling que a Fase de tempo real (Django
-  // Channels) veio substituir.
   useEffect(() => {
     if (!lastTaskEvent) return;
     setTasks((prev) => {
@@ -123,17 +141,17 @@ export default function TaskBoard() {
 
   if (loading) {
     return (
-      <div className="space-y-2 p-6">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-24 animate-pulse rounded-card border border-white/10 bg-surface-raised" />
+      <div className="grid gap-4 p-4 sm:p-6 md:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-40 animate-pulse rounded-card border border-white/10 bg-surface-raised" />
         ))}
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 overflow-y-auto p-4 sm:p-6">
-      <div className="flex items-center justify-between">
+    <div className="flex h-full flex-col overflow-hidden p-4 sm:p-6">
+      <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-slate-200">Tarefas</h2>
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-slate-400">{tasks.length}</span>
@@ -151,98 +169,108 @@ export default function TaskBoard() {
         </button>
       </div>
 
-      {error && <p className="rounded-card border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</p>}
+      {error && <p className="mb-4 rounded-card border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</p>}
 
-      {tasks.length === 0 && !error && (
-        <p className="rounded-card border border-dashed border-white/10 py-8 text-center text-sm text-slate-500">
-          Nenhuma tarefa ainda — crie uma pra um agente executar.
-        </p>
-      )}
-
-      {tasks.map((task) => {
-        const isBusy = busyTaskId === task.id;
-        return (
-          <div key={task.id} className="rounded-card border border-white/10 bg-surface-raised p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-slate-100">{task.agent_name}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_COLOR[task.status]}`}>
-                    {STATUS_LABEL[task.status]}
-                  </span>
-                  {task.version > 1 && <span className="text-[10px] text-slate-500">v{task.version}</span>}
-                </div>
-                <p className="mt-1.5 whitespace-pre-wrap text-xs text-slate-300">{task.brief}</p>
-
-                {task.status === "in_progress" && (
-                  <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/5">
-                    <div className="h-full bg-blue-400 transition-all" style={{ width: `${Math.round(task.progress * 100)}%` }} />
-                  </div>
-                )}
-
-                {task.result && Object.keys(task.result).length > 0 && (
-                  <pre className="mt-2 max-h-40 overflow-auto rounded bg-black/30 p-2 text-[11px] text-slate-400">
-                    {JSON.stringify(task.result, null, 2)}
-                  </pre>
-                )}
+      <div className="grid flex-1 gap-4 overflow-hidden md:grid-cols-2 xl:grid-cols-4">
+        {COLUMNS.map((col) => {
+          const items = tasks.filter((t) => columnFor(t) === col.id);
+          return (
+            <div key={col.id} className="flex flex-col overflow-hidden rounded-card border border-white/10 bg-surface-raised">
+              <div className="flex items-center justify-between border-b border-white/10 px-3 py-2.5">
+                <p className="text-xs font-semibold text-slate-300">{col.label}</p>
+                <span className="text-[11px] tabular-nums text-slate-500">{items.length}</span>
               </div>
+              <div className="flex-1 space-y-2 overflow-y-auto p-2.5">
+                {items.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-slate-600">Vazio</p>
+                ) : (
+                  items.map((task) => {
+                    const isBusy = busyTaskId === task.id;
+                    return (
+                      <div key={task.id} className="rounded-md border border-white/10 bg-black/20 p-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-xs font-medium text-slate-100">{task.agent_name}</span>
+                          <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${STATUS_COLOR[task.status]}`}>
+                            {STATUS_LABEL[task.status]}
+                          </span>
+                          {task.version > 1 && <span className="text-[9px] text-slate-500">v{task.version}</span>}
+                        </div>
+                        <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-[11px] text-slate-400">{task.brief}</p>
+                        {task.workspace && <p className="mt-1 font-mono text-[10px] text-slate-600">workspace: {task.workspace}</p>}
 
-              <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-                {isBusy && <Loader2 className="h-4 w-4 animate-spin text-slate-500" />}
+                        {task.status === "in_progress" && (
+                          <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/5">
+                            <div className="h-full bg-blue-400 transition-all" style={{ width: `${Math.round(task.progress * 100)}%` }} />
+                          </div>
+                        )}
 
-                {!isBusy && (task.status === "created" || task.status === "adapted") && (
-                  <button
-                    onClick={() => runAction(task.id, () => executeTask(task.id))}
-                    className="flex items-center gap-1 rounded-lg bg-blue-500/15 px-2.5 py-1.5 text-xs font-medium text-blue-400 transition hover:bg-blue-500/25"
-                  >
-                    <Play className="h-3.5 w-3.5" />
-                    Executar
-                  </button>
-                )}
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {isBusy && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />}
 
-                {!isBusy && task.status === "in_progress" && (
-                  <button
-                    onClick={() => handleInterrupt(task)}
-                    className="flex items-center gap-1 rounded-lg bg-yellow-500/15 px-2.5 py-1.5 text-xs font-medium text-yellow-400 transition hover:bg-yellow-500/25"
-                  >
-                    <Pause className="h-3.5 w-3.5" />
-                    Interromper
-                  </button>
-                )}
+                          {!isBusy && (task.status === "created" || task.status === "adapted") && (
+                            <button
+                              onClick={() => runAction(task.id, () => executeTask(task.id))}
+                              className="flex items-center gap-1 rounded-md bg-blue-500/15 px-2 py-1 text-[10px] font-medium text-blue-400 transition hover:bg-blue-500/25"
+                            >
+                              <Play className="h-3 w-3" />
+                              Executar
+                            </button>
+                          )}
 
-                {!isBusy && task.status === "paused_ceo" && (
-                  <button
-                    onClick={() => handleAdapt(task)}
-                    className="flex items-center gap-1 rounded-lg bg-purple-500/15 px-2.5 py-1.5 text-xs font-medium text-purple-400 transition hover:bg-purple-500/25"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Adaptar e retomar
-                  </button>
-                )}
+                          {!isBusy && task.status === "in_progress" && task.progress < 1 && (
+                            <button
+                              onClick={() => handleInterrupt(task)}
+                              className="flex items-center gap-1 rounded-md bg-yellow-500/15 px-2 py-1 text-[10px] font-medium text-yellow-400 transition hover:bg-yellow-500/25"
+                            >
+                              <Pause className="h-3 w-3" />
+                              Interromper
+                            </button>
+                          )}
 
-                {!isBusy && task.status === "in_progress" && task.progress >= 1 && (
-                  <>
-                    <button
-                      onClick={() => handleApprove(task)}
-                      className="flex items-center gap-1 rounded-lg bg-green-500/15 px-2.5 py-1.5 text-xs font-medium text-green-400 transition hover:bg-green-500/25"
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                      Aprovar
-                    </button>
-                    <button
-                      onClick={() => runAction(task.id, () => rejectTask(task.id))}
-                      className="flex items-center gap-1 rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-medium text-red-400 transition hover:bg-red-500/25"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      Rejeitar
-                    </button>
-                  </>
+                          {!isBusy && task.status === "paused_ceo" && (
+                            <button
+                              onClick={() => handleAdapt(task)}
+                              className="flex items-center gap-1 rounded-md bg-purple-500/15 px-2 py-1 text-[10px] font-medium text-purple-400 transition hover:bg-purple-500/25"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                              Adaptar
+                            </button>
+                          )}
+
+                          {!isBusy && task.status === "in_progress" && task.progress >= 1 && (
+                            <>
+                              <button
+                                onClick={() => handleApprove(task)}
+                                className="flex items-center gap-1 rounded-md bg-green-500/15 px-2 py-1 text-[10px] font-medium text-green-400 transition hover:bg-green-500/25"
+                              >
+                                <Check className="h-3 w-3" />
+                                Aprovar
+                              </button>
+                              <button
+                                onClick={() => runAction(task.id, () => rejectTask(task.id))}
+                                className="flex items-center gap-1 rounded-md bg-red-500/15 px-2 py-1 text-[10px] font-medium text-red-400 transition hover:bg-red-500/25"
+                              >
+                                <X className="h-3 w-3" />
+                                Rejeitar
+                              </button>
+                            </>
+                          )}
+                        </div>
+
+                        {task.result && Object.keys(task.result).length > 0 && (
+                          <pre className="mt-2 max-h-24 overflow-auto rounded bg-black/30 p-1.5 text-[9px] text-slate-500">
+                            {JSON.stringify(task.result, null, 2)}
+                          </pre>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
 
       {newTaskOpen && (
         <NewTaskModal agents={agents} onClose={() => setNewTaskOpen(false)} onCreated={(t) => setTasks((prev) => [t, ...prev])} />
@@ -263,15 +291,6 @@ function NewTaskModal({ agents, onClose, onCreated }: NewTaskModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sem isso, se o modal abrir ANTES da lista de agentes terminar de
-  // carregar (corrida comum: clicar "Nova tarefa" rápido demais depois
-  // da página abrir), `agentId` ficava travado em "" pra sempre — o
-  // `useState` só roda o valor inicial UMA vez, nunca de novo quando
-  // `agents` muda de [] pra populado. O <select> ainda MOSTRAVA um
-  // agente selecionado (comportamento nativo do HTML quando o `value`
-  // controlado não bate com nenhuma option), mas o clique em "Criar
-  // tarefa" sempre voltava silenciosamente sem mandar nada — `agentId`
-  // continuava "" por dentro, mesmo parecendo preenchido na tela.
   useEffect(() => {
     if (agentId === "" && agents.length > 0) {
       setAgentId(agents[0].id);

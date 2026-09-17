@@ -50,6 +50,25 @@ class DocumentUploadSerializer(serializers.Serializer):
         return value
 
 
+class DocumentFileUploadSerializer(serializers.Serializer):
+    """
+    Upload de arquivo de verdade (PDF/imagem/documento) — diferente de
+    DocumentUploadSerializer, que recebe texto já extraído. Extração de
+    texto acontece na view: PDF de verdade (pypdf); qualquer outro tipo
+    vira um Document com aviso claro de que não foi extraído
+    automaticamente, nunca falha silenciosamente fingindo que leu algo.
+    """
+
+    source_id = serializers.IntegerField()
+    file = serializers.FileField(max_length=255)
+
+    def validate_file(self, value):
+        max_size = 20 * 1024 * 1024  # 20 MB
+        if value.size > max_size:
+            raise serializers.ValidationError(f"Arquivo excede o limite de 20 MB (tem {value.size / 1024 / 1024:.1f} MB).")
+        return value
+
+
 class RAGQuerySerializer(serializers.Serializer):
     query = serializers.CharField(max_length=2000)
     top_k = serializers.IntegerField(required=False, min_value=1, max_value=20, default=5)

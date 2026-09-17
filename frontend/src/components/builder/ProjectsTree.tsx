@@ -1,6 +1,6 @@
 // frontend/src/components/builder/ProjectsTree.tsx
 import { useEffect, useState } from "react";
-import { FolderTree, Github, Server, ExternalLink, Loader2, Monitor } from "lucide-react";
+import { FolderTree, Github, Server, ExternalLink, Loader2, Monitor, Sparkles } from "lucide-react";
 import { listProjects, type Project } from "@/lib/api";
 import { listWorkspaces, type Workspace } from "@/lib/devserver";
 
@@ -28,7 +28,7 @@ const ORIGIN_COLOR: Record<Project["origin"], string> = {
  * NewProjectModal/ImportProjectModal. O Motor Principal continua à
  * parte, sempre existe, nunca é "um projeto" no banco.
  */
-export default function ProjectsTree() {
+export default function ProjectsTree({ onOpenGerar }: { onOpenGerar: (workspace: string | null) => void }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedId, setSelectedId] = useState<number | "principal" | null>("principal");
@@ -138,6 +138,13 @@ export default function ProjectsTree() {
               Toda a automação, credenciais e guardrails vivem aqui. Editar aqui estende o próprio PGBA Boilerplate — não um produto
               derivado.
             </p>
+            <button
+              onClick={() => onOpenGerar(null)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-500 px-3 py-2 text-xs font-medium text-white hover:bg-brand-700"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Abrir Gerar
+            </button>
           </>
         ) : selected ? (
           <>
@@ -184,6 +191,15 @@ export default function ProjectsTree() {
                 <p className="font-mono">parado — inicie na aba Gerar</p>
               )}
             </div>
+
+            <button
+              onClick={() => onOpenGerar(selected.workspace || null)}
+              disabled={!selected.workspace}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-500 px-3 py-2 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-40"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Abrir Gerar
+            </button>
           </>
         ) : (
           <p className="text-sm text-slate-500">Selecione um item.</p>
