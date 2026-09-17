@@ -17,6 +17,9 @@ import {
   Wallet,
   MessageCircle,
   Loader2,
+  ClipboardList,
+  Send,
+  Monitor,
 } from "lucide-react";
 import {
   listAgents,
@@ -26,6 +29,7 @@ import {
   listKnowledgeSources,
   createSector,
   askAsAgent,
+  createTask,
   type Agent,
   type Sector,
   type Project,
@@ -34,6 +38,7 @@ import {
   type AgentAskResult,
   ApiError,
 } from "@/lib/api";
+import { listWorkspaces, type Workspace } from "@/lib/devserver";
 import { useRealtime } from "@/lib/useRealtime";
 
 // Setores/métricas/projetos/fontes mudam bem menos que work_status de
@@ -92,6 +97,7 @@ export default function CompanyOverview() {
 
   const [creatingSector, setCreatingSector] = useState(false);
   const [askingAgent, setAskingAgent] = useState<Agent | null>(null);
+  const [taskModalSector, setTaskModalSector] = useState<Sector | null>(null);
   const [newSectorName, setNewSectorName] = useState("");
   const [newSectorDescription, setNewSectorDescription] = useState("");
   const [creating, setCreating] = useState(false);
@@ -304,6 +310,15 @@ export default function CompanyOverview() {
                   <span className="text-slate-600">sem dados de uso ainda</span>
                 )}
               </div>
+
+              <button
+                onClick={() => setTaskModalSector(sector)}
+                disabled={sectorAgents.length === 0}
+                className="flex items-center justify-center gap-1.5 border-t border-white/10 px-3 py-2 text-[11px] font-medium text-brand-500 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:text-slate-600"
+              >
+                <ClipboardList className="h-3 w-3" />
+                Nova tarefa pro setor
+              </button>
             </div>
           );
         })}
@@ -381,6 +396,13 @@ export default function CompanyOverview() {
       </div>
 
       {askingAgent && <AskAgentModal agent={askingAgent} onClose={() => setAskingAgent(null)} />}
+      {taskModalSector && (
+        <NewSectorTaskModal
+          sector={taskModalSector}
+          agents={agents.filter((a) => a.sector === taskModalSector.id)}
+          onClose={() => setTaskModalSector(null)}
+        />
+      )}
     </div>
   );
 }
@@ -471,6 +493,175 @@ function AskAgentModal({ agent, onClose }: AskAgentModalProps) {
 
         {result && (result.status === "function_error" || result.status === "llm_error" || result.status === "rejected") && (
           <div className="rounded-card border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">{result.answer}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface NewSectorTaskModalProps {
+  sector: Sector;
+  agents: Agent[];
+  onClose: () => void;
+}
+
+/**
+ * "Task direcionada a agente/setor pela Empresa, com preview do Vite
+ * isolado" — o setor já vem fixado (clicou no card daquele setor); só
+ * falta escolher o agente dentro dele e, se a tarefa for sobre um
+ * projeto local, qual workspace (mostra o preview ao vivo assim que
+ * escolhido, direto do processo Vite isolado rodando naquela porta —
+ * nunca um retrato estático, é o `<iframe>` de verdade).
+ */
+function NewSectorTaskModal({ sector, agents, onClose }: NewSectorTaskModalProps) {
+  const [agentId, setAgentId] = useState<number | "">(agents[0]?.id ?? "");
+  const [brief, setBrief] = useState("");
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspaceName, setWorkspaceName] = useState<string>("");
+  const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState(false);
+
+  useEffect(() => {
+    if (agentId === "" && agents.length > 0) setAgentId(agents[0].id);
+  }, [agents, agentId]);
+
+  useEffect(() => {
+    listWorkspaces()
+      .then(setWorkspaces)
+      .catch(() => setWorkspaces([]))
+      .finally(() => setLoadingWorkspaces(false));
+  }, []);
+
+  const selectedWorkspace = workspaces.find((w) => w.name === workspaceName);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!agentId || !brief.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await createTask({ agentId, brief: brief.trim(), taskType: "manual", workspace: workspaceName || undefined });
+      setCreated(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Falha ao criar tarefa.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className={`w-full space-y-4 rounded-card border border-white/10 bg-surface-raised p-5 ${
+          selectedWorkspace ? "max-w-4xl" : "max-w-md"
+        }`}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-100">Nova tarefa — {sector.name}</h3>
+            <p className="text-[11px] text-slate-500">Direcionada só pros agentes deste setor</p>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-200">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {created ? (
+          <div className="space-y-3">
+            <p className="text-sm text-green-400">✅ Tarefa criada — acompanhe na aba Tarefas.</p>
+            <button onClick={onClose} className="w-full rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+              Fechar
+            </button>
+          </div>
+        ) : (
+          <div className={selectedWorkspace ? "grid grid-cols-1 gap-5 md:grid-cols-2" : ""}>
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs uppercase tracking-wide text-slate-400">Agente</label>
+                <select
+                  value={agentId}
+                  onChange={(e) => setAgentId(Number(e.target.value))}
+                  className="w-full rounded-md border border-white/10 bg-surface px-3 py-2 text-sm text-slate-100 focus:border-brand-500 focus:outline-none"
+                >
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name} — {a.role}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs uppercase tracking-wide text-slate-400">
+                  Projeto local (opcional — deixe em branco pra tarefa sobre o Principal)
+                </label>
+                <select
+                  value={workspaceName}
+                  onChange={(e) => setWorkspaceName(e.target.value)}
+                  className="w-full rounded-md border border-white/10 bg-surface px-3 py-2 text-sm text-slate-100 focus:border-brand-500 focus:outline-none"
+                >
+                  <option value="">— Principal (este próprio Studio) —</option>
+                  {workspaces.map((w) => (
+                    <option key={w.name} value={w.name}>
+                      {w.name} {w.running ? `(rodando, porta ${w.port})` : "(parado)"}
+                    </option>
+                  ))}
+                </select>
+                {!loadingWorkspaces && workspaces.length === 0 && (
+                  <p className="mt-1 text-[10px] text-slate-500">Nenhum projeto local criado ainda (aba Gerar → Projeto local).</p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs uppercase tracking-wide text-slate-400">Brief</label>
+                <textarea
+                  value={brief}
+                  onChange={(e) => setBrief(e.target.value)}
+                  rows={4}
+                  required
+                  autoFocus
+                  className="w-full resize-none rounded-md border border-white/10 bg-surface px-3 py-2 text-sm text-slate-100 focus:border-brand-500 focus:outline-none"
+                  placeholder="O que esse setor precisa fazer?"
+                />
+              </div>
+
+              {error && <p className="text-xs text-red-400">{error}</p>}
+
+              <button
+                type="submit"
+                disabled={loading || !agentId || !brief.trim()}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:opacity-40"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {loading ? "Criando..." : "Criar tarefa"}
+              </button>
+            </form>
+
+            {selectedWorkspace && (
+              <div className="flex flex-col overflow-hidden rounded-md border border-white/10">
+                <div className="flex items-center gap-1.5 border-b border-white/10 bg-black/30 px-2 py-1.5 text-[10px] text-slate-400">
+                  <Monitor className="h-3 w-3" />
+                  {selectedWorkspace.running ? (
+                    <span>Preview ao vivo — localhost:{selectedWorkspace.port}</span>
+                  ) : (
+                    <span>Projeto parado — inicie em "Projeto local" na aba Gerar pra ver o preview</span>
+                  )}
+                </div>
+                {selectedWorkspace.running ? (
+                  <iframe
+                    src={`http://localhost:${selectedWorkspace.port}`}
+                    title={`Preview de ${selectedWorkspace.name}`}
+                    className="h-64 w-full bg-white md:h-full"
+                  />
+                ) : (
+                  <div className="flex h-64 items-center justify-center bg-black/20 text-xs text-slate-600 md:h-full">
+                    Sem preview — projeto não está rodando
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

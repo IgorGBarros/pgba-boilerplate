@@ -213,7 +213,7 @@ class TaskSerializer(serializers.ModelSerializer):
         model = Task
         fields = [
             "id", "agent", "agent_name", "project", "project_name", "brief", "status",
-            "progress", "current_files", "result", "version", "task_type", "snapshots", "created_at", "updated_at",
+            "progress", "current_files", "result", "version", "task_type", "workspace", "snapshots", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "status", "result", "version", "snapshots", "created_at", "updated_at"]
 
@@ -223,6 +223,7 @@ class CreateTaskSerializer(serializers.Serializer):
     project_id = serializers.IntegerField(required=False, allow_null=True)
     brief = serializers.CharField(max_length=4000)
     task_type = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
+    workspace = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
 
 
 class InterruptTaskSerializer(serializers.Serializer):

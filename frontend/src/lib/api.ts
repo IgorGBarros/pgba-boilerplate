@@ -296,6 +296,7 @@ export interface Task {
   result: Record<string, unknown>;
   version: number;
   task_type: string;
+  workspace: string;
   snapshots: TaskSnapshot[];
   created_at: string;
   updated_at: string;
@@ -314,6 +315,7 @@ export async function createTask(params: {
   brief: string;
   taskType?: string;
   projectId?: number;
+  workspace?: string;
 }): Promise<Task> {
   return request<Task>("/api/v1/agency/tasks/", {
     method: "POST",
@@ -322,6 +324,7 @@ export async function createTask(params: {
       brief: params.brief,
       task_type: params.taskType ?? "",
       project_id: params.projectId ?? null,
+      workspace: params.workspace ?? "",
     }),
   });
 }

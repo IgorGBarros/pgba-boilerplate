@@ -389,6 +389,14 @@ class Task(TenantMixin, AuditMixin, models.Model):
     result = models.JSONField(default=dict, blank=True, help_text="Saída estruturada da execução (plan/steps/output/needs_review) ou {'error': ...}.")
     version = models.PositiveIntegerField(default=1)
     task_type = models.CharField(max_length=50, blank=True)
+    # Nome da pasta em frontend/workspace/<nome>/ — nunca um caminho
+    # completo (evita qualquer forma de path traversal vindo do
+    # frontend). Vazio = Task não é sobre nenhum projeto local (ex: sobre
+    # o Principal, ou sobre algo que nem é código). Não confundir com
+    # `project` (agency.Project, GitHub) — são dois conceitos diferentes:
+    # um workspace local pode nunca virar Project nenhum, e um Project já
+    # publicado no GitHub pode não ter workspace local correspondente.
+    workspace = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
 

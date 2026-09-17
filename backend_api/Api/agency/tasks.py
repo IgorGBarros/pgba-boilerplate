@@ -31,9 +31,9 @@ DEFAULT_TASK_SYSTEM_PROMPT = (
 )
 
 
-def create_task(tenant_id, agent_id, brief: str, task_type: str = "", project_id=None) -> Task:
+def create_task(tenant_id, agent_id, brief: str, task_type: str = "", project_id=None, workspace: str = "") -> Task:
     task = Task.objects.create(
-        tenant_id=tenant_id, agent_id=agent_id, brief=brief, task_type=task_type, project_id=project_id,
+        tenant_id=tenant_id, agent_id=agent_id, brief=brief, task_type=task_type, project_id=project_id, workspace=workspace,
     )
     broadcast_task_update(task)
     return task
