@@ -790,7 +790,7 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
       )}
 
       {/* Hierarquia: empresa → orquestrador → setores */}
-      <div className="flex flex-col items-center">
+      <div className="flex flex-col items-center mx-auto w-full">
         <button
           type="button"
           onClick={() => setOpenCompany(true)}
@@ -838,21 +838,22 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mx-auto grid w-full max-w-5xl gap-4 md:grid-cols-2 xl:grid-cols-3">
           {sectors.map((sector) => {
             const Icon = sectorIcons[inferIcon(sector.name)];
             const sectorAgents = agentsBySector[sector.id] ?? [];
             const hasRag = sector.knowledge_source !== null;
 
             return (
-              <div key={sector.id} className="panel flex flex-col">
-                <div className="flex items-center justify-between gap-2 border-b border-border p-4">
+              <div key={sector.id} className="panel flex h-72 flex-col">
+                {/* Header */}
+                <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border p-4">
                   <div className="flex items-center gap-2 font-semibold">
                     <Icon className="size-5 text-primary" />
                     {sector.name}
                   </div>
                   <div className="flex items-center gap-1.5">
-                    {/* RAG badge */}
+                    {/* RAG badge + add-agent button */}
                     <button
                       type="button"
                       onClick={() => { setOpenSector(sector); setSectorKnowledgeOpen(true); }}
@@ -866,6 +867,14 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
                         {hasRag ? sector.knowledge_source_name ?? "RAG ativo" : "sem RAG"}
                       </Badge>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => { setNewAgentSector(sector); setNewAgentOpen(true); }}
+                      className="rounded p-0.5 text-muted-foreground hover:text-primary transition-colors"
+                      title="Adicionar agente"
+                    >
+                      <Plus className="size-4" />
+                    </button>
                     {/* Delete sector */}
                     <button
                       type="button"
@@ -878,7 +887,8 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
                   </div>
                 </div>
 
-                <div className="flex-1 space-y-2 p-4">
+                {/* Agent list — scrollable */}
+                <div className="flex-1 overflow-y-auto space-y-2 p-4">
                   {sectorAgents.length === 0 ? (
                     <p className="py-4 text-center text-sm text-muted-foreground">
                       Nenhum agente ainda.
@@ -917,31 +927,18 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
                           >
                             <Trash2 className="size-4" />
                           </button>
-                          <MessageSquare className="size-4 text-muted-foreground" />
+                          <button
+                            type="button"
+                            onClick={() => onNewTask(sector.name)}
+                            className="rounded p-1 text-muted-foreground hover:text-primary transition-colors"
+                            title="Criar tarefa para este agente"
+                          >
+                            <MessageSquare className="size-4" />
+                          </button>
                         </div>
                       </div>
                     ))
                   )}
-                </div>
-
-                <div className="border-t border-border p-3 flex gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => { setNewAgentSector(sector); setNewAgentOpen(true); }}
-                  >
-                    <Plus className="size-3.5" />
-                    Agente
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => onNewTask(sector.name)}
-                  >
-                    Criar tarefa
-                  </Button>
                 </div>
               </div>
             );
