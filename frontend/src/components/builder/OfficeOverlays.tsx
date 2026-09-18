@@ -462,11 +462,15 @@ export function MeetingModal({
   onClose,
   agents,
   sectors,
+  onStartMeeting,
+  onEndMeeting,
 }: {
   open: boolean;
   onClose: () => void;
   agents: OfficeAgent[];
   sectors: Sector[];
+  onStartMeeting?: (ids: number[]) => void;
+  onEndMeeting?: () => void;
 }) {
   const [meetingType, setMeetingType] = useState<MeetingType>("all-sectors");
   const [selectedSectorId, setSelectedSectorId] = useState<number | null>(
@@ -522,6 +526,7 @@ export function MeetingModal({
   const startMeeting = () => {
     if (selectedIds.length === 0) return;
     setMeetingStarted(true);
+    onStartMeeting?.(selectedIds);
     const names = agents
       .filter((a) => selectedIds.includes(a.id))
       .map((a) => a.name)
@@ -554,6 +559,7 @@ export function MeetingModal({
         type: "system",
       },
     ]);
+    onEndMeeting?.();
     setTimeout(onClose, 1800);
   };
 

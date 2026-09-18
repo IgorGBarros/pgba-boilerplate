@@ -1,9 +1,9 @@
 // frontend/src/components/builder/CompanyOffice3D.tsx
-// Fase 1 — salas reais, avatares ao vivo, painéis HTML integrados.
-// Fase 2 (movimento, pathfinding, animações) é combinado futuro — CLAUDE.md §7.
+// Fase 1 — salas reais, avatares voxel ao vivo, sala de reunião, painéis HTML.
+// Fase 2 (movimento/pathfinding) é combinado futuro — CLAUDE.md §7.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Text } from "@react-three/drei";
+import { Html, OrbitControls, Text } from "@react-three/drei";
 import type * as THREE from "three";
 import { listAgents, listSectors, type Agent, type Sector, ApiError } from "@/lib/api";
 import { useRealtime } from "@/lib/useRealtime";
@@ -31,6 +31,8 @@ const ROOMS_PER_ROW = 3;
 const WALL_H = 2.6;
 const WALL_T = 0.18;
 const DOOR_W = 1.8;
+const MEETING_ROOM_W = 10;
+const MEETING_ROOM_D = 8;
 
 const ROOM_PALETTES = [
   { floor: "#1a1060", wall: "#2a1d8a", accent: "#5b4fdb" },
@@ -52,6 +54,17 @@ const STATUS_COLOR_3D = {
   paused: "#facc15",
 } as const;
 
+// Cadeiras da sala de reunião — posições [x, z] relativas ao centro da sala
+const MEETING_CHAIRS: Array<[number, number]> = [
+  [-2.6, -1.1], [-1.3, -1.1], [0, -1.1], [1.3, -1.1], [2.6, -1.1],
+  [-2.6,  1.1], [-1.3,  1.1], [0,  1.1], [1.3,  1.1], [2.6,  1.1],
+  [-3.8, 0], [3.8, 0],
+];
+
+// Tonalidades de pele e cabelo determinísticas por agent.id
+const SKIN_TONES = ["#f5c6a0", "#e8b88a", "#d4956b", "#c68642", "#8d5524"];
+const HAIR_COLORS = ["#2d1810", "#5c3a2e", "#1a1a1a", "#4a3728", "#8b6914"];
+
 // ─── Utilitários ──────────────────────────────────────────────────────────────
 
 function roomCenter(index: number): [number, number] {
@@ -72,11 +85,10 @@ function agentSlot(i: number, total: number): [number, number] {
   ];
 }
 
-function inferRoomType(name: string): "tech" | "design" | "meeting" | "generic" {
+function inferRoomType(name: string): "tech" | "design" | "generic" {
   const n = name.toLowerCase();
   if (n.includes("dev") || n.includes("back") || n.includes("front") || n.includes("infra")) return "tech";
   if (n.includes("design") || n.includes("ux") || n.includes("marketing")) return "design";
-  if (n.includes("reunião") || n.includes("meeting")) return "meeting";
   return "generic";
 }
 
@@ -148,26 +160,33 @@ function DesignBoard({ x, z, color }: { x: number; z: number; color: string }) {
   );
 }
 
-function ConferenceTable({ x, z }: { x: number; z: number }) {
+// ─── Anel de status pulsante ──────────────────────────────────────────────────
+
+function StatusRing({ color, isWorking }: { color: string; isWorking: boolean }) {
+  const ref = useRef<THREE.Mesh>(null!);
+
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    const mat = ref.current.material as THREE.MeshStandardMaterial;
+    if (isWorking) {
+      const t = clock.getElapsedTime();
+      ref.current.scale.setScalar(1 + 0.12 * Math.sin(t * 3));
+      mat.emissiveIntensity = 0.4 + 0.3 * Math.sin(t * 3);
+    } else {
+      ref.current.scale.setScalar(1);
+      mat.emissiveIntensity = 0.15;
+    }
+  });
+
   return (
-    <group position={[x, 0, z]}>
-      <mesh position={[0, 0.4, 0]} castShadow receiveShadow>
-        <boxGeometry args={[2.6, 0.07, 1.1]} />
-        <meshStandardMaterial color="#3b2c1e" />
-      </mesh>
-      {[-1, 0, 1].map((cx) =>
-        [-0.65, 0.65].map((cz) => (
-          <mesh key={`${cx}${cz}`} position={[cx * 0.8, 0.22, cz]}>
-            <boxGeometry args={[0.42, 0.06, 0.42]} />
-            <meshStandardMaterial color="#2a2a3a" />
-          </mesh>
-        )),
-      )}
-    </group>
+    <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+      <torusGeometry args={[0.24, 0.04, 6, 24]} />
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.15} />
+    </mesh>
   );
 }
 
-// ─── Avatar do agente ─────────────────────────────────────────────────────────
+// ─── Avatar voxel do agente ───────────────────────────────────────────────────
 
 function AgentAvatar3D({
   agent,
@@ -178,81 +197,325 @@ function AgentAvatar3D({
   position: [number, number, number];
   onSelect: (a: OfficeAgent) => void;
 }) {
-  const ringRef = useRef<THREE.Mesh>(null!);
-  const color = STATUS_COLOR_3D[agent.status] ?? STATUS_COLOR_3D.idle;
+  const groupRef = useRef<THREE.Group>(null!);
+  const statusColor = STATUS_COLOR_3D[agent.status] ?? STATUS_COLOR_3D.idle;
   const isWorking = agent.status === "working";
+  const isThinking = agent.status === "thinking";
 
+  const skin = SKIN_TONES[agent.id % SKIN_TONES.length]!;
+  const hair = HAIR_COLORS[agent.id % HAIR_COLORS.length]!;
+  const shirt = agent.appearance.shirtColor;
+
+  // Leve animação de "respiração" quando trabalhando
   useFrame(({ clock }) => {
-    if (!ringRef.current) return;
-    if (isWorking) {
-      const t = clock.getElapsedTime();
-      ringRef.current.scale.setScalar(1 + 0.1 * Math.sin(t * 3));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (ringRef.current.material as any).emissiveIntensity =
-        0.4 + 0.3 * Math.sin(t * 3);
-    }
+    if (!groupRef.current) return;
+    groupRef.current.position.y = isWorking
+      ? Math.sin(clock.getElapsedTime() * 2.5) * 0.03
+      : 0;
   });
+
+  const shortName = agent.name.split(" ").slice(0, 2).join(" ");
 
   return (
     <group
+      ref={groupRef}
       position={position}
       onClick={(e) => { e.stopPropagation(); onSelect(agent); }}
     >
-      {/* Anel de status no chão */}
-      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <torusGeometry args={[0.22, 0.04, 6, 20]} />
-        <meshStandardMaterial
-          color={color}
-          emissive={color}
-          emissiveIntensity={0.4}
-        />
+      {/* Sombra no chão */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+        <circleGeometry args={[0.22, 16]} />
+        <meshBasicMaterial color="#000" transparent opacity={0.2} depthWrite={false} />
       </mesh>
-      {/* Corpo */}
-      <mesh position={[0, 0.65, 0]} castShadow>
-        <capsuleGeometry args={[0.2, 0.5, 4, 8]} />
-        <meshStandardMaterial
-          color={color}
-          emissive={color}
-          emissiveIntensity={isWorking ? 0.3 : 0.05}
-        />
+
+      <StatusRing color={statusColor} isWorking={isWorking} />
+
+      {/* Perna esquerda */}
+      <mesh position={[-0.09, 0.24, 0]} castShadow>
+        <boxGeometry args={[0.13, 0.46, 0.14]} />
+        <meshStandardMaterial color="#1e3a5f" />
+      </mesh>
+      {/* Perna direita */}
+      <mesh position={[0.09, 0.24, 0]} castShadow>
+        <boxGeometry args={[0.13, 0.46, 0.14]} />
+        <meshStandardMaterial color="#1e3a5f" />
+      </mesh>
+      {/* Sapato esquerdo */}
+      <mesh position={[-0.09, 0.05, 0.04]}>
+        <boxGeometry args={[0.13, 0.09, 0.2]} />
+        <meshStandardMaterial color="#111" />
+      </mesh>
+      {/* Sapato direito */}
+      <mesh position={[0.09, 0.05, 0.04]}>
+        <boxGeometry args={[0.13, 0.09, 0.2]} />
+        <meshStandardMaterial color="#111" />
+      </mesh>
+      {/* Torso */}
+      <mesh position={[0, 0.74, 0]} castShadow>
+        <boxGeometry args={[0.4, 0.5, 0.24]} />
+        <meshStandardMaterial color={shirt} emissive={shirt} emissiveIntensity={isWorking ? 0.08 : 0} />
+      </mesh>
+      {/* Braço esquerdo */}
+      <mesh position={[-0.27, 0.72, 0]} castShadow>
+        <boxGeometry args={[0.12, 0.44, 0.18]} />
+        <meshStandardMaterial color={shirt} />
+      </mesh>
+      {/* Braço direito */}
+      <mesh position={[0.27, 0.72, 0]} castShadow>
+        <boxGeometry args={[0.12, 0.44, 0.18]} />
+        <meshStandardMaterial color={shirt} />
+      </mesh>
+      {/* Mão esquerda */}
+      <mesh position={[-0.27, 0.52, 0]}>
+        <boxGeometry args={[0.1, 0.1, 0.1]} />
+        <meshStandardMaterial color={skin} />
+      </mesh>
+      {/* Mão direita */}
+      <mesh position={[0.27, 0.52, 0]}>
+        <boxGeometry args={[0.1, 0.1, 0.1]} />
+        <meshStandardMaterial color={skin} />
+      </mesh>
+      {/* Pescoço */}
+      <mesh position={[0, 1.06, 0]}>
+        <boxGeometry args={[0.12, 0.12, 0.12]} />
+        <meshStandardMaterial color={skin} />
       </mesh>
       {/* Cabeça */}
-      <mesh position={[0, 1.2, 0]} castShadow>
-        <sphereGeometry args={[0.16, 12, 12]} />
-        <meshStandardMaterial color="#deb891" />
+      <mesh position={[0, 1.32, 0]} castShadow>
+        <boxGeometry args={[0.36, 0.32, 0.32]} />
+        <meshStandardMaterial color={skin} />
       </mesh>
-      {/* Nome */}
-      <Text
-        position={[0, 1.62, 0]}
-        fontSize={0.15}
-        color="#f1f5f9"
-        anchorX="center"
-        anchorY="bottom"
-        outlineWidth={0.008}
-        outlineColor="#000"
+      {/* Cabelo topo */}
+      <mesh position={[0, 1.5, 0]}>
+        <boxGeometry args={[0.38, 0.1, 0.34]} />
+        <meshStandardMaterial color={hair} />
+      </mesh>
+      {/* Cabelo traseiro */}
+      <mesh position={[0, 1.42, -0.17]}>
+        <boxGeometry args={[0.38, 0.26, 0.06]} />
+        <meshStandardMaterial color={hair} />
+      </mesh>
+      {/* Olho esquerdo */}
+      <mesh position={[-0.1, 1.33, 0.165]}>
+        <boxGeometry args={[0.07, 0.06, 0.01]} />
+        <meshBasicMaterial color="#1a1a2e" />
+      </mesh>
+      {/* Olho direito */}
+      <mesh position={[0.1, 1.33, 0.165]}>
+        <boxGeometry args={[0.07, 0.06, 0.01]} />
+        <meshBasicMaterial color="#1a1a2e" />
+      </mesh>
+
+      {/* Tag com nome */}
+      <Html
+        center
+        distanceFactor={8}
+        position={[0, 1.92, 0]}
+        style={{ pointerEvents: "none", userSelect: "none" }}
       >
-        {agent.name}
-      </Text>
-      {/* Task (só quando trabalhando) */}
-      {isWorking && agent.currentTask !== "Sem tarefa ativa" && (
-        <Text
-          position={[0, 1.44, 0]}
-          fontSize={0.1}
-          color="#86efac"
-          anchorX="center"
-          anchorY="bottom"
-          maxWidth={1.8}
-          outlineWidth={0.006}
-          outlineColor="#000"
+        <div
+          style={{
+            background: "rgba(0,0,0,0.82)",
+            color: "#f1f5f9",
+            fontSize: "10px",
+            padding: "2px 7px",
+            borderRadius: "4px",
+            whiteSpace: "nowrap",
+            border: `1px solid ${statusColor}`,
+          }}
         >
-          {agent.currentTask}
-        </Text>
+          {shortName}
+        </div>
+      </Html>
+
+      {/* Tarefa atual (só quando trabalhando) */}
+      {isWorking && agent.currentTask !== "Sem tarefa ativa" && (
+        <Html
+          center
+          distanceFactor={8}
+          position={[0, 2.14, 0]}
+          style={{ pointerEvents: "none", userSelect: "none" }}
+        >
+          <div
+            style={{
+              background: "rgba(34,197,94,0.14)",
+              color: "#86efac",
+              fontSize: "9px",
+              padding: "1px 5px",
+              borderRadius: "3px",
+              whiteSpace: "nowrap",
+              maxWidth: "120px",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              border: "1px solid rgba(34,197,94,0.25)",
+            }}
+          >
+            {agent.currentTask.length > 22
+              ? agent.currentTask.slice(0, 22) + "…"
+              : agent.currentTask}
+          </div>
+        </Html>
+      )}
+
+      {/* Balão de pensamento */}
+      {isThinking && (
+        <Html
+          center
+          distanceFactor={8}
+          position={[0.35, 1.65, 0]}
+          style={{ pointerEvents: "none" }}
+        >
+          <span style={{ fontSize: "16px" }}>💭</span>
+        </Html>
       )}
     </group>
   );
 }
 
-// ─── Sala ─────────────────────────────────────────────────────────────────────
+// ─── Sala de reunião ──────────────────────────────────────────────────────────
+
+function MeetingRoom({
+  position,
+  agents,
+  onAgentClick,
+}: {
+  position: [number, number, number];
+  agents: OfficeAgent[];
+  onAgentClick: (a: OfficeAgent) => void;
+}) {
+  const halfW = MEETING_ROOM_W / 2;
+  const halfD = MEETING_ROOM_D / 2;
+
+  return (
+    <group position={position}>
+      {/* Piso escuro com tom roxo-pink */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} receiveShadow>
+        <planeGeometry args={[MEETING_ROOM_W, MEETING_ROOM_D]} />
+        <meshStandardMaterial color="#160826" />
+      </mesh>
+      {/* Faixas de luz pink no piso */}
+      {([-halfD / 2, halfD / 2] as number[]).map((z, i) => (
+        <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, z]}>
+          <planeGeometry args={[MEETING_ROOM_W - 0.5, 0.08]} />
+          <meshBasicMaterial color="#ec4899" transparent opacity={0.3} />
+        </mesh>
+      ))}
+
+      {/* Paredes */}
+      <mesh position={[0, WALL_H / 2, -halfD]} castShadow>
+        <boxGeometry args={[MEETING_ROOM_W, WALL_H, WALL_T]} />
+        <meshStandardMaterial color="#2d1060" />
+      </mesh>
+      <mesh position={[-halfW, WALL_H / 2, 0]}>
+        <boxGeometry args={[WALL_T, WALL_H, MEETING_ROOM_D]} />
+        <meshStandardMaterial color="#2d1060" />
+      </mesh>
+      <mesh position={[halfW, WALL_H / 2, 0]}>
+        <boxGeometry args={[WALL_T, WALL_H, MEETING_ROOM_D]} />
+        <meshStandardMaterial color="#2d1060" />
+      </mesh>
+      {/* Parede frontal com vão de porta */}
+      <mesh position={[-(halfW / 2 + DOOR_W / 4), WALL_H / 2, halfD]}>
+        <boxGeometry args={[halfW - DOOR_W / 2, WALL_H, WALL_T]} />
+        <meshStandardMaterial color="#2d1060" />
+      </mesh>
+      <mesh position={[(halfW / 2 + DOOR_W / 4), WALL_H / 2, halfD]}>
+        <boxGeometry args={[halfW - DOOR_W / 2, WALL_H, WALL_T]} />
+        <meshStandardMaterial color="#2d1060" />
+      </mesh>
+
+      {/* Faixa de cor pink luminosa no topo */}
+      <mesh position={[0, WALL_H - 0.08, -halfD + WALL_T / 2]}>
+        <boxGeometry args={[MEETING_ROOM_W - WALL_T, 0.12, 0.04]} />
+        <meshStandardMaterial color="#ec4899" emissive="#ec4899" emissiveIntensity={0.55} />
+      </mesh>
+
+      {/* Tela/projetor na parede traseira */}
+      <mesh position={[0, 1.25, -halfD + WALL_T + 0.03]}>
+        <boxGeometry args={[5, 1.7, 0.03]} />
+        <meshStandardMaterial color="#0d1020" emissive="#4c1d95" emissiveIntensity={0.18} />
+      </mesh>
+      <mesh position={[0, 1.25, -halfD + WALL_T + 0.045]}>
+        <boxGeometry args={[5.1, 1.8, 0.01]} />
+        <meshStandardMaterial color="#ec4899" emissive="#ec4899" emissiveIntensity={0.22} />
+      </mesh>
+
+      {/* Rótulo da sala */}
+      <Text
+        position={[0, WALL_H + 0.3, -halfD + 0.1]}
+        fontSize={0.32}
+        color="#f0abfc"
+        anchorX="center"
+        anchorY="bottom"
+        outlineWidth={0.012}
+        outlineColor="#000"
+      >
+        Sala de Reunião
+      </Text>
+
+      {/* Mesa de conferência */}
+      <mesh position={[0, 0.41, 0]} castShadow receiveShadow>
+        <boxGeometry args={[7.8, 0.08, 1.5]} />
+        <meshStandardMaterial color="#3b2c1e" roughness={0.4} metalness={0.1} />
+      </mesh>
+      {/* Pernas da mesa */}
+      {([-3.4, -1.6, 0, 1.6, 3.4] as number[]).map((x) =>
+        ([-0.62, 0.62] as number[]).map((z) => (
+          <mesh key={`ml-${x}-${z}`} position={[x, 0.2, z]}>
+            <boxGeometry args={[0.07, 0.38, 0.07]} />
+            <meshStandardMaterial color="#2a1e10" />
+          </mesh>
+        )),
+      )}
+
+      {/* Cadeiras */}
+      {MEETING_CHAIRS.map(([cx, cz], i) => {
+        const isFront = cz > 0;
+        const isHead = Math.abs(cx) > 3;
+        return (
+          <group key={i} position={[cx, 0, cz]}>
+            {/* Assento */}
+            <mesh position={[0, 0.22, 0]}>
+              <boxGeometry args={[0.38, 0.05, 0.38]} />
+              <meshStandardMaterial color="#1e1e2e" />
+            </mesh>
+            {/* Encosto */}
+            {!isHead && (
+              <mesh position={[0, 0.5, isFront ? 0.17 : -0.17]}>
+                <boxGeometry args={[0.38, 0.52, 0.04]} />
+                <meshStandardMaterial color="#1e1e2e" />
+              </mesh>
+            )}
+            {/* Pernas */}
+            {([-0.14, 0.14] as number[]).map((lx) =>
+              ([-0.14, 0.14] as number[]).map((lz) => (
+                <mesh key={`cl-${lx}-${lz}`} position={[lx, 0.1, lz]}>
+                  <boxGeometry args={[0.04, 0.2, 0.04]} />
+                  <meshStandardMaterial color="#2a2a3a" />
+                </mesh>
+              )),
+            )}
+          </group>
+        );
+      })}
+
+      {/* Agentes na reunião */}
+      {agents.map((agent, i) => {
+        const [cx, cz] = MEETING_CHAIRS[i % MEETING_CHAIRS.length]!;
+        return (
+          <AgentAvatar3D
+            key={agent.id}
+            agent={{ ...agent, status: "meeting" as const }}
+            position={[cx, 0, cz]}
+            onSelect={onAgentClick}
+          />
+        );
+      })}
+    </group>
+  );
+}
+
+// ─── Sala de setor ────────────────────────────────────────────────────────────
 
 function Room({
   sector,
@@ -275,7 +538,7 @@ function Room({
 
   return (
     <group position={[cx, 0, cz]}>
-      {/* Piso — clicável para abrir RoomModal */}
+      {/* Piso */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, 0.01, 0]}
@@ -301,7 +564,7 @@ function Room({
         <boxGeometry args={[WALL_T, WALL_H, ROOM_D]} />
         <meshStandardMaterial color={palette.wall} />
       </mesh>
-      {/* Parede frontal (2 segmentos + vão de porta) */}
+      {/* Parede frontal com vão */}
       <mesh position={[-(halfW / 2 + DOOR_W / 4), WALL_H / 2, halfD]}>
         <boxGeometry args={[halfW - DOOR_W / 2, WALL_H, WALL_T]} />
         <meshStandardMaterial color={palette.wall} />
@@ -311,7 +574,7 @@ function Room({
         <meshStandardMaterial color={palette.wall} />
       </mesh>
 
-      {/* Faixa de cor luminosa no topo */}
+      {/* Faixa de cor no topo */}
       <mesh position={[0, WALL_H - 0.08, -halfD + WALL_T / 2]}>
         <boxGeometry args={[ROOM_W - WALL_T, 0.12, 0.04]} />
         <meshStandardMaterial
@@ -334,7 +597,7 @@ function Room({
         {sector.name}
       </Text>
 
-      {/* Móveis por tipo de setor */}
+      {/* Móveis */}
       {type === "tech" && (
         <>
           <Workstation x={-2.8} z={-2.2} color={palette.accent} />
@@ -351,7 +614,6 @@ function Room({
           <DesignBoard x={2.5} z={-2} color={palette.accent} />
         </>
       )}
-      {type === "meeting" && <ConferenceTable x={0} z={-0.5} />}
       {type === "generic" && (
         <>
           <Workstation x={-2} z={-2.2} color={palette.accent} />
@@ -387,10 +649,13 @@ export default function CompanyOffice3D() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [paused, setPaused] = useState(false);
-  const [speed, setSpeed] = useState(30_000); // 1x
+  const [speed, setSpeed] = useState(30_000);
   const [zoom, setZoom] = useState(1);
 
-  // Modals
+  // Meeting state
+  const [meetingAgentIds, setMeetingAgentIds] = useState<Set<number>>(new Set());
+
+  // Modais
   const [selectedAgent, setSelectedAgent] = useState<OfficeAgent | null>(null);
   const [agentModalOpen, setAgentModalOpen] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<{ id: number; name: string } | null>(null);
@@ -398,10 +663,9 @@ export default function CompanyOffice3D() {
   const [meetingOpen, setMeetingOpen] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
 
-  // Activity logs (gerados localmente a partir dos eventos WebSocket)
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
 
-  // Carregamento inicial + poll adaptativo (speed controla o intervalo)
+  // Carregamento + poll adaptativo
   useEffect(() => {
     let cancelled = false;
     async function fetchAll() {
@@ -425,7 +689,6 @@ export default function CompanyOffice3D() {
     return () => { cancelled = true; clearInterval(iv); };
   }, [paused, speed]);
 
-  // Atualizações ao vivo via WebSocket
   const { connected, lastAgentEvent } = useRealtime();
 
   const addLog = useCallback((agent: OfficeAgent, action: string) => {
@@ -452,51 +715,66 @@ export default function CompanyOffice3D() {
     });
   }, [lastAgentEvent]);
 
-  // Derivar agentes enriquecidos uma vez
   const officeAgents = useMemo<OfficeAgent[]>(
     () => rawAgents.map((a, i) => toOfficeAgent(a, sectors, i)),
     [rawAgents, sectors],
   );
 
-  // Registrar log quando status muda
   const prevStatusRef = useRef<Map<number, string>>(new Map());
   useEffect(() => {
     for (const agent of officeAgents) {
       const prev = prevStatusRef.current.get(agent.id);
       if (prev === undefined) {
-        // Primeira carga — registrar estado inicial
         addLog(agent, `Status inicial: ${agent.status === "working" ? `trabalhando em "${agent.currentTask}"` : agent.status}`);
       } else if (prev !== agent.status) {
         const action =
-          agent.status === "working"
-            ? `Iniciou: ${agent.currentTask}`
-            : agent.status === "idle"
-            ? "Concluiu tarefa, aguardando"
-            : agent.status === "paused"
-            ? "Tarefa pausada"
-            : `Status → ${agent.status}`;
+          agent.status === "working" ? `Iniciou: ${agent.currentTask}`
+          : agent.status === "idle" ? "Concluiu tarefa, aguardando"
+          : agent.status === "paused" ? "Tarefa pausada"
+          : `Status → ${agent.status}`;
         addLog(agent, action);
       }
       prevStatusRef.current.set(agent.id, agent.status);
     }
   }, [officeAgents, addLog]);
 
+  // Agentes na reunião
+  const meetingAgents = useMemo(
+    () => officeAgents.filter((a) => meetingAgentIds.has(a.id)),
+    [officeAgents, meetingAgentIds],
+  );
+
+  // Agentes por setor (excluindo quem está na reunião)
   const agentsBySector = useMemo(() => {
     const map = new Map<number, OfficeAgent[]>();
     for (const a of officeAgents) {
+      if (meetingAgentIds.has(a.id)) continue;
       if (a.sectorId == null) continue;
       const list = map.get(a.sectorId) ?? [];
       list.push(a);
       map.set(a.sectorId, list);
     }
     return map;
-  }, [officeAgents]);
+  }, [officeAgents, meetingAgentIds]);
 
-  const cols = Math.min(sectors.length, ROOMS_PER_ROW);
-  const rows = Math.ceil(sectors.length / ROOMS_PER_ROW);
-  const gridW = cols * (ROOM_W + ROOM_GAP);
-  const gridD = rows * (ROOM_D + ROOM_GAP);
-  const camDist = Math.max(gridW, gridD) * 0.85;
+  // Dimensões da cena
+  const cols = Math.min(Math.max(sectors.length, 1), ROOMS_PER_ROW);
+  const rows = Math.ceil(Math.max(sectors.length, 1) / ROOMS_PER_ROW);
+  const gridW = cols * (ROOM_W + ROOM_GAP) - ROOM_GAP;
+  const gridD = rows * (ROOM_D + ROOM_GAP) - ROOM_GAP;
+  const totalD = gridD + ROOM_GAP + MEETING_ROOM_D + 2;
+  const camDist = Math.max(gridW, totalD) * 0.82;
+
+  // Posição da sala de reunião: abaixo do grid, centralizada
+  const meetingRoomPos: [number, number, number] = [
+    (cols - 1) * (ROOM_W + ROOM_GAP) / 2,
+    0,
+    rows * (ROOM_D + ROOM_GAP) + MEETING_ROOM_D / 2 + 1,
+  ];
+
+  // Centro da cena (incluindo sala de reunião)
+  const sceneCenterX = (cols - 1) * (ROOM_W + ROOM_GAP) / 2;
+  const sceneCenterZ = (gridD + meetingRoomPos[2]) / 2;
 
   const handleAgentClick = useCallback((a: OfficeAgent) => {
     setSelectedAgent(a);
@@ -522,15 +800,6 @@ export default function CompanyOffice3D() {
       </div>
     );
   }
-  if (sectors.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center bg-[#0a0d14]">
-        <p className="text-sm text-slate-500">
-          Nenhum setor cadastrado — crie um na aba "Empresa".
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-[#0a0d14]">
@@ -548,7 +817,7 @@ export default function CompanyOffice3D() {
         onZoomIn={() => setZoom((v) => Math.min(v + 0.1, 2))}
         onZoomOut={() => setZoom((v) => Math.max(v - 0.1, 0.3))}
         onCallMeeting={() => setMeetingOpen(true)}
-        onEndMeeting={() => {}}
+        onEndMeeting={() => setMeetingAgentIds(new Set())}
         onToggleActivity={() => setActivityOpen((v) => !v)}
         onTogglePanel={() => setPanelOpen((v) => !v)}
         onOpenConsole={() => setConsoleOpen(true)}
@@ -556,7 +825,7 @@ export default function CompanyOffice3D() {
 
       {/* Layout: painéis laterais + canvas central */}
       <div className="relative flex min-h-0 flex-1">
-        {/* Painel esquerdo — atividades */}
+        {/* Painel esquerdo */}
         <ActivityPanel
           logs={activityLogs}
           open={activityOpen}
@@ -564,44 +833,39 @@ export default function CompanyOffice3D() {
         />
 
         {/* Cena 3D — ocupa o espaço restante */}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1" style={{ height: "100%" }}>
           <Canvas
             shadows
             camera={{
-              position: [gridW * 0.5, camDist * 0.6, gridD + camDist * 0.5],
+              position: [sceneCenterX, camDist * 0.6, sceneCenterZ + camDist * 0.7],
               fov: 45,
             }}
+            style={{ width: "100%", height: "100%" }}
           >
-            <fog attach="fog" args={["#0a0d14", camDist * 1.8, camDist * 3.5]} />
+            <fog attach="fog" args={["#0a0d14", camDist * 1.6, camDist * 3.2]} />
             <ambientLight intensity={0.4} />
             <hemisphereLight args={["#1e2a4a", "#0a0d14", 0.5]} />
             <directionalLight
-              position={[gridW * 0.5, 20, gridD * 0.5]}
+              position={[sceneCenterX, 20, sceneCenterZ]}
               intensity={1.2}
               castShadow
               shadow-mapSize={[2048, 2048]}
             />
-            <pointLight
-              position={[gridW * 0.5, 5, gridD * 0.5]}
-              intensity={0.8}
-              color="#6080ff"
-            />
+            <pointLight position={[sceneCenterX, 5, sceneCenterZ]} intensity={0.8} color="#6080ff" />
+            {/* Luz extra para a sala de reunião */}
+            <pointLight position={[meetingRoomPos[0], 4, meetingRoomPos[2]]} intensity={0.6} color="#ec4899" />
 
             {/* Piso geral */}
             <mesh
               rotation={[-Math.PI / 2, 0, 0]}
-              position={[
-                gridW / 2 - (ROOM_W + ROOM_GAP) / 2,
-                -0.02,
-                gridD / 2 - (ROOM_D + ROOM_GAP) / 2,
-              ]}
+              position={[sceneCenterX, -0.02, sceneCenterZ]}
               receiveShadow
             >
-              <planeGeometry args={[gridW + 6, gridD + 6]} />
+              <planeGeometry args={[gridW + MEETING_ROOM_W + 10, totalD + 8]} />
               <meshStandardMaterial color="#0d1017" />
             </mesh>
 
-            {/* Salas */}
+            {/* Salas dos setores */}
             {sectors.map((sector, i) => (
               <Room
                 key={sector.id}
@@ -613,20 +877,23 @@ export default function CompanyOffice3D() {
               />
             ))}
 
+            {/* Sala de reunião — sempre presente */}
+            <MeetingRoom
+              position={meetingRoomPos}
+              agents={meetingAgents}
+              onAgentClick={handleAgentClick}
+            />
+
             <OrbitControls
-              target={[
-                gridW / 2 - (ROOM_W + ROOM_GAP) / 2,
-                0,
-                gridD / 2 - (ROOM_D + ROOM_GAP) / 2,
-              ]}
+              target={[sceneCenterX, 0, sceneCenterZ]}
               maxPolarAngle={Math.PI / 2.1}
               minDistance={8}
-              maxDistance={camDist * 2}
+              maxDistance={camDist * 2.5}
             />
           </Canvas>
         </div>
 
-        {/* Painel direito — lista de agentes */}
+        {/* Painel direito */}
         <AgentInfoPanel
           agents={officeAgents}
           open={panelOpen}
@@ -653,6 +920,13 @@ export default function CompanyOffice3D() {
         onClose={() => setMeetingOpen(false)}
         agents={officeAgents}
         sectors={sectors}
+        onStartMeeting={(ids) => {
+          setMeetingAgentIds(new Set(ids));
+          addLog(officeAgents[0] ?? { name: "Sistema" } as OfficeAgent, `Reunião iniciada com ${ids.length} participante(s)`);
+        }}
+        onEndMeeting={() => {
+          setMeetingAgentIds(new Set());
+        }}
       />
       <ConsoleModal
         open={consoleOpen}
