@@ -4,12 +4,26 @@ import {
   Download,
   ExternalLink,
   FolderKanban,
+  Pencil,
   Plus,
+  Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { SectionHeader } from "@/components/empresa/shared";
-import { listProjects, type Project } from "@/lib/api";
+import { listProjects, deleteProject, updateProject, type Project } from "@/lib/api";
 
 const statusVariant: Record<Project["status"], "default" | "secondary" | "destructive"> = {
   ready: "default",
@@ -30,6 +44,88 @@ function formatDate(iso: string): string {
   return `${Math.floor(diff / 86400000)} d`;
 }
 
+// ─── Edit Dialog ─────────────────────────────────────────────────────────────
+
+function EditProjectDialog({
+  project,
+  open,
+  onOpenChange,
+  onSaved,
+}: {
+  project: Project | null;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onSaved: (updated: Project) => void;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (project) {
+      setName(project.name);
+      setDescription(project.description ?? "");
+    }
+  }, [project]);
+
+  const handleSave = async () => {
+    if (!project) return;
+    setSaving(true);
+    try {
+      const updated = await updateProject(project.id, { name, description });
+      toast.success("Projeto atualizado");
+      onSaved(updated);
+      onOpenChange(false);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao salvar projeto");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar projeto</DialogTitle>
+          <DialogDescription>
+            Altere o nome e a descrição do projeto.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="ep-name">Nome</Label>
+            <Input
+              id="ep-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ep-desc">Descrição</Label>
+            <Textarea
+              id="ep-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "Salvando..." : "Salvar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export function Projects({
   onNewProject,
   onImportProject,
@@ -42,6 +138,11 @@ export function Projects({
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [editProject, setEditProject] = useState<Project | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   void onNewTask;
 
@@ -51,6 +152,21 @@ export function Projects({
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteProject(deleteTarget.id);
+      setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+      toast.success(`Projeto "${deleteTarget.name}" excluído`);
+      setDeleteOpen(false);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao excluir projeto");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const created = projects.filter((p) => p.origin === "created");
   const imported = projects.filter((p) => p.origin === "imported");
@@ -106,9 +222,7 @@ export function Projects({
                 <div className="divide-y divide-border">
                   {items.map((project) => (
                     <div key={project.id}>
-                      <div
-                        className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent"
-                      >
+                      <div className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent">
                         <button
                           type="button"
                           onClick={() =>
@@ -151,11 +265,41 @@ export function Projects({
                             <ExternalLink className="size-3.5" />
                           </a>
                         )}
+
+                        {/* Edit / Delete actions */}
+                        <div className="hidden shrink-0 items-center gap-1 group-hover:flex">
+                          <button
+                            type="button"
+                            title="Editar projeto"
+                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditProject(project);
+                              setEditOpen(true);
+                            }}
+                          >
+                            <Pencil className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Excluir projeto"
+                            className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteTarget(project);
+                              setDeleteOpen(true);
+                            }}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
                       </div>
 
-                      {expanded[project.id] && project.description && (
+                      {expanded[project.id] && (project.description || project.error_message) && (
                         <div className="ml-14 border-t border-border px-4 py-2">
-                          <p className="text-xs text-muted-foreground">{project.description}</p>
+                          {project.description && (
+                            <p className="text-xs text-muted-foreground">{project.description}</p>
+                          )}
                           {project.error_message && (
                             <p className="mt-1 text-xs text-destructive">{project.error_message}</p>
                           )}
@@ -169,6 +313,38 @@ export function Projects({
           )}
         </div>
       )}
+
+      {/* Edit dialog */}
+      <EditProjectDialog
+        project={editProject}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSaved={(updated) =>
+          setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+        }
+      />
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir projeto</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir o projeto{" "}
+              <strong className="text-foreground">"{deleteTarget?.name}"</strong>? Esta ação não
+              pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? "Excluindo..." : "Excluir"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
