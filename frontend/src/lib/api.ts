@@ -662,3 +662,10 @@ export async function updateAgent(
     }),
   });
 }
+
+export async function patchAgentAutonomy(id: number, autonomy_level: number): Promise<Agent> {
+  return request<Agent>(`/api/v1/agency/agents/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify({ autonomy_level }),
+  });
+}

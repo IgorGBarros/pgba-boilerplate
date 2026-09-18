@@ -113,16 +113,19 @@ export function ActivityPanel({
 
 // ─── Top Bar ───────────────────────────────────────────────────────────────────
 
+const AUTONOMY_SLIDER_LABELS = ["Baixo", "Médio", "Alto"] as const;
+const AUTONOMY_SLIDER_DESC   = ["Observador", "Executor", "Autônomo"] as const;
+
 export function OfficeTopBar({
   agents,
   connected,
   paused,
-  speed,
+  autonomySlider,
   zoom,
   activityOpen,
   panelOpen,
   onTogglePause,
-  onSpeedChange,
+  onAutonomyChange,
   onZoomIn,
   onZoomOut,
   onCallMeeting,
@@ -134,12 +137,12 @@ export function OfficeTopBar({
   agents: OfficeAgent[];
   connected: boolean;
   paused: boolean;
-  speed: number;
+  autonomySlider: number;
   zoom: number;
   activityOpen: boolean;
   panelOpen: boolean;
   onTogglePause: () => void;
-  onSpeedChange: (v: number) => void;
+  onAutonomyChange: (v: number) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onCallMeeting: () => void;
@@ -152,12 +155,6 @@ export function OfficeTopBar({
   const inMeeting = agents.filter((a) => a.status === "meeting").length;
   const efficiency = agents.length > 0 ? Math.round((active / agents.length) * 100) : 0;
   const hasMeeting = inMeeting > 0;
-
-  const speedPresets = [
-    { label: "1x", value: 30_000 },
-    { label: "2x", value: 15_000 },
-    { label: "5x", value: 6_000 },
-  ];
 
   const effColor =
     efficiency >= 70 ? "#4ade80" : efficiency >= 40 ? "#facc15" : "#f87171";
@@ -174,22 +171,29 @@ export function OfficeTopBar({
         {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
       </button>
 
-      {/* Speed */}
-      <div className="flex items-center gap-0.5">
-        {speedPresets.map((p) => (
-          <button
-            key={p.label}
-            type="button"
-            onClick={() => onSpeedChange(p.value)}
-            className={`rounded px-2 py-0.5 text-xs font-bold transition-colors ${
-              speed === p.value
-                ? "bg-indigo-600 text-white"
-                : "bg-white/10 text-slate-300 hover:bg-white/20"
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
+      {/* Autonomia dos agentes — estilo "Esforço" do Claude */}
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] font-medium text-slate-400">Comportamento:</span>
+        <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
+          {AUTONOMY_SLIDER_LABELS.map((label, i) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => onAutonomyChange(i)}
+              title={AUTONOMY_SLIDER_DESC[i]}
+              className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                autonomySlider === i
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "text-slate-400 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="text-[10px] text-slate-500 italic">
+          {AUTONOMY_SLIDER_DESC[autonomySlider]}
+        </span>
       </div>
 
       <div className="h-4 w-px bg-white/15" />
