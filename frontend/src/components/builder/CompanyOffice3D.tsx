@@ -50,26 +50,38 @@ const AUTONOMY_LABELS   = ["Observador", "Executor", "Autônomo"] as const;
 // Escala global de móveis — mantém proporção com agentes a 0.65×
 const FURNITURE_SCALE = 0.70;
 
-// Paletas neutras — paredes off-white, cor do departamento apenas no accent stripe
-const NEUTRAL_WALL  = "#e9e5de";
-const NEUTRAL_FLOOR = "#f0ede6";
+// Paredes neutras para todos os setores; CEO tem parede verde distinta
+const NEUTRAL_WALL  = "#eae6de";
 const NEUTRAL_TRIM  = "#ccc8c0";
 
+// Cor do piso por tipo de sala — identidade visual do departamento
+function getRoomFloor(type: string): string {
+  switch (type) {
+    case "tech":    return "#f5dcc8"; // salmão — Backend, Frontend, DevOps
+    case "design":  return "#f5ccd8"; // rosa — Design / UX
+    case "payment": return "#f5ccd8"; // rosa — Pagamento
+    case "control": return "#c4d4e8"; // azul aço — Sala de Controle
+    case "ceo":     return "#e0eedc"; // verde suave — CEO
+    case "meeting": return "#f0e4d4"; // pêssego — Sala de Reunião
+    default:        return "#ece8e0"; // neutro quente — genérico
+  }
+}
+
 const ROOM_PALETTES = [
-  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#1565c0", trim: NEUTRAL_TRIM },
-  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#2e7d32", trim: NEUTRAL_TRIM },
-  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#b71c1c", trim: NEUTRAL_TRIM },
-  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#6a1b9a", trim: NEUTRAL_TRIM },
-  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#e65100", trim: NEUTRAL_TRIM },
-  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#00695c", trim: NEUTRAL_TRIM },
-  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#37474f", trim: NEUTRAL_TRIM },
-  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#283593", trim: NEUTRAL_TRIM },
+  { floor: "#f5dcc8", wall: NEUTRAL_WALL, accent: "#1565c0", trim: NEUTRAL_TRIM },
+  { floor: "#f5dcc8", wall: NEUTRAL_WALL, accent: "#2e7d32", trim: NEUTRAL_TRIM },
+  { floor: "#f5ccd8", wall: NEUTRAL_WALL, accent: "#b71c1c", trim: NEUTRAL_TRIM },
+  { floor: "#f5ccd8", wall: NEUTRAL_WALL, accent: "#6a1b9a", trim: NEUTRAL_TRIM },
+  { floor: "#f5dcc8", wall: NEUTRAL_WALL, accent: "#e65100", trim: NEUTRAL_TRIM },
+  { floor: "#c4d4e8", wall: NEUTRAL_WALL, accent: "#00695c", trim: NEUTRAL_TRIM },
+  { floor: "#c4d4e8", wall: NEUTRAL_WALL, accent: "#37474f", trim: NEUTRAL_TRIM },
+  { floor: "#ece8e0", wall: NEUTRAL_WALL, accent: "#283593", trim: NEUTRAL_TRIM },
 ] as const;
 
 // Paleta da sala de reunião
-const MEETING_PALETTE = { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#6d28d9", trim: NEUTRAL_TRIM };
-// Paleta CEO
-const CEO_PALETTE = { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#1b5e20", trim: NEUTRAL_TRIM };
+const MEETING_PALETTE = { floor: "#f0e4d4", wall: NEUTRAL_WALL, accent: "#6d28d9", trim: NEUTRAL_TRIM };
+// Paleta CEO — parede verde distinta como no layout de referência
+const CEO_PALETTE = { floor: "#e0eedc", wall: "#2d5a30", accent: "#4caf50", trim: "#b8d4b8" };
 
 const STATUS_COLOR_3D = {
   working: "#22c55e", thinking: "#60a5fa", idle: "#94a3b8",
@@ -577,6 +589,38 @@ function CeilingLamp({ x, z }: { x: number; z: number }) {
       <mesh position={[0, -0.06, 0]}>
         <sphereGeometry args={[0.065, 8, 6]} />
         <meshStandardMaterial color="#fff8e0" emissive="#fff8e0" emissiveIntensity={2.2} />
+      </mesh>
+    </group>
+  );
+}
+
+// ─── Mesa oval de reunião ─────────────────────────────────────────────────────
+
+function OvalMeetingTable() {
+  return (
+    <group>
+      {/* Tampo oval — cylinder escalado no eixo X */}
+      <group scale={[1.7, 1, 0.85]}>
+        <mesh position={[0, 0.44, 0]} castShadow receiveShadow>
+          <cylinderGeometry args={[1.65, 1.65, 0.07, 40]} />
+          <meshStandardMaterial color="#7a5c20" roughness={0.28} metalness={0.06} />
+        </mesh>
+      </group>
+      {/* Suporte central em X */}
+      {([[2.1, 0], [-2.1, 0], [0, 1.0], [0, -1.0]] as [number, number][]).map(([lx, lz], i) => (
+        <mesh key={i} position={[lx * 0.45, 0.22, lz * 0.45]}>
+          <cylinderGeometry args={[0.055, 0.07, 0.44, 6]} />
+          <meshStandardMaterial color="#5a3a1a" metalness={0.35} roughness={0.4} />
+        </mesh>
+      ))}
+      {/* Base horizontal */}
+      <mesh position={[0, 0.03, 0]}>
+        <boxGeometry args={[2.8, 0.05, 0.14]} />
+        <meshStandardMaterial color="#5a3a1a" metalness={0.35} />
+      </mesh>
+      <mesh position={[0, 0.03, 0]} rotation={[0, Math.PI / 2, 0]}>
+        <boxGeometry args={[1.4, 0.05, 0.14]} />
+        <meshStandardMaterial color="#5a3a1a" metalness={0.35} />
       </mesh>
     </group>
   );
@@ -1134,18 +1178,21 @@ function Room({
   const divSeg1Z  = -((halfD + DIVIDER_OPENING / 2) / 2);               // -2.6
   const divSeg2Z  =   (halfD + DIVIDER_OPENING / 2) / 2;                // +2.6
 
+  // Cor do piso baseada no tipo de sala
+  const floorColor = getRoomFloor(type);
+
   return (
     <group position={[cx, 0, cz]}>
-      {/* Piso */}
+      {/* Piso com cor por tipo de departamento */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} receiveShadow
         onClick={(e) => { e.stopPropagation(); onRoomClick(sector.id, sector.name); }}>
         <planeGeometry args={[ROOM_W, ROOM_D]} />
-        <meshStandardMaterial color={palette.floor} />
+        <meshStandardMaterial color={floorColor} roughness={0.85} />
       </mesh>
       {/* Moldura interna no piso */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}>
         <ringGeometry args={[Math.min(halfW, halfD) - 0.5, Math.min(halfW, halfD) - 0.2, 32]} />
-        <meshBasicMaterial color={palette.accent} transparent opacity={0.15} />
+        <meshBasicMaterial color={palette.accent} transparent opacity={0.18} />
       </mesh>
 
       {/* Parede traseira */}
@@ -1253,36 +1300,37 @@ function Room({
 
       {type === "meeting" && (
         <>
-          {/* Mesa de conferência */}
-          <mesh position={[0, 0.42, 0]} castShadow>
-            <boxGeometry args={[6.0, 0.07, 1.2]} />
-            <meshStandardMaterial color="#3b2c1e" roughness={0.4} />
-          </mesh>
-          {([-2.5, -1.25, 0, 1.25, 2.5] as number[]).map((mx) =>
-            ([-0.52, 0.52] as number[]).map((mz) => (
-              <mesh key={`${mx}-${mz}`} position={[mx, 0.2, mz]}>
-                <boxGeometry args={[0.06, 0.38, 0.06]} />
-                <meshStandardMaterial color="#2a1e10" />
-              </mesh>
-            ))
-          )}
-          {MEETING_CHAIRS_SMALL.map(([cchx, cchz], i) => {
-            const rot = cchz < -0.5 ? 0 : cchz > 0.5 ? Math.PI : cchx < 0 ? Math.PI / 2 : -Math.PI / 2;
-            return <PixelChair key={i} x={cchx} z={cchz} color="#1e1e2e" rotation={rot} />;
-          })}
-          {/* Tela de projeção */}
+          {/* Mesa oval central */}
+          <OvalMeetingTable />
+          {/* Cadeiras em volta da mesa oval */}
+          {([
+            [-2.4, 0,  -1.55, 0],
+            [-0.8, 0,  -1.55, 0],
+            [ 0.8, 0,  -1.55, 0],
+            [ 2.4, 0,  -1.55, 0],
+            [-2.4, 0,   1.55, Math.PI],
+            [-0.8, 0,   1.55, Math.PI],
+            [ 0.8, 0,   1.55, Math.PI],
+            [ 2.4, 0,   1.55, Math.PI],
+            [-3.3, 0,   0,    Math.PI / 2],
+            [ 3.3, 0,   0,   -Math.PI / 2],
+          ] as [number, number, number, number][]).map(([cx2, , cz2, rot], i) => (
+            <PixelChair key={i} x={cx2} z={cz2} color="#1e1e2e" rotation={rot} />
+          ))}
+          {/* Tela de projeção na parede traseira */}
           <mesh position={[0, 1.3, -halfD + WALL_T + 0.04]}>
-            <boxGeometry args={[4.0, 1.2, 0.03]} />
-            <meshStandardMaterial color="#050810" emissive="#4c1d95" emissiveIntensity={0.25} />
+            <boxGeometry args={[4.2, 1.3, 0.03]} />
+            <meshStandardMaterial color="#050810" emissive="#4c1d95" emissiveIntensity={0.28} />
           </mesh>
           {/* Projetor no teto */}
-          <mesh position={[0, WALL_H - 0.1, 0.5]}>
+          <mesh position={[0, WALL_H - 0.1, 0.6]}>
             <boxGeometry args={[0.24, 0.12, 0.4]} />
             <meshStandardMaterial color="#222" metalness={0.6} />
           </mesh>
-          <Whiteboard x={-3.2} z={-halfD + WALL_T + 0.04} />
-          <Plant x={3.5} z={3.0} />
-          <Plant x={-3.5} z={3.0} />
+          {/* Quadro / TV lateral */}
+          <Whiteboard x={3.2} z={-halfD + WALL_T + 0.04} />
+          <Plant x={3.5} z={2.8} tall />
+          <Plant x={-3.5} z={2.8} />
         </>
       )}
 
@@ -1678,17 +1726,17 @@ export default function CompanyOffice3D() {
             {/* Preset de câmera */}
             <CameraPreset mode={camMode} sceneCX={sceneCX} sceneCZ={sceneCZ} camDist={camDist} />
 
-            {/* Piso global */}
+            {/* Piso global — off-white neutro abaixo de tudo */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[sceneCX, -0.02, sceneCZ]} receiveShadow>
               <planeGeometry args={[gridW + 16, rows * (ROOM_D + ROOM_GAP_Z) + 12]} />
-              <meshStandardMaterial color="#f5f7fc" roughness={0.9} />
+              <meshStandardMaterial color="#f2efea" roughness={0.92} />
             </mesh>
             {/* Grade sutil */}
             {Array.from({ length: Math.floor((gridW + 16) / 2) + 1 }, (_, i) => (
               <mesh key={`gv${i}`} rotation={[-Math.PI / 2, 0, 0]}
                 position={[sceneCX - (gridW / 2 + 6) + i * 2, -0.014, sceneCZ]}>
-                <planeGeometry args={[0.035, rows * (ROOM_D + ROOM_GAP_Z) + 12]} />
-                <meshBasicMaterial color="#c8d0e8" />
+                <planeGeometry args={[0.03, rows * (ROOM_D + ROOM_GAP_Z) + 12]} />
+                <meshBasicMaterial color="#d8d0c8" />
               </mesh>
             ))}
 
