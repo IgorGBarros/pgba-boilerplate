@@ -151,18 +151,20 @@ export default function TaskBoard() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden p-4 sm:p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-slate-200">Tarefas</h2>
-          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-slate-400">{tasks.length}</span>
-          <span className={`flex items-center gap-1 text-[10px] ${connected ? "text-green-400" : "text-slate-500"}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-green-400" : "bg-slate-600"}`} />
-            {connected ? "tempo real" : "reconectando..."}
-          </span>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-slate-100">Helpdesk interno</h2>
+          <p className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
+            Tarefas direcionadas a setores e agentes, do pedido à entrega.
+            <span className={`flex items-center gap-1 ${connected ? "text-green-400" : "text-slate-600"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-green-400" : "bg-slate-600"}`} />
+              {connected ? "tempo real" : "reconectando..."}
+            </span>
+          </p>
         </div>
         <button
           onClick={() => setNewTaskOpen(true)}
-          className="flex items-center gap-1.5 rounded-card bg-brand-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-700"
+          className="flex shrink-0 items-center gap-1.5 rounded-card bg-brand-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-700"
         >
           <Plus className="h-3.5 w-3.5" />
           Nova tarefa

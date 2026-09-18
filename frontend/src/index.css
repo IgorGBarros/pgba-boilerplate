@@ -2,10 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: dark;
+@layer base {
+  :root {
+    color-scheme: dark;
+
+    --background: 222 24% 7%;
+    --foreground: 210 40% 98%;
+
+    --sidebar: 222 28% 9%;
+    --sidebar-accent: 222 25% 13%;
+    --sidebar-accent-foreground: 210 40% 98%;
+
+    --elevated: 222 26% 12%;
+
+    --card: 222 26% 12%;
+    --card-foreground: 210 40% 98%;
+
+    --border: 222 20% 18%;
+    --input: 222 20% 18%;
+
+    --primary: 228 100% 65%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 222 22% 16%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 222 22% 16%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent: 222 22% 16%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 55%;
+    --warning: 37 90% 60%;
+
+    --ring: 228 100% 65%;
+    --radius: 0.5rem;
+  }
 }
 
-body {
-  @apply bg-surface text-slate-100 font-body antialiased;
+@layer base {
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+
+  * {
+    @apply border-border;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-lg border border-border bg-card;
+  }
+
+  .glow-ring {
+    @apply ring-1 ring-primary/40 shadow-[0_0_20px_hsl(var(--primary)/0.15)];
+  }
+
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(240 100% 70%) 100%);
+  }
 }
