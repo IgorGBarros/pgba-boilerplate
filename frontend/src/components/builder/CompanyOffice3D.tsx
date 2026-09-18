@@ -1289,11 +1289,11 @@ function Room({
       {type === "tech" && (
         <>
           <Workstation x={-2.8} z={-2.4} color={palette.accent} />
-          <PixelChair x={-2.8} z={-1.1} color={palette.wall} rotation={Math.PI} />
+          <PixelChair x={-2.8} z={-1.1} color={palette.accent} rotation={Math.PI} />
           <Workstation x={-0.6} z={-2.4} color={palette.accent} />
-          <PixelChair x={-0.6} z={-1.1} color={palette.wall} rotation={Math.PI} />
+          <PixelChair x={-0.6} z={-1.1} color={palette.accent} rotation={Math.PI} />
           <Workstation x={1.6} z={-2.4} color={palette.accent} />
-          <PixelChair x={1.6} z={-1.1} color={palette.wall} rotation={Math.PI} />
+          <PixelChair x={1.6} z={-1.1} color={palette.accent} rotation={Math.PI} />
           <ServerRack x={3.5} z={-2.8} />
           <ServerRack x={3.5} z={-1.4} />
           <Plant x={-3.4} z={3.0} />
@@ -1309,11 +1309,11 @@ function Room({
       {type === "design" && (
         <>
           <Workstation x={-2.5} z={-2.4} color={palette.accent} />
-          <PixelChair x={-2.5} z={-1.1} color={palette.wall} rotation={Math.PI} />
+          <PixelChair x={-2.5} z={-1.1} color={palette.accent} rotation={Math.PI} />
           <DesignTable x={0.8} z={-1.8} color="#f0e8d8" />
-          <PixelChair x={0.8} z={-0.5} color={palette.wall} rotation={Math.PI} />
+          <PixelChair x={0.8} z={-0.5} color={palette.accent} rotation={Math.PI} />
           <Workstation x={2.8} z={-2.4} color={palette.accent} />
-          <PixelChair x={2.8} z={-1.1} color={palette.wall} rotation={Math.PI} />
+          <PixelChair x={2.8} z={-1.1} color={palette.accent} rotation={Math.PI} />
           <Whiteboard x={-3.5} z={-halfD + WALL_T + 0.04} />
           <Plant x={3.4} z={3.0} tall />
           <Plant x={-3.4} z={3.0} />
@@ -1363,11 +1363,11 @@ function Room({
       {type === "payment" && (
         <>
           <Workstation x={-2.0} z={-2.4} color={palette.accent} />
-          <PixelChair x={-2.0} z={-1.1} color={palette.wall} rotation={Math.PI} />
+          <PixelChair x={-2.0} z={-1.1} color={palette.accent} rotation={Math.PI} />
           <Workstation x={0.4} z={-2.4} color={palette.accent} />
-          <PixelChair x={0.4} z={-1.1} color={palette.wall} rotation={Math.PI} />
+          <PixelChair x={0.4} z={-1.1} color={palette.accent} rotation={Math.PI} />
           <Workstation x={2.8} z={-2.4} color={palette.accent} />
-          <PixelChair x={2.8} z={-1.1} color={palette.wall} rotation={Math.PI} />
+          <PixelChair x={2.8} z={-1.1} color={palette.accent} rotation={Math.PI} />
           <Plant x={3.4} z={3.0} />
           <Bookshelf x={-3.8} z={-1.2} color="#2d4060" />
           {/* Cofre */}
@@ -1385,11 +1385,11 @@ function Room({
       {type === "generic" && (
         <>
           <Workstation x={-2.2} z={-2.4} color={palette.accent} />
-          <PixelChair x={-2.2} z={-1.1} color={palette.wall} rotation={Math.PI} />
+          <PixelChair x={-2.2} z={-1.1} color={palette.accent} rotation={Math.PI} />
           <Workstation x={0.8} z={-2.4} color={palette.accent} />
-          <PixelChair x={0.8} z={-1.1} color={palette.wall} rotation={Math.PI} />
+          <PixelChair x={0.8} z={-1.1} color={palette.accent} rotation={Math.PI} />
           <Workstation x={2.8} z={-2.4} color={palette.accent} />
-          <PixelChair x={2.8} z={-1.1} color={palette.wall} rotation={Math.PI} />
+          <PixelChair x={2.8} z={-1.1} color={palette.accent} rotation={Math.PI} />
           <Plant x={3.4} z={3.0} />
           <CoffeeMachine x={-2.5} z={2.8} />
         </>
