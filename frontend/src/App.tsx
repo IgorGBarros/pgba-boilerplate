@@ -12,15 +12,14 @@ import { isLoggedIn, logout } from "@/lib/auth";
 // conhecimento. Mesmo assim é a aba PADRÃO (painel principal do sistema —
 // ver CLAUDE.md), então o Suspense cobre só o primeiro carregamento.
 const Studio = lazy(() => import("@/pages/Studio"));
-const GerarPage = lazy(() => import("@/pages/GerarPage"));
 
 // "Agentes" deixou de ser aba separada: absorvida pela visão "Empresa"
 // dentro do próprio Studio (setores + agentes + projetos, tudo junto).
-type Tab = "studio" | "gerar" | "knowledge" | "pages";
+// "Gerar" está dentro da aba Projetos do Studio, ao selecionar um projeto.
+type Tab = "studio" | "knowledge" | "pages";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "studio", label: "Estúdio" },
-  { id: "gerar", label: "Gerar" },
   { id: "knowledge", label: "Conhecimento" },
   { id: "pages", label: "Páginas geradas" },
 ];
@@ -51,11 +50,6 @@ export default function App() {
         {tab === "studio" && (
           <Suspense fallback={null}>
             <Studio />
-          </Suspense>
-        )}
-        {tab === "gerar" && (
-          <Suspense fallback={null}>
-            <GerarPage />
           </Suspense>
         )}
         {tab === "knowledge" && <KnowledgeChat />}
@@ -115,17 +109,6 @@ export default function App() {
           }
         >
           <Studio />
-        </Suspense>
-      )}
-      {tab === "gerar" && (
-        <Suspense
-          fallback={
-            <div className="flex h-[60vh] items-center justify-center">
-              <p className="text-sm text-slate-500">Carregando...</p>
-            </div>
-          }
-        >
-          <GerarPage />
         </Suspense>
       )}
       {tab === "knowledge" && <KnowledgeChat />}

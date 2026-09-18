@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import {
+  ArrowLeft,
   ChevronRight,
   Download,
   ExternalLink,
   FolderKanban,
+  MessageSquare,
   Pencil,
   Plus,
   Trash2,
@@ -23,7 +25,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SectionHeader } from "@/components/empresa/shared";
-import { listProjects, deleteProject, updateProject, type Project } from "@/lib/api";
+import { listProjects, deleteProject, updateProject, askStructured, type Project } from "@/lib/api";
+import { useChatPersistence } from "@/hooks/useChatPersistence";
+import ChatPanel from "@/components/builder/ChatPanel";
+import HistorySidebar from "@/components/builder/HistorySidebar";
+import type { ChatMessage } from "@/types/builder";
 
 const statusVariant: Record<Project["status"], "default" | "secondary" | "destructive"> = {
   ready: "default",
@@ -88,18 +94,12 @@ function EditProjectDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Editar projeto</DialogTitle>
-          <DialogDescription>
-            Altere o nome e a descrição do projeto.
-          </DialogDescription>
+          <DialogDescription>Altere o nome e a descrição do projeto.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="ep-name">Nome</Label>
-            <Input
-              id="ep-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+            <Input id="ep-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="ep-desc">Descrição</Label>
@@ -112,15 +112,85 @@ function EditProjectDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Salvando..." : "Salvar"}
-          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button onClick={handleSave} disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Project Chat (Gerar inline) ─────────────────────────────────────────────
+
+function ProjectChat({ project, onBack }: { project: Project; onBack: () => void }) {
+  const storageKey = `project-chat-${project.id}`;
+  const { messages, setMessages, history, clearAndArchive, deleteConversation, restoreConversation } =
+    useChatPersistence(storageKey);
+  const [isLoading, setIsLoading] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+
+  const handleSend = async (content: string) => {
+    const userMsg: ChatMessage = { id: crypto.randomUUID(), type: "user", content, timestamp: new Date() };
+    setMessages((prev) => [...prev, userMsg]);
+    setIsLoading(true);
+    try {
+      const result = await askStructured(content);
+      const assistantMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        type: "assistant",
+        content: result.answer,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao enviar mensagem");
+      setMessages((prev) => prev.slice(0, -1));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header bar */}
+      <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2">
+        <Button variant="ghost" size="sm" onClick={onBack} className="gap-1.5 text-muted-foreground">
+          <ArrowLeft className="size-4" />
+          Projetos
+        </Button>
+        <span className="text-muted-foreground">/</span>
+        <div className="flex items-center gap-2">
+          <FolderKanban className="size-4 text-primary" />
+          <span className="text-sm font-medium">{project.name}</span>
+          {project.github_full_name && (
+            <span className="font-mono text-xs text-muted-foreground">{project.github_full_name}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Chat */}
+      <div className="flex min-h-0 flex-1">
+        <HistorySidebar
+          isCollapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed((v) => !v)}
+          activeConversationId={activeConversationId}
+          onSelectConversation={(id) => { restoreConversation(id); setActiveConversationId(id); }}
+          onNewChat={() => { clearAndArchive(); setActiveConversationId(null); }}
+          conversations={history}
+          onDeleteConversation={deleteConversation}
+          onOpenSettings={() => {}}
+        />
+        <div className="min-w-0 flex-1">
+          <ChatPanel
+            messages={messages}
+            isLoading={isLoading}
+            onSend={handleSend}
+            onReset={() => { clearAndArchive(); setActiveConversationId(null); }}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -143,6 +213,7 @@ export function Projects({
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
 
   void onNewTask;
 
@@ -159,14 +230,24 @@ export function Projects({
     try {
       await deleteProject(deleteTarget.id);
       setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
-      toast.success(`Projeto "${deleteTarget.name}" excluído`);
+      if (activeProject?.id === deleteTarget.id) setActiveProject(null);
+      toast.success(`Projeto "${deleteTarget.name}" removido da lista`);
       setDeleteOpen(false);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Erro ao excluir projeto");
+      toast.error(e instanceof Error ? e.message : "Erro ao remover projeto");
     } finally {
       setDeleting(false);
     }
   };
+
+  // ── Gerar view for selected project ────────────────────────────────────────
+  if (activeProject) {
+    return (
+      <div style={{ height: "calc(100vh - 110px)" }}>
+        <ProjectChat project={activeProject} onBack={() => setActiveProject(null)} />
+      </div>
+    );
+  }
 
   const created = projects.filter((p) => p.origin === "created");
   const imported = projects.filter((p) => p.origin === "imported");
@@ -175,7 +256,7 @@ export function Projects({
     <div className="space-y-6">
       <SectionHeader
         title="Árvore de projetos"
-        description="Motor principal e projetos derivados — criados ou importados do GitHub."
+        description="Motor principal e projetos derivados. Selecione um projeto para abrir o chat de geração."
         action={
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={onImportProject}>
@@ -197,12 +278,8 @@ export function Projects({
           <FolderKanban className="size-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">Nenhum projeto ainda.</p>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={onImportProject}>
-              Importar existente
-            </Button>
-            <Button size="sm" onClick={onNewProject}>
-              Criar novo
-            </Button>
+            <Button variant="secondary" size="sm" onClick={onImportProject}>Importar existente</Button>
+            <Button size="sm" onClick={onNewProject}>Criar novo</Button>
           </div>
         </div>
       ) : (
@@ -239,12 +316,19 @@ export function Projects({
 
                         <FolderKanban className="size-4 shrink-0 text-primary" />
 
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">{project.name}</p>
+                        {/* Clicking the name opens Gerar */}
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => setActiveProject(project)}
+                        >
+                          <p className="truncate text-sm font-medium hover:text-primary">
+                            {project.name}
+                          </p>
                           <p className="truncate font-mono text-xs text-muted-foreground">
                             {project.workspace || project.github_full_name || "—"}
                           </p>
-                        </div>
+                        </button>
 
                         <Badge variant={statusVariant[project.status]} className="text-[11px]">
                           {project.status}
@@ -266,7 +350,17 @@ export function Projects({
                           </a>
                         )}
 
-                        {/* Edit / Delete actions */}
+                        {/* Open Gerar shortcut */}
+                        <button
+                          type="button"
+                          title="Abrir chat do projeto"
+                          className="hidden shrink-0 text-muted-foreground hover:text-primary group-hover:block"
+                          onClick={() => setActiveProject(project)}
+                        >
+                          <MessageSquare className="size-3.5" />
+                        </button>
+
+                        {/* Edit / Delete */}
                         <div className="hidden shrink-0 items-center gap-1 group-hover:flex">
                           <button
                             type="button"
@@ -282,7 +376,7 @@ export function Projects({
                           </button>
                           <button
                             type="button"
-                            title="Excluir projeto"
+                            title="Remover da lista"
                             className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -324,23 +418,21 @@ export function Projects({
         }
       />
 
-      {/* Delete confirmation dialog */}
+      {/* Delete confirmation — só remove o registro, não toca em pasta ou GitHub */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir projeto</DialogTitle>
+            <DialogTitle>Remover projeto da lista</DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja excluir o projeto{" "}
-              <strong className="text-foreground">"{deleteTarget?.name}"</strong>? Esta ação não
-              pode ser desfeita.
+              Remove o projeto <strong className="text-foreground">"{deleteTarget?.name}"</strong>{" "}
+              apenas da lista — o repositório GitHub e a pasta local{" "}
+              <strong className="text-foreground">não serão afetados</strong>.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-              Cancelar
-            </Button>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancelar</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-              {deleting ? "Excluindo..." : "Excluir"}
+              {deleting ? "Removendo..." : "Remover da lista"}
             </Button>
           </DialogFooter>
         </DialogContent>
