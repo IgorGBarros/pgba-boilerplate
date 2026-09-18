@@ -1,17 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Activity,
   Brain,
   Building2,
   Code2,
+  Cuboid,
   Database,
   FileText,
+  FolderTree,
   MessageSquare,
   PauseCircle,
+  Pencil,
   Plus,
   Receipt,
   Save,
   ShoppingCart,
+  Trash2,
   Users,
   Wallet,
   Wrench,
@@ -38,8 +42,17 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Metric, StatusDot } from "@/components/empresa/shared";
+import {
+  ImportProjectDialog,
+  NewProjectDialog,
+} from "@/components/empresa/dialogs";
+import { Projects } from "@/components/empresa/projects";
 import { aiModels } from "@/lib/pgba-data";
 import {
+  createAgent,
+  createSector,
+  deleteAgent,
+  deleteSector,
   listSectors,
   listAgents,
   getAgentMetricsOverview,
@@ -52,7 +65,10 @@ import {
   type AgentMetricsOverview,
   type SectorMetric,
   type KnowledgeDocument,
+  type AgentAccessLevel,
 } from "@/lib/api";
+
+const CompanyOffice3D = lazy(() => import("@/components/builder/CompanyOffice3D"));
 
 type SectorIconKey = "commercial" | "purchasing" | "finance" | "dev" | "ops";
 
@@ -217,6 +233,207 @@ function SectorKnowledgeDialog({
   );
 }
 
+// ─── New Sector Dialog ────────────────────────────────────────────────────────
+
+function NewSectorDialog({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (sector: Sector) => void;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [budget, setBudget] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      const sector = await createSector({
+        name: name.trim(),
+        description: description.trim(),
+        monthlyBudgetUsd: budget ? parseFloat(budget) : 0,
+      });
+      toast.success(`Setor "${sector.name}" criado`);
+      onCreated(sector);
+      setName("");
+      setDescription("");
+      setBudget("");
+      onClose();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao criar setor");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Novo setor</DialogTitle>
+          <DialogDescription>Adicione um novo setor à estrutura da empresa.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="ns-name">Nome *</Label>
+            <Input
+              id="ns-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="ex: Jurídico, Marketing, Suporte"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ns-desc">Descrição</Label>
+            <Textarea
+              id="ns-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              placeholder="Responsabilidades do setor..."
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ns-budget">Orçamento mensal (US$)</Label>
+            <Input
+              id="ns-budget"
+              type="number"
+              min="0"
+              step="0.01"
+              value={budget}
+              onChange={(e) => setBudget(e.target.value)}
+              placeholder="0.00"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={handleSave} disabled={saving || !name.trim()}>
+            {saving ? "Criando..." : "Criar setor"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── New Agent Dialog ─────────────────────────────────────────────────────────
+
+function NewAgentDialog({
+  sector,
+  open,
+  onClose,
+  onCreated,
+}: {
+  sector: Sector | null;
+  open: boolean;
+  onClose: () => void;
+  onCreated: (agent: Agent) => void;
+}) {
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [accessLevel, setAccessLevel] = useState<AgentAccessLevel>("operational");
+  const [model, setModel] = useState(aiModels[0]!);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim() || !role.trim()) return;
+    setSaving(true);
+    try {
+      const agent = await createAgent({
+        name: name.trim(),
+        role: role.trim(),
+        access_level: accessLevel,
+        sector: sector?.id ?? null,
+        model,
+      });
+      toast.success(`Agente "${agent.name}" criado`);
+      onCreated(agent);
+      setName("");
+      setRole("");
+      setAccessLevel("operational");
+      onClose();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao criar agente");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Novo agente{sector ? ` — ${sector.name}` : ""}</DialogTitle>
+          <DialogDescription>Crie um novo agente para este setor.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="na-name">Nome *</Label>
+              <Input
+                id="na-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="ex: AI Vendas, Agente Fiscal"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="na-role">Papel *</Label>
+              <Input
+                id="na-role"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                placeholder="ex: Analista Comercial"
+              />
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Nível de acesso</Label>
+              <Select value={accessLevel} onValueChange={(v) => setAccessLevel(v as AgentAccessLevel)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="operational">Operacional</SelectItem>
+                  <SelectItem value="sector_orchestrator">Orquestrador de Setor</SelectItem>
+                  <SelectItem value="general_orchestrator">Orquestrador Geral</SelectItem>
+                  <SelectItem value="ceo">CEO</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Modelo de IA</Label>
+              <Select value={model} onValueChange={setModel}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {aiModels.map((m) => (
+                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={handleSave} disabled={saving || !name.trim() || !role.trim()}>
+            {saving ? "Criando..." : "Criar agente"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Agent Edit Dialog ────────────────────────────────────────────────────────
 
 function AgentEditDialog({
@@ -334,9 +551,135 @@ function AgentEditDialog({
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Delete Agent Confirm Dialog ──────────────────────────────────────────────
 
-export function Overview({ onNewTask }: { onNewTask: (sector?: string) => void }) {
+function DeleteAgentDialog({
+  agent,
+  open,
+  onClose,
+  onDeleted,
+}: {
+  agent: Agent | null;
+  open: boolean;
+  onClose: () => void;
+  onDeleted: (id: number) => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!agent) return;
+    setDeleting(true);
+    try {
+      await deleteAgent(agent.id);
+      toast.success(`Agente "${agent.name}" removido`);
+      onDeleted(agent.id);
+      onClose();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao remover agente");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Excluir agente</DialogTitle>
+          <DialogDescription>
+            Tem certeza que deseja excluir <strong>{agent?.name}</strong>? Esta ação não pode ser desfeita.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+            {deleting ? "Excluindo..." : "Excluir"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Delete Sector Confirm Dialog ─────────────────────────────────────────────
+
+function DeleteSectorDialog({
+  sector,
+  open,
+  onClose,
+  onDeleted,
+}: {
+  sector: Sector | null;
+  open: boolean;
+  onClose: () => void;
+  onDeleted: (id: number) => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!sector) return;
+    setDeleting(true);
+    try {
+      await deleteSector(sector.id);
+      toast.success(`Setor "${sector.name}" removido`);
+      onDeleted(sector.id);
+      onClose();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao remover setor");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Excluir setor</DialogTitle>
+          <DialogDescription>
+            Tem certeza que deseja excluir <strong>{sector?.name}</strong> e todos os seus agentes? Esta ação não pode ser desfeita.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+            {deleting ? "Excluindo..." : "Excluir setor"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Sub-tab button ───────────────────────────────────────────────────────────
+
+function SubTabBtn({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+        active
+          ? "bg-primary text-primary-foreground"
+          : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ─── Visão Geral content ──────────────────────────────────────────────────────
+
+function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [metrics, setMetrics] = useState<AgentMetricsOverview | null>(null);
@@ -347,6 +690,15 @@ export function Overview({ onNewTask }: { onNewTask: (sector?: string) => void }
   const [agentEditOpen, setAgentEditOpen] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // CRUD dialogs
+  const [newSectorOpen, setNewSectorOpen] = useState(false);
+  const [newAgentSector, setNewAgentSector] = useState<Sector | null>(null);
+  const [newAgentOpen, setNewAgentOpen] = useState(false);
+  const [deleteAgentTarget, setDeleteAgentTarget] = useState<Agent | null>(null);
+  const [deleteAgentOpen, setDeleteAgentOpen] = useState(false);
+  const [deleteSectorTarget, setDeleteSectorTarget] = useState<Sector | null>(null);
+  const [deleteSectorOpen, setDeleteSectorOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -381,11 +733,26 @@ export function Overview({ onNewTask }: { onNewTask: (sector?: string) => void }
     setAgents((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
   };
 
+  const handleAgentDeleted = (id: number) => {
+    setAgents((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  const handleSectorDeleted = (id: number) => {
+    setSectors((prev) => prev.filter((s) => s.id !== id));
+    setAgents((prev) => prev.filter((a) => a.sector !== id));
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end gap-2 text-xs text-success">
-        <span className="size-2 rounded-full bg-success animate-pulse" />
-        Tempo real conectado
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-xs text-success">
+          <span className="size-2 rounded-full bg-success animate-pulse" />
+          Tempo real conectado
+        </div>
+        <Button size="sm" onClick={() => setNewSectorOpen(true)}>
+          <Plus className="size-4" />
+          Novo setor
+        </Button>
       </div>
 
       {/* KPI tiles */}
@@ -484,58 +851,96 @@ export function Overview({ onNewTask }: { onNewTask: (sector?: string) => void }
                     <Icon className="size-4 text-primary" />
                     {sector.name}
                   </div>
-                  {/* RAG badge — clicável para abrir modal de docs */}
-                  <button
-                    type="button"
-                    onClick={() => { setOpenSector(sector); setSectorKnowledgeOpen(true); }}
-                    title="Ver / adicionar documentos de conhecimento"
-                  >
-                    <Badge
-                      variant={hasRag ? "default" : "secondary"}
-                      className="cursor-pointer gap-1 text-[11px] hover:opacity-80"
+                  <div className="flex items-center gap-1.5">
+                    {/* RAG badge */}
+                    <button
+                      type="button"
+                      onClick={() => { setOpenSector(sector); setSectorKnowledgeOpen(true); }}
+                      title="Ver / adicionar documentos de conhecimento"
                     >
-                      <Database className="size-3" />
-                      {hasRag ? sector.knowledge_source_name ?? "RAG ativo" : "sem RAG"}
-                    </Badge>
-                  </button>
+                      <Badge
+                        variant={hasRag ? "default" : "secondary"}
+                        className="cursor-pointer gap-1 text-[11px] hover:opacity-80"
+                      >
+                        <Database className="size-3" />
+                        {hasRag ? sector.knowledge_source_name ?? "RAG ativo" : "sem RAG"}
+                      </Badge>
+                    </button>
+                    {/* Delete sector */}
+                    <button
+                      type="button"
+                      onClick={() => { setDeleteSectorTarget(sector); setDeleteSectorOpen(true); }}
+                      className="rounded p-0.5 text-muted-foreground hover:text-destructive transition-colors"
+                      title="Excluir setor"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex-1 space-y-2 p-4">
                   {sectorAgents.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-muted-foreground">
+                    <p className="py-4 text-center text-sm text-muted-foreground">
                       Nenhum agente ainda.
                     </p>
                   ) : (
                     sectorAgents.map((agent) => (
-                      <button
+                      <div
                         key={agent.id}
-                        type="button"
-                        onClick={() => { setOpenAgent(agent); setAgentEditOpen(true); }}
-                        className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-elevated px-3 py-2 text-left transition-colors hover:border-primary"
+                        className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-elevated px-3 py-2 transition-colors hover:border-primary"
                       >
-                        <div className="flex min-w-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setOpenAgent(agent); setAgentEditOpen(true); }}
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                        >
                           <StatusDot status={agent.work_status as import("@/lib/pgba-data").AgentStatus} />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium">{agent.name}</p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {agent.role}
-                            </p>
+                            <p className="truncate text-xs text-muted-foreground">{agent.role}</p>
                           </div>
+                        </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => { setOpenAgent(agent); setAgentEditOpen(true); }}
+                            className="rounded p-1 text-muted-foreground hover:text-foreground transition-colors"
+                            title="Editar agente"
+                          >
+                            <Pencil className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setDeleteAgentTarget(agent); setDeleteAgentOpen(true); }}
+                            className="rounded p-1 text-muted-foreground hover:text-destructive transition-colors"
+                            title="Excluir agente"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                          <MessageSquare className="size-4 text-muted-foreground" />
                         </div>
-                        <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
-                      </button>
+                      </div>
                     ))
                   )}
                 </div>
 
-                <div className="border-t border-border p-3">
+                <div className="border-t border-border p-3 flex gap-2">
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="w-full"
+                    className="flex-1"
+                    onClick={() => { setNewAgentSector(sector); setNewAgentOpen(true); }}
+                  >
+                    <Plus className="size-3.5" />
+                    Agente
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="flex-1"
                     onClick={() => onNewTask(sector.name)}
                   >
-                    Criar tarefa para {sector.name}
+                    Criar tarefa
                   </Button>
                 </div>
               </div>
@@ -584,19 +989,40 @@ export function Overview({ onNewTask }: { onNewTask: (sector?: string) => void }
         </div>
       )}
 
-      {/* Sector knowledge dialog */}
+      {/* Dialogs */}
       <SectorKnowledgeDialog
         sector={openSector}
         open={sectorKnowledgeOpen}
         onClose={() => setSectorKnowledgeOpen(false)}
       />
-
-      {/* Agent edit dialog */}
       <AgentEditDialog
         agent={openAgent}
         open={agentEditOpen}
         onClose={() => setAgentEditOpen(false)}
         onUpdated={handleAgentUpdated}
+      />
+      <NewSectorDialog
+        open={newSectorOpen}
+        onClose={() => setNewSectorOpen(false)}
+        onCreated={(s) => setSectors((prev) => [...prev, s])}
+      />
+      <NewAgentDialog
+        sector={newAgentSector}
+        open={newAgentOpen}
+        onClose={() => setNewAgentOpen(false)}
+        onCreated={(a) => setAgents((prev) => [...prev, a])}
+      />
+      <DeleteAgentDialog
+        agent={deleteAgentTarget}
+        open={deleteAgentOpen}
+        onClose={() => setDeleteAgentOpen(false)}
+        onDeleted={handleAgentDeleted}
+      />
+      <DeleteSectorDialog
+        sector={deleteSectorTarget}
+        open={deleteSectorOpen}
+        onClose={() => setDeleteSectorOpen(false)}
+        onDeleted={handleSectorDeleted}
       />
 
       {/* Company dialog */}
@@ -633,6 +1059,66 @@ export function Overview({ onNewTask }: { onNewTask: (sector?: string) => void }
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─── Main: EmpresaView (exported as Overview for backwards compat) ────────────
+
+export function Overview({ onNewTask }: { onNewTask: (sector?: string) => void }) {
+  const [subTab, setSubTab] = useState<"overview" | "projects" | "office">("overview");
+  const [newProject, setNewProject] = useState(false);
+  const [importProject, setImportProject] = useState(false);
+
+  return (
+    <div className={subTab === "office" ? "-mx-4 md:-mx-6 -mt-4 md:-mt-6 flex flex-col" : ""}>
+      {/* Sub-tab nav */}
+      <div className={`flex items-center gap-1 border-b border-border ${subTab === "office" ? "px-4 py-2 bg-background" : "pb-4 mb-2"}`}>
+        <SubTabBtn active={subTab === "overview"} onClick={() => setSubTab("overview")}>
+          <Building2 className="size-4" />
+          Visão Geral
+        </SubTabBtn>
+        <SubTabBtn active={subTab === "projects"} onClick={() => setSubTab("projects")}>
+          <FolderTree className="size-4" />
+          Projetos
+        </SubTabBtn>
+        <SubTabBtn active={subTab === "office"} onClick={() => setSubTab("office")}>
+          <Cuboid className="size-4" />
+          Escritório 3D
+        </SubTabBtn>
+      </div>
+
+      {subTab === "overview" && <VisaoGeral onNewTask={onNewTask} />}
+
+      {subTab === "projects" && (
+        <div className="space-y-4">
+          <div className="rounded-md border border-border bg-secondary/30 px-4 py-3 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Desenvolvimento</span> é o setor responsável por trabalhar nos projetos novos e existentes da plataforma.
+          </div>
+          <Projects
+            onNewProject={() => setNewProject(true)}
+            onImportProject={() => setImportProject(true)}
+            onNewTask={onNewTask}
+          />
+        </div>
+      )}
+
+      {subTab === "office" && (
+        <div className="flex-1" style={{ height: "calc(100vh - 150px)" }}>
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center">
+                <p className="text-sm text-muted-foreground">Carregando escritório 3D...</p>
+              </div>
+            }
+          >
+            <CompanyOffice3D />
+          </Suspense>
+        </div>
+      )}
+
+      <NewProjectDialog open={newProject} onOpenChange={setNewProject} />
+      <ImportProjectDialog open={importProject} onOpenChange={setImportProject} />
     </div>
   );
 }

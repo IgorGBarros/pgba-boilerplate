@@ -16,6 +16,7 @@ import {
   ActivityPanel,
   AgentInfoPanel,
   AgentModal,
+  ConsoleModal,
   MeetingModal,
   OfficeTopBar,
   RoomModal,
@@ -395,6 +396,7 @@ export default function CompanyOffice3D() {
   const [selectedRoom, setSelectedRoom] = useState<{ id: number; name: string } | null>(null);
   const [roomModalOpen, setRoomModalOpen] = useState(false);
   const [meetingOpen, setMeetingOpen] = useState(false);
+  const [consoleOpen, setConsoleOpen] = useState(false);
 
   // Activity logs (gerados localmente a partir dos eventos WebSocket)
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
@@ -549,6 +551,7 @@ export default function CompanyOffice3D() {
         onEndMeeting={() => {}}
         onToggleActivity={() => setActivityOpen((v) => !v)}
         onTogglePanel={() => setPanelOpen((v) => !v)}
+        onOpenConsole={() => setConsoleOpen(true)}
       />
 
       {/* Layout: painéis laterais + canvas central */}
@@ -650,6 +653,10 @@ export default function CompanyOffice3D() {
         onClose={() => setMeetingOpen(false)}
         agents={officeAgents}
         sectors={sectors}
+      />
+      <ConsoleModal
+        open={consoleOpen}
+        onClose={() => setConsoleOpen(false)}
       />
     </div>
   );

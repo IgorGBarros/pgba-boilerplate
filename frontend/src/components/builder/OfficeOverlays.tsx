@@ -15,6 +15,7 @@ import {
   Play,
   Plus,
   Send,
+  TrendingUp,
   Users,
   X,
 } from "lucide-react";
@@ -24,7 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { Sector } from "@/lib/api";
+import { getSectorMetrics, type Sector, type SectorMetric } from "@/lib/api";
 import {
   getOrchestrators,
   getSectorAgents,
@@ -128,6 +129,7 @@ export function OfficeTopBar({
   onEndMeeting,
   onToggleActivity,
   onTogglePanel,
+  onOpenConsole,
 }: {
   agents: OfficeAgent[];
   connected: boolean;
@@ -144,6 +146,7 @@ export function OfficeTopBar({
   onEndMeeting: () => void;
   onToggleActivity: () => void;
   onTogglePanel: () => void;
+  onOpenConsole: () => void;
 }) {
   const active = agents.filter((a) => a.status === "working" || a.status === "thinking").length;
   const inMeeting = agents.filter((a) => a.status === "meeting").length;
@@ -255,9 +258,9 @@ export function OfficeTopBar({
       {/* Console */}
       <button
         type="button"
-        disabled
-        className="ml-auto flex items-center gap-1.5 rounded-md bg-white/5 px-2.5 py-1 font-mono text-xs uppercase tracking-wider text-slate-500"
-        title="Console (em breve)"
+        onClick={onOpenConsole}
+        className="ml-auto flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1 font-mono text-xs uppercase tracking-wider text-slate-300 transition hover:bg-white/20 hover:text-white"
+        title="Console — tokens e custo por setor"
       >
         <Gauge className="size-3.5" />
         Console
@@ -877,5 +880,95 @@ export function AgentInfoPanel({
         ))}
       </div>
     </div>
+  );
+}
+
+// ─── Console Modal ─────────────────────────────────────────────────────────────
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return String(n);
+}
+
+function formatCost(usd: number): string {
+  if (usd === 0) return "US$ 0,00";
+  return `US$ ${usd.toFixed(4)}`;
+}
+
+export function ConsoleModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [metrics, setMetrics] = useState<SectorMetric[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    getSectorMetrics()
+      .then(setMetrics)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  const totalTokens = metrics.reduce((s, m) => s + m.tokens, 0);
+  const totalCost = metrics.reduce((s, m) => s + m.cost_usd, 0);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-lg bg-[#0d1117] border-white/10 text-white">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-white">
+            <TrendingUp className="size-4 text-indigo-400" />
+            Console — Tokens e Custo por Setor
+          </DialogTitle>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="py-8 text-center text-slate-400 text-sm">Carregando métricas...</div>
+        ) : metrics.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 text-sm">Nenhum dado disponível ainda.</div>
+        ) : (
+          <div className="space-y-3">
+            <div className="divide-y divide-white/5 rounded-lg border border-white/10 overflow-hidden">
+              <div className="grid grid-cols-4 gap-2 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                <span className="col-span-2">Setor</span>
+                <span className="text-right">Tokens</span>
+                <span className="text-right">Custo</span>
+              </div>
+              {metrics.map((m) => (
+                <div key={m.sector_id} className="grid grid-cols-4 gap-2 px-4 py-2.5 text-sm hover:bg-white/5 transition-colors">
+                  <div className="col-span-2 flex items-center gap-2">
+                    <span className="font-medium text-slate-200">{m.sector_name}</span>
+                    {m.usage_percent !== null && (
+                      <div className="flex items-center gap-1">
+                        <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${Math.min(m.usage_percent, 100)}%`,
+                              backgroundColor: m.status === "over" ? "#f87171" : m.status === "warn" ? "#facc15" : "#4ade80",
+                            }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-slate-500">{m.usage_percent.toFixed(0)}%</span>
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-right font-mono text-xs text-slate-300">{formatTokens(m.tokens)}</span>
+                  <span className="text-right font-mono text-xs text-slate-300">{formatCost(m.cost_usd)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-between rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-sm">
+              <span className="font-bold text-indigo-300">Total</span>
+              <div className="flex gap-6">
+                <span className="font-mono text-indigo-300">{formatTokens(totalTokens)} tokens</span>
+                <span className="font-mono font-bold text-indigo-300">{formatCost(totalCost)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

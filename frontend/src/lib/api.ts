@@ -160,6 +160,31 @@ export async function listAgents(sectorId?: number): Promise<Agent[]> {
   return requestList<Agent>(`/api/v1/agency/agents/${query}`);
 }
 
+export async function createAgent(params: {
+  name: string;
+  role: string;
+  access_level: AgentAccessLevel;
+  autonomy_level?: AgentAutonomyLevel;
+  sector?: number | null;
+  model?: string;
+}): Promise<Agent> {
+  return request<Agent>("/api/v1/agency/agents/", {
+    method: "POST",
+    body: JSON.stringify({
+      name: params.name,
+      role: params.role,
+      access_level: params.access_level,
+      autonomy_level: params.autonomy_level ?? 0,
+      sector: params.sector ?? null,
+      model: params.model ?? "",
+    }),
+  });
+}
+
+export async function deleteAgent(id: number): Promise<void> {
+  await request<unknown>(`/api/v1/agency/agents/${id}/`, { method: "DELETE" });
+}
+
 // --- agency: setores e projetos (visão da empresa no Studio) --------------
 
 export interface Sector {
@@ -185,6 +210,10 @@ export async function createSector(params: { name: string; description?: string;
       monthly_budget_usd: params.monthlyBudgetUsd ?? 0,
     }),
   });
+}
+
+export async function deleteSector(id: number): Promise<void> {
+  await request<unknown>(`/api/v1/agency/sectors/${id}/`, { method: "DELETE" });
 }
 
 export type SectorBudgetStatus = "ok" | "warn" | "over" | "sem_orcamento";
