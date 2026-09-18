@@ -794,11 +794,11 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
         <button
           type="button"
           onClick={() => setOpenCompany(true)}
-          className="panel w-full max-w-xl p-5 text-left transition-colors hover:border-primary"
+          className="panel w-full max-w-2xl p-5 text-left transition-colors hover:border-primary"
         >
-          <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-lg bg-secondary text-muted-foreground">
-              <Building2 className="size-5" />
+          <div className="flex items-center gap-4">
+            <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-secondary text-muted-foreground">
+              <Building2 className="size-6" />
             </span>
             <div>
               <p className="font-semibold">Empresa</p>
@@ -813,11 +813,11 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
             <button
               type="button"
               onClick={() => { setOpenAgent(primaryOrchestrator); setAgentEditOpen(true); }}
-              className="panel glow-ring w-full max-w-xl p-5 text-left"
+              className="panel glow-ring w-full max-w-2xl p-5 text-left"
             >
-              <div className="flex items-center gap-3">
-                <span className="grid size-10 place-items-center rounded-lg gradient-primary text-primary-foreground">
-                  <Brain className="size-5" />
+              <div className="flex items-center gap-4">
+                <span className="grid size-12 shrink-0 place-items-center rounded-xl gradient-primary text-primary-foreground">
+                  <Brain className="size-6" />
                 </span>
                 <div>
                   <p className="font-semibold">{primaryOrchestrator.name}</p>
@@ -848,7 +848,7 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
               <div key={sector.id} className="panel flex flex-col">
                 <div className="flex items-center justify-between gap-2 border-b border-border p-4">
                   <div className="flex items-center gap-2 font-semibold">
-                    <Icon className="size-4 text-primary" />
+                    <Icon className="size-5 text-primary" />
                     {sector.name}
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -873,7 +873,7 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
                       className="rounded p-0.5 text-muted-foreground hover:text-destructive transition-colors"
                       title="Excluir setor"
                     >
-                      <Trash2 className="size-3.5" />
+                      <Trash2 className="size-4" />
                     </button>
                   </div>
                 </div>
@@ -907,7 +907,7 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
                             className="rounded p-1 text-muted-foreground hover:text-foreground transition-colors"
                             title="Editar agente"
                           >
-                            <Pencil className="size-3.5" />
+                            <Pencil className="size-4" />
                           </button>
                           <button
                             type="button"
@@ -915,7 +915,7 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
                             className="rounded p-1 text-muted-foreground hover:text-destructive transition-colors"
                             title="Excluir agente"
                           >
-                            <Trash2 className="size-3.5" />
+                            <Trash2 className="size-4" />
                           </button>
                           <MessageSquare className="size-4 text-muted-foreground" />
                         </div>
