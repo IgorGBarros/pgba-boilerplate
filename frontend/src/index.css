@@ -6,40 +6,51 @@
   :root {
     color-scheme: dark;
 
-    --background: 222 24% 7%;
+    /* ── Backgrounds ──────────────────────────────────────────────────────── */
+    /* Deeper navy-black aligned with AI/RPA dashboard palette (#020617 family) */
+    --background: 224 38% 5%;
     --foreground: 210 40% 98%;
 
-    --sidebar: 222 28% 9%;
-    --sidebar-accent: 222 25% 13%;
+    --sidebar: 224 40% 7%;
+    --sidebar-accent: 224 34% 11%;
     --sidebar-accent-foreground: 210 40% 98%;
 
-    --elevated: 222 26% 12%;
+    --elevated: 224 32% 10%;
 
-    --card: 222 26% 12%;
+    --card: 224 32% 10%;
     --card-foreground: 210 40% 98%;
 
-    --border: 222 20% 18%;
-    --input: 222 20% 18%;
+    /* ── Borders / inputs ────────────────────────────────────────────────── */
+    --border: 224 22% 20%;
+    --input: 224 22% 20%;
 
-    --primary: 228 100% 65%;
+    /* ── Primary — AI Indigo #6366F1 ─────────────────────────────────────── */
+    --primary: 239 84% 67%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 222 22% 16%;
+    /* ── Secondary / muted ───────────────────────────────────────────────── */
+    --secondary: 224 26% 15%;
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 222 22% 16%;
-    --muted-foreground: 215 20% 55%;
+    --muted: 224 26% 15%;
+    --muted-foreground: 215 18% 52%;
 
-    --accent: 222 22% 16%;
+    --accent: 224 26% 15%;
     --accent-foreground: 210 40% 98%;
 
+    /* ── Semantic ────────────────────────────────────────────────────────── */
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
+    /* Green for working agents (#22C55E) */
     --success: 142 71% 55%;
+    /* Amber for paused */
     --warning: 37 90% 60%;
 
-    --ring: 228 100% 65%;
+    /* ── Focus ring ──────────────────────────────────────────────────────── */
+    --ring: 239 84% 67%;
+
+    /* ── Radius — minimalist, clean ──────────────────────────────────────── */
     --radius: 0.5rem;
   }
 }
@@ -52,18 +63,68 @@
   * {
     @apply border-border;
   }
+
+  /* Smooth transitions everywhere — Minimalism & Swiss Style (200ms) */
+  *, *::before, *::after {
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Headings use Space Grotesk */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+
+  /* Custom scrollbar (thin, matches border color) */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
 }
 
 @layer components {
+  /* Base card/panel */
   .panel {
     @apply rounded-lg border border-border bg-card;
   }
 
+  /* AI-indigo glow ring (primary color) */
   .glow-ring {
-    @apply ring-1 ring-primary/40 shadow-[0_0_20px_hsl(var(--primary)/0.15)];
+    @apply ring-1 ring-primary/50 shadow-[0_0_24px_hsl(var(--primary)/0.18)];
   }
 
+  /* Primary gradient: indigo → violet */
   .gradient-primary {
-    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(240 100% 70%) 100%);
+    background: linear-gradient(135deg, hsl(239 84% 67%) 0%, hsl(262 84% 68%) 100%);
+  }
+
+  /* Gradient text for hero headings */
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(239 84% 72%) 0%, hsl(262 84% 75%) 100%);
+  }
+
+  /* Subtle inset border glow on interactive panels */
+  .panel-interactive {
+    @apply panel transition-all duration-200 hover:border-primary/40 hover:shadow-[0_0_12px_hsl(var(--primary)/0.08)];
+  }
+
+  /* Status dot pulse — used in agent cards */
+  .status-working {
+    @apply size-2 rounded-full bg-success animate-pulse;
+  }
+  .status-idle {
+    @apply size-2 rounded-full bg-muted-foreground;
+  }
+  .status-paused {
+    @apply size-2 rounded-full bg-warning;
   }
 }
