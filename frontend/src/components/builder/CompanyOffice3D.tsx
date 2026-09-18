@@ -1,8 +1,8 @@
 // frontend/src/components/builder/CompanyOffice3D.tsx
 // Fase 2 — corredores interligados, movimento por waypoints (porta → corredor → destino)
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Html, OrbitControls, Text } from "@react-three/drei";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Html, OrbitControls, Text, Environment, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import { listAgents, listSectors, patchAgentAutonomy, type Agent, type Sector, ApiError } from "@/lib/api";
 import { useRealtime } from "@/lib/useRealtime";
@@ -50,22 +50,26 @@ const AUTONOMY_LABELS   = ["Observador", "Executor", "Autônomo"] as const;
 // Escala global de móveis — mantém proporção com agentes a 0.65×
 const FURNITURE_SCALE = 0.70;
 
-// Paletas pastel por setor
+// Paletas neutras — paredes off-white, cor do departamento apenas no accent stripe
+const NEUTRAL_WALL  = "#e9e5de";
+const NEUTRAL_FLOOR = "#f0ede6";
+const NEUTRAL_TRIM  = "#ccc8c0";
+
 const ROOM_PALETTES = [
-  { floor: "#e3f2fd", wall: "#1565c0", accent: "#2196f3", trim: "#bbdefb" },
-  { floor: "#e8f5e9", wall: "#2e7d32", accent: "#4caf50", trim: "#c8e6c9" },
-  { floor: "#fce4ec", wall: "#c62828", accent: "#ef5350", trim: "#f8bbd0" },
-  { floor: "#f3e5f5", wall: "#6a1b9a", accent: "#ab47bc", trim: "#e1bee7" },
-  { floor: "#fff8e1", wall: "#e65100", accent: "#ffa726", trim: "#ffecb3" },
-  { floor: "#e0f2f1", wall: "#00695c", accent: "#26a69a", trim: "#b2dfdb" },
-  { floor: "#fafafa", wall: "#37474f", accent: "#78909c", trim: "#eceff1" },
-  { floor: "#e8eaf6", wall: "#283593", accent: "#5c6bc0", trim: "#c5cae9" },
+  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#1565c0", trim: NEUTRAL_TRIM },
+  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#2e7d32", trim: NEUTRAL_TRIM },
+  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#b71c1c", trim: NEUTRAL_TRIM },
+  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#6a1b9a", trim: NEUTRAL_TRIM },
+  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#e65100", trim: NEUTRAL_TRIM },
+  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#00695c", trim: NEUTRAL_TRIM },
+  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#37474f", trim: NEUTRAL_TRIM },
+  { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#283593", trim: NEUTRAL_TRIM },
 ] as const;
 
 // Paleta da sala de reunião
-const MEETING_PALETTE = { floor: "#f0e8f8", wall: "#4a1070", accent: "#ec4899", trim: "#e1bee7" };
+const MEETING_PALETTE = { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#6d28d9", trim: NEUTRAL_TRIM };
 // Paleta CEO
-const CEO_PALETTE = { floor: "#e8f5e9", wall: "#1b5e20", accent: "#43a047", trim: "#c8e6c9" };
+const CEO_PALETTE = { floor: NEUTRAL_FLOOR, wall: NEUTRAL_WALL, accent: "#1b5e20", trim: NEUTRAL_TRIM };
 
 const STATUS_COLOR_3D = {
   working: "#22c55e", thinking: "#60a5fa", idle: "#94a3b8",
@@ -534,6 +538,66 @@ function Whiteboard({ x, z, rotation = 0 }: { x: number; z: number; rotation?: n
           <meshStandardMaterial color={["#ef4444", "#3b82f6", "#22c55e"][i]} />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+// ─── Câmera preset ────────────────────────────────────────────────────────────
+
+type CamMode = "overview" | "topdown" | "front";
+
+function CameraPreset({
+  mode, sceneCX, sceneCZ, camDist,
+}: { mode: CamMode; sceneCX: number; sceneCZ: number; camDist: number }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    if (mode === "overview") {
+      camera.position.set(sceneCX + camDist * 0.7, camDist * 0.65, sceneCZ + camDist * 0.85);
+    } else if (mode === "topdown") {
+      camera.position.set(sceneCX, camDist * 1.4, sceneCZ + 0.01);
+    } else {
+      camera.position.set(sceneCX, camDist * 0.4, sceneCZ + camDist * 1.3);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+  return null;
+}
+
+// ─── Luminária de teto ────────────────────────────────────────────────────────
+
+function CeilingLamp({ x, z }: { x: number; z: number }) {
+  return (
+    <group position={[x, WALL_H - 0.015, z]}>
+      {/* Housing */}
+      <mesh>
+        <cylinderGeometry args={[0.13, 0.2, 0.07, 10]} />
+        <meshStandardMaterial color="#d0ccc6" metalness={0.5} roughness={0.3} />
+      </mesh>
+      {/* Glowing bulb */}
+      <mesh position={[0, -0.06, 0]}>
+        <sphereGeometry args={[0.065, 8, 6]} />
+        <meshStandardMaterial color="#fff8e0" emissive="#fff8e0" emissiveIntensity={2.2} />
+      </mesh>
+    </group>
+  );
+}
+
+// ─── Placa de departamento ────────────────────────────────────────────────────
+
+function DepartmentPlaque({ accent }: { accent: string }) {
+  const halfD = ROOM_D / 2;
+  return (
+    <group position={[0, WALL_H * 0.62, -halfD + WALL_T / 2 + 0.03]}>
+      {/* Corpo da placa */}
+      <mesh castShadow>
+        <boxGeometry args={[2.8, 0.26, 0.04]} />
+        <meshStandardMaterial color={accent} metalness={0.25} roughness={0.45} />
+      </mesh>
+      {/* Faixa metallic */}
+      <mesh position={[0, 0, 0.025]}>
+        <boxGeometry args={[2.6, 0.07, 0.01]} />
+        <meshStandardMaterial color="#f0ece0" metalness={0.9} roughness={0.1} />
+      </mesh>
     </group>
   );
 }
@@ -1127,16 +1191,30 @@ function Room({
         <meshStandardMaterial color={palette.wall} />
       </mesh>
 
-      {/* Faixa accent no topo */}
+      {/* Faixa accent no topo — cor do departamento */}
       <mesh position={[0, WALL_H - 0.08, -halfD + WALL_T / 2]}>
-        <boxGeometry args={[ROOM_W - WALL_T, 0.14, 0.04]} />
-        <meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={0.28} />
+        <boxGeometry args={[ROOM_W - WALL_T, 0.16, 0.05]} />
+        <meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={0.22} />
       </mesh>
+      {/* Faixa accent lateral esquerda */}
+      {col === 0 && (
+        <mesh position={[-halfW + WALL_T / 2, WALL_H / 2, 0]}>
+          <boxGeometry args={[0.05, WALL_H, 0.12]} />
+          <meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={0.12} />
+        </mesh>
+      )}
       {/* Rodapé */}
       <mesh position={[0, 0.06, -halfD + WALL_T / 2]}>
         <boxGeometry args={[ROOM_W - WALL_T, 0.12, 0.04]} />
         <meshStandardMaterial color={palette.trim} />
       </mesh>
+
+      {/* Placa de departamento na parede traseira */}
+      <DepartmentPlaque accent={palette.accent} />
+
+      {/* Luminárias de teto — 2 por sala */}
+      <CeilingLamp x={-ROOM_W / 4} z={0} />
+      <CeilingLamp x={ ROOM_W / 4} z={0} />
 
       {/* Nome da sala */}
       <Text position={[0, WALL_H + 0.28, -halfD + 0.1]} fontSize={0.3} color="#ffffff"
@@ -1205,11 +1283,6 @@ function Room({
           <Whiteboard x={-3.2} z={-halfD + WALL_T + 0.04} />
           <Plant x={3.5} z={3.0} />
           <Plant x={-3.5} z={3.0} />
-          {/* Faixa accent na parede */}
-          <mesh position={[0, WALL_H - 0.08, -halfD + WALL_T / 2]}>
-            <boxGeometry args={[ROOM_W - WALL_T, 0.12, 0.04]} />
-            <meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={0.55} />
-          </mesh>
         </>
       )}
 
@@ -1357,6 +1430,7 @@ export default function CompanyOffice3D() {
   const [paused,         setPaused]         = useState(false);
   const [autonomySlider, setAutonomySlider] = useState(1); // 0=Baixo 1=Médio 2=Alto
   const [zoom,           setZoom]           = useState(1);
+  const [camMode,        setCamMode]        = useState<CamMode>("overview");
 
   // Intervalo de polling derivado do slider (não estado separado)
   const speed = AUTONOMY_SPEEDS[autonomySlider] ?? 30_000;
@@ -1516,18 +1590,18 @@ export default function CompanyOffice3D() {
   );
 
   if (loading) return (
-    <div className="flex h-full items-center justify-center bg-[#f0f2f8]">
+    <div className="flex h-full items-center justify-center bg-[#d8dce6]">
       <p className="text-sm text-slate-500">Carregando escritório...</p>
     </div>
   );
   if (error) return (
-    <div className="flex h-full items-center justify-center bg-[#f0f2f8]">
+    <div className="flex h-full items-center justify-center bg-[#d8dce6]">
       <p className="text-sm text-red-500">{error}</p>
     </div>
   );
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[#e8edf5]">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[#d8dce6]">
       <OfficeTopBar
         agents={officeAgents} connected={connected} paused={paused}
         autonomySlider={autonomySlider} zoom={zoom}
@@ -1544,6 +1618,23 @@ export default function CompanyOffice3D() {
       />
 
       <div className="relative flex min-h-0 flex-1">
+        {/* Botões de modo de câmera */}
+        <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-1 rounded-lg border border-white/10 bg-black/40 p-1 backdrop-blur-sm">
+          {(["overview", "topdown", "front"] as CamMode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => setCamMode(m)}
+              className={[
+                "rounded px-3 py-1 text-xs font-medium transition-colors",
+                camMode === m
+                  ? "bg-white/20 text-white"
+                  : "text-white/50 hover:bg-white/10 hover:text-white/80",
+              ].join(" ")}
+            >
+              {m === "overview" ? "Visão Geral" : m === "topdown" ? "Topo" : "Frontal"}
+            </button>
+          ))}
+        </div>
         <ActivityPanel logs={activityLogs} open={activityOpen} onClose={() => setActivityOpen(false)} />
 
         <div className="min-w-0 flex-1" style={{ height: "100%" }}>
@@ -1556,33 +1647,36 @@ export default function CompanyOffice3D() {
             style={{ width: "100%", height: "100%" }}
           >
             <AgentPosCtx.Provider value={agentPosRef}>
-            <color attach="background" args={["#e8edf5"]} />
-            <fog attach="fog" args={["#d0d8ee", camDist * 3, camDist * 6]} />
+            <color attach="background" args={["#d8dce6"]} />
+            <fog attach="fog" args={["#ccd0de", camDist * 3.5, camDist * 7]} />
 
-            <ambientLight intensity={1.2} />
-            <hemisphereLight args={["#ffffff", "#c8d4f0", 0.9]} />
+            {/* Iluminação ambiente IBL */}
+            <Environment preset="warehouse" background={false} />
+
+            <ambientLight intensity={0.8} />
+            <hemisphereLight args={["#f5f0e8", "#c0cce0", 0.7]} />
             <directionalLight
               position={[sceneCX + 12, 28, sceneCZ + 10]}
-              intensity={2.2} castShadow
+              intensity={1.8} castShadow
               shadow-mapSize={[2048, 2048]}
               shadow-camera-left={-gridW * 1.4} shadow-camera-right={gridW * 1.4}
               shadow-camera-top={CORR_Z * 1.5}  shadow-camera-bottom={-6}
               shadow-camera-near={1} shadow-camera-far={camDist * 5}
             />
-            <directionalLight position={[sceneCX - 10, 20, sceneCZ - 8]} intensity={0.9} />
-            <pointLight position={[sceneCX, 7, sceneCZ]} intensity={0.7} color="#ffffff" />
-            {/* Luz por sala */}
-            {Array.from({ length: cols }, (_, c) =>
-              Array.from({ length: rows }, (_, r) => (
-                <pointLight
-                  key={`${c}-${r}`}
-                  position={[c * (ROOM_W + ROOM_GAP_X), 4, r * (ROOM_D + ROOM_GAP_Z)]}
-                  intensity={0.3}
-                  color="#fffaf0"
-                  distance={10}
-                />
-              ))
-            )}
+            <directionalLight position={[sceneCX - 10, 20, sceneCZ - 8]} intensity={0.6} />
+
+            {/* Sombras de contato no piso */}
+            <ContactShadows
+              position={[sceneCX, 0.005, sceneCZ]}
+              opacity={0.28}
+              scale={[gridW + 20, rows * (ROOM_D + ROOM_GAP_Z) + 16]}
+              blur={1.8}
+              far={3}
+              color="#5060a0"
+            />
+
+            {/* Preset de câmera */}
+            <CameraPreset mode={camMode} sceneCX={sceneCX} sceneCZ={sceneCZ} camDist={camDist} />
 
             {/* Piso global */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[sceneCX, -0.02, sceneCZ]} receiveShadow>
