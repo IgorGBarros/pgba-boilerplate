@@ -1326,9 +1326,18 @@ export default function CompanyOffice3D() {
     );
   }, [lastAgentEvent]);
 
+  // Quando uma reunião local está ativa, sobrescreve o status dos participantes
+  // para "meeting" independentemente do que o backend retorna — sem isso o
+  // AgentAvatar3D nunca recebe status=meeting e os agentes não se movem.
   const officeAgents = useMemo<OfficeAgent[]>(
-    () => rawAgents.map((a, i) => toOfficeAgent(a, sectors, i)),
-    [rawAgents, sectors],
+    () => rawAgents.map((a, i) => {
+      const agent = toOfficeAgent(a, sectors, i);
+      if (meetingAgentIds.has(agent.id) && agent.status !== "meeting") {
+        return { ...agent, status: "meeting" as const };
+      }
+      return agent;
+    }),
+    [rawAgents, sectors, meetingAgentIds],
   );
 
   const agentsBySector = useMemo(() => {
@@ -1399,7 +1408,11 @@ export default function CompanyOffice3D() {
   );
 
   const handleAgentClick  = useCallback((a: OfficeAgent) => { setSelectedAgent(a); setAgentModalOpen(true); }, []);
-  const handleRoomClick   = useCallback((id: number, name: string) => { setSelectedRoom({ id, name }); setRoomModalOpen(true); }, []);
+  const handleRoomClick   = useCallback((id: number, name: string) => {
+    // Sala de reunião (id=-1): abre o chat de reunião
+    if (id === -1) { setMeetingOpen(true); return; }
+    setSelectedRoom({ id, name }); setRoomModalOpen(true);
+  }, []);
 
   // Setores fictícios para salas especiais (reutiliza o componente Room)
   const ceoRoomSector: Sector = useMemo(
