@@ -57,7 +57,8 @@ export default {
       },
       fontFamily: {
         display: ["'Space Grotesk'", "sans-serif"],
-        body: ["'Inter'", "sans-serif"],
+        body: ["'DM Sans'", "sans-serif"],
+        mono: ["'Fira Code'", "monospace"],
       },
       borderRadius: {
         card: "0.75rem",
