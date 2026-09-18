@@ -161,7 +161,7 @@ function ProjectChat({ project, onBack }: { project: Project; onBack: () => void
         </Button>
         <span className="text-muted-foreground">/</span>
         <div className="flex items-center gap-2">
-          <FolderKanban className="size-4 text-primary" />
+          <FolderKanban className="size-5 text-primary" />
           <span className="text-sm font-medium">{project.name}</span>
           {project.github_full_name && (
             <span className="font-mono text-xs text-muted-foreground">{project.github_full_name}</span>
@@ -275,7 +275,7 @@ export function Projects({
         <div className="panel h-48 animate-pulse bg-elevated" />
       ) : projects.length === 0 ? (
         <div className="panel flex flex-col items-center gap-2 py-12 text-center">
-          <FolderKanban className="size-8 text-muted-foreground" />
+          <FolderKanban className="size-10 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">Nenhum projeto ainda.</p>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={onImportProject}>Importar existente</Button>
@@ -308,13 +308,13 @@ export function Projects({
                           className="shrink-0 text-muted-foreground"
                         >
                           <ChevronRight
-                            className={`size-3.5 transition-transform ${
+                            className={`size-4 transition-transform ${
                               expanded[project.id] ? "rotate-90" : ""
                             }`}
                           />
                         </button>
 
-                        <FolderKanban className="size-4 shrink-0 text-primary" />
+                        <FolderKanban className="size-5 shrink-0 text-primary" />
 
                         {/* Clicking the name opens Gerar */}
                         <button
@@ -343,10 +343,10 @@ export function Projects({
                             href={project.github_repo_url}
                             target="_blank"
                             rel="noreferrer"
-                            className="hidden shrink-0 text-muted-foreground hover:text-foreground group-hover:block"
+                            className="shrink-0 text-muted-foreground hover:text-foreground"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <ExternalLink className="size-3.5" />
+                            <ExternalLink className="size-4" />
                           </a>
                         )}
 
@@ -354,14 +354,14 @@ export function Projects({
                         <button
                           type="button"
                           title="Abrir chat do projeto"
-                          className="hidden shrink-0 text-muted-foreground hover:text-primary group-hover:block"
+                          className="shrink-0 text-muted-foreground hover:text-primary"
                           onClick={() => setActiveProject(project)}
                         >
-                          <MessageSquare className="size-3.5" />
+                          <MessageSquare className="size-4" />
                         </button>
 
                         {/* Edit / Delete */}
-                        <div className="hidden shrink-0 items-center gap-1 group-hover:flex">
+                        <div className="flex shrink-0 items-center gap-1">
                           <button
                             type="button"
                             title="Editar projeto"
@@ -372,7 +372,7 @@ export function Projects({
                               setEditOpen(true);
                             }}
                           >
-                            <Pencil className="size-3.5" />
+                            <Pencil className="size-4" />
                           </button>
                           <button
                             type="button"
@@ -384,7 +384,7 @@ export function Projects({
                               setDeleteOpen(true);
                             }}
                           >
-                            <Trash2 className="size-3.5" />
+                            <Trash2 className="size-4" />
                           </button>
                         </div>
                       </div>
