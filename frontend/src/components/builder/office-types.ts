@@ -22,6 +22,7 @@ export interface OfficeAgent {
   sectorName: string;
   isOrchestrator: boolean;
   access_level: string;
+  autonomy_level: number;
   appearance: { shirtColor: string };
 }
 
@@ -102,6 +103,7 @@ export function toOfficeAgent(
       agent.access_level === "general_orchestrator" ||
       agent.access_level === "sector_orchestrator",
     access_level: agent.access_level,
+    autonomy_level: agent.autonomy_level ?? 0,
     appearance: { shirtColor: AGENT_COLORS[agentIndex % AGENT_COLORS.length]! },
   };
 }
