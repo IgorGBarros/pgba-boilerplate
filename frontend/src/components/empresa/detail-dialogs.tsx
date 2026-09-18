@@ -207,3 +207,68 @@ export function AgentDialog({
     </Dialog>
   );
 }
+
+export function NodeDialog({
+  open,
+  onOpenChange,
+  name: initialName,
+  path: initialPath,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  name: string;
+  path: string;
+  onSave: (name: string, path: string) => void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [path, setPath] = useState(initialPath);
+
+  useEffect(() => {
+    setName(initialName);
+    setPath(initialPath);
+  }, [initialName, initialPath, open]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Editar item</DialogTitle>
+          <DialogDescription>Altere o nome e o caminho do projeto ou pasta.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="node-name">Nome</Label>
+            <Input id="node-name" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="node-path">Caminho</Label>
+            <Input
+              id="node-path"
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              className="font-mono text-sm"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={() => {
+              onSave(name, path);
+              onOpenChange(false);
+              toast.success("Item atualizado");
+            }}
+          >
+            <Save className="size-4" />
+            Salvar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
