@@ -416,6 +416,36 @@ export function AgentModal({
   );
 }
 
+// ─── Draggable floating panel ──────────────────────────────────────────────────
+
+function useDrag(initialX: number, initialY: number) {
+  const [pos, setPos] = useState({ x: initialX, y: initialY });
+  const dragging = useRef(false);
+  const origin = useRef({ mx: 0, my: 0, px: 0, py: 0 });
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    dragging.current = true;
+    origin.current = { mx: e.clientX, my: e.clientY, px: pos.x, py: pos.y };
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      if (!dragging.current) return;
+      setPos({
+        x: origin.current.px + e.clientX - origin.current.mx,
+        y: origin.current.py + e.clientY - origin.current.my,
+      });
+    };
+    const up = () => { dragging.current = false; };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+  }, []);
+
+  return { pos, onMouseDown };
+}
+
 // ─── Meeting Modal ─────────────────────────────────────────────────────────────
 
 function TinyAvatar({
@@ -598,15 +628,32 @@ export function MeetingModal({
           (a) => a.sectorId === selectedSectorId || a.access_level === "ceo",
         );
 
+  const { pos, onMouseDown } = useDrag(
+    Math.max(0, window.innerWidth / 2 - 325),
+    Math.max(0, window.innerHeight / 2 - 300),
+  );
+
+  if (!open) return null;
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-[650px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Users className="size-5 text-primary" />
-            {meetingStarted ? "Reunião em Andamento" : "Convocar Reunião"}
-          </DialogTitle>
-        </DialogHeader>
+    <div
+      style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 9999, width: 650, maxHeight: "85vh" }}
+      className="flex flex-col rounded-xl border border-border bg-background shadow-2xl"
+    >
+      {/* Barra de título arrastável */}
+      <div
+        className="flex cursor-grab items-center gap-2 rounded-t-xl border-b border-border bg-secondary/80 px-4 py-3 select-none active:cursor-grabbing"
+        onMouseDown={onMouseDown}
+      >
+        <Users className="size-5 text-primary" />
+        <span className="flex-1 text-sm font-bold">
+          {meetingStarted ? "Reunião em Andamento" : "Convocar Reunião"}
+        </span>
+        <button type="button" onClick={onClose} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+          <X className="size-4" />
+        </button>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
 
         {!meetingStarted ? (
           <div className="space-y-4">
@@ -828,8 +875,8 @@ export function MeetingModal({
             </div>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }
 
