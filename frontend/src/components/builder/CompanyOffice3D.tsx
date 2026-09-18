@@ -1358,18 +1358,26 @@ export default function CompanyOffice3D() {
   }, [officeAgents, addLog]);
 
   // ─── Geometria da cena ─────────────────────────────────────────────────────
-  // A sala de reunião ocupa o último slot no grid (index = sectors.length)
-  const totalRooms    = sectors.length + 1; // +1 para sala de reunião
-  const cols          = Math.min(Math.max(totalRooms, 1), ROOMS_PER_ROW);
-  const rows          = Math.ceil(Math.max(totalRooms, 1) / ROOMS_PER_ROW);
-  const gridW         = cols * (ROOM_W + ROOM_GAP_X) - ROOM_GAP_X;
-  const CORR_Z        = corridorZ(rows);
+  // Layout do grid:
+  //   índice 0         → Sala CEO (sempre canto superior esquerdo — paredes verdes)
+  //   índices 1..N     → setores reais (cada sector[i] ocupa slot i+1)
+  //   índice N+1       → Sala de Reunião
+  const CEO_ROOM_INDEX     = 0;
+  const totalRooms         = sectors.length + 2; // +1 CEO, +1 Reunião
+  const cols               = Math.min(Math.max(totalRooms, 1), ROOMS_PER_ROW);
+  const rows               = Math.ceil(Math.max(totalRooms, 1) / ROOMS_PER_ROW);
+  const gridW              = cols * (ROOM_W + ROOM_GAP_X) - ROOM_GAP_X;
+  const CORR_Z             = corridorZ(rows);
 
-  // Sala de reunião: próxima posição disponível no grid
-  const meetingRoomIndex = sectors.length;
+  // Posição da Sala CEO
+  const [ceoCX, ceoCZ]    = roomCenter(CEO_ROOM_INDEX);
+  const ceoDoor            = roomDoorVec(ceoCX, ceoCZ);
+
+  // Sala de Reunião: último slot
+  const meetingRoomIndex   = sectors.length + 1;
   const [meetingCX, meetingCZ] = roomCenter(meetingRoomIndex);
   const meetingRoomPos: [number, number, number] = [meetingCX, 0, meetingCZ];
-  const meetingDoor = roomDoorVec(meetingCX, meetingCZ);
+  const meetingDoor        = roomDoorVec(meetingCX, meetingCZ);
 
   const sceneCX = (cols - 1) * (ROOM_W + ROOM_GAP_X) / 2;
   const sceneCZ = rows * (ROOM_D + ROOM_GAP_Z) / 2;
@@ -1382,10 +1390,22 @@ export default function CompanyOffice3D() {
     [officeAgents, meetingAgentIds],
   );
 
+  // Agentes da sala CEO: CEO + general_orchestrator (sector=null)
+  const ceoRoomAgents = useMemo(
+    () => officeAgents.filter(
+      (a) => a.access_level === "ceo" || a.access_level === "general_orchestrator",
+    ),
+    [officeAgents],
+  );
+
   const handleAgentClick  = useCallback((a: OfficeAgent) => { setSelectedAgent(a); setAgentModalOpen(true); }, []);
   const handleRoomClick   = useCallback((id: number, name: string) => { setSelectedRoom({ id, name }); setRoomModalOpen(true); }, []);
 
-  // Setor fictício para a sala de reunião (para reutilizar Room)
+  // Setores fictícios para salas especiais (reutiliza o componente Room)
+  const ceoRoomSector: Sector = useMemo(
+    () => ({ id: -2, name: "CEO", knowledge_source: null } as unknown as Sector),
+    [],
+  );
   const meetingRoomSector: Sector = useMemo(
     () => ({ id: -1, name: "Sala de Reunião", knowledge_source: null } as unknown as Sector),
     [],
@@ -1479,9 +1499,16 @@ export default function CompanyOffice3D() {
             {/* Corredor principal (apenas se houver mais de uma fileira) */}
             {rows > 1 && <CorridorFloor corrZ={CORR_Z} gridW={gridW} />}
 
-            {/* Salas dos setores */}
+            {/* Sala CEO — índice 0, canto superior esquerdo */}
+            <Room
+              sector={ceoRoomSector}
+              index={CEO_ROOM_INDEX}
+              onRoomClick={handleRoomClick}
+            />
+
+            {/* Salas dos setores — começam no índice 1 (0 é reservado para CEO) */}
             {sectors.map((sector, i) => (
-              <Room key={sector.id} sector={sector} index={i} onRoomClick={handleRoomClick} />
+              <Room key={sector.id} sector={sector} index={i + 1} onRoomClick={handleRoomClick} />
             ))}
 
             {/* Sala de reunião — integrada no grid, no último slot */}
@@ -1494,10 +1521,30 @@ export default function CompanyOffice3D() {
 
             {/* Agentes */}
             {officeAgents.map((agent) => {
-              const sIdx = sectors.findIndex((s) => s.id === agent.sectorId);
-              const [cx, cz] = sIdx >= 0 ? roomCenter(sIdx) : [sceneCX, 0];
-              const sAgents  = agentsBySector.get(agent.sectorId ?? -1) ?? [];
-              const aIdx     = sAgents.findIndex((a) => a.id === agent.id);
+              // CEO e Orquestrador-Geral (sector=null) ficam na Sala CEO
+              const isCeoRoom =
+                agent.access_level === "ceo" || agent.access_level === "general_orchestrator";
+
+              let cx: number, cz: number;
+              let sAgents: OfficeAgent[];
+              let aIdx: number;
+              let fromDoor: THREE.Vector3;
+
+              if (isCeoRoom) {
+                [cx, cz] = [ceoCX, ceoCZ];
+                sAgents  = ceoRoomAgents;
+                aIdx     = ceoRoomAgents.findIndex((a) => a.id === agent.id);
+                fromDoor = ceoDoor;
+              } else {
+                // Sector rooms estão no índice sIdx+1 (slot 0 é CEO)
+                const sIdx = sectors.findIndex((s) => s.id === agent.sectorId);
+                const pos  = sIdx >= 0 ? roomCenter(sIdx + 1) : roomCenter(CEO_ROOM_INDEX);
+                cx = pos[0]; cz = pos[1];
+                sAgents  = agentsBySector.get(agent.sectorId ?? -1) ?? [];
+                aIdx     = sAgents.findIndex((a) => a.id === agent.id);
+                fromDoor = roomDoorVec(cx, cz);
+              }
+
               const [ax, az] = deskSlot(aIdx >= 0 ? aIdx : 0, Math.max(sAgents.length, 1));
               const homePos: [number, number, number] = [cx + ax, 0, cz + az];
 
@@ -1511,7 +1558,6 @@ export default function CompanyOffice3D() {
                     ]
                   : null;
 
-              const door = roomDoorVec(cx, cz);
               const roomBounds: RoomBounds = {
                 minX: cx - ROOM_W / 2 + 1.5,
                 maxX: cx + ROOM_W / 2 - 1.5,
@@ -1525,7 +1571,7 @@ export default function CompanyOffice3D() {
                   agent={agent}
                   homePos={homePos}
                   meetingPos={meetingPos}
-                  fromDoor={door}
+                  fromDoor={fromDoor}
                   meetingDoor={meetingDoor}
                   corrZ={CORR_Z}
                   roomBounds={roomBounds}
