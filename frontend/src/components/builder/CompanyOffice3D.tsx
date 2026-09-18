@@ -47,6 +47,9 @@ const AUTONOMY_SPEEDS   = [60_000, 30_000, 10_000];
 const AUTONOMY_LEVELS   = [0, 2, 4];
 const AUTONOMY_LABELS   = ["Observador", "Executor", "Autônomo"] as const;
 
+// Escala global de móveis — mantém proporção com agentes a 0.65×
+const FURNITURE_SCALE = 0.70;
+
 // Paletas pastel por setor
 const ROOM_PALETTES = [
   { floor: "#e3f2fd", wall: "#1565c0", accent: "#2196f3", trim: "#bbdefb" },
@@ -219,45 +222,50 @@ function Workstation({ x, z, color }: { x: number; z: number; color: string }) {
 function PixelChair({ x, z, color = "#444", rotation = 0 }: { x: number; z: number; color?: string; rotation?: number }) {
   return (
     <group position={[x, 0, z]} rotation={[0, rotation, 0]}>
-      <mesh position={[0, 0.14, 0]}>
-        <cylinderGeometry args={[0.18, 0.18, 0.09, 8]} />
+      {/* Base com rodas */}
+      <mesh position={[0, 0.07, 0]}>
+        <cylinderGeometry args={[0.14, 0.14, 0.05, 8]} />
         <meshStandardMaterial color="#333" metalness={0.8} />
       </mesh>
       {([0, 72, 144, 216, 288] as number[]).map((angle, i) => {
         const rad = (angle * Math.PI) / 180;
         return (
           <group key={i} rotation={[0, rad, 0]}>
-            <mesh position={[0, 0.12, 0.28]}>
-              <boxGeometry args={[0.065, 0.05, 0.56]} />
+            <mesh position={[0, 0.05, 0.16]}>
+              <boxGeometry args={[0.04, 0.04, 0.32]} />
               <meshStandardMaterial color="#333" metalness={0.7} />
             </mesh>
-            <mesh position={[0, 0.08, 0.57]} rotation={[Math.PI / 2, 0, 0]}>
-              <cylinderGeometry args={[0.05, 0.05, 0.035, 8]} />
+            <mesh position={[0, 0.03, 0.32]} rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.03, 0.03, 0.022, 8]} />
               <meshStandardMaterial color="#111" />
             </mesh>
           </group>
         );
       })}
-      <mesh position={[0, 0.52, 0]}>
-        <cylinderGeometry args={[0.04, 0.05, 0.58, 8]} />
+      {/* Haste */}
+      <mesh position={[0, 0.26, 0]}>
+        <cylinderGeometry args={[0.025, 0.032, 0.38, 8]} />
         <meshStandardMaterial color="#444" metalness={0.8} />
       </mesh>
-      <mesh position={[0, 0.84, 0]} castShadow>
-        <boxGeometry args={[0.7, 0.13, 0.7]} />
+      {/* Assento */}
+      <mesh position={[0, 0.44, 0]} castShadow>
+        <boxGeometry args={[0.52, 0.07, 0.52]} />
         <meshStandardMaterial color={color} roughness={0.7} />
       </mesh>
-      <mesh position={[0, 1.46, -0.3]} castShadow>
-        <boxGeometry args={[0.68, 1.0, 0.13]} />
+      {/* Encosto */}
+      <mesh position={[0, 0.69, -0.2]} castShadow>
+        <boxGeometry args={[0.5, 0.48, 0.07]} />
         <meshStandardMaterial color={color} roughness={0.7} />
       </mesh>
-      {([-0.42, 0.42] as number[]).map((ax, i) => (
-        <group key={i} position={[ax, 0.98, 0]}>
-          <mesh position={[0, 0, -0.2]}>
-            <boxGeometry args={[0.05, 0.52, 0.05]} />
+      {/* Apoios de braço */}
+      {([-0.3, 0.3] as number[]).map((ax, i) => (
+        <group key={i} position={[ax, 0.52, 0]}>
+          <mesh position={[0, 0, -0.09]}>
+            <boxGeometry args={[0.035, 0.22, 0.035]} />
             <meshStandardMaterial color="#555" metalness={0.6} />
           </mesh>
-          <mesh position={[0, 0.22, 0]}>
-            <boxGeometry args={[0.09, 0.05, 0.36]} />
+          <mesh position={[0, 0.1, 0]}>
+            <boxGeometry args={[0.06, 0.035, 0.22]} />
             <meshStandardMaterial color={color} roughness={0.6} />
           </mesh>
         </group>
@@ -326,13 +334,13 @@ function DoorMesh({
 function ServerRack({ x, z }: { x: number; z: number }) {
   return (
     <group position={[x, 0, z]}>
-      <mesh position={[0, 1, 0]} castShadow>
-        <boxGeometry args={[0.5, 2, 0.62]} />
+      <mesh position={[0, 0.7, 0]} castShadow>
+        <boxGeometry args={[0.44, 1.4, 0.54]} />
         <meshStandardMaterial color="#0d0d14" />
       </mesh>
-      {[0.3, 0.58, 0.86, 1.14, 1.42, 1.7].map((y) => (
-        <mesh key={y} position={[0, y, 0.32]}>
-          <boxGeometry args={[0.46, 0.1, 0.02]} />
+      {[0.2, 0.42, 0.64, 0.86, 1.08, 1.28].map((y) => (
+        <mesh key={y} position={[0, y, 0.28]}>
+          <boxGeometry args={[0.4, 0.08, 0.02]} />
           <meshStandardMaterial color="#111" emissive="#00ff88" emissiveIntensity={0.35} />
         </mesh>
       ))}
@@ -498,31 +506,31 @@ function Whiteboard({ x, z, rotation = 0 }: { x: number; z: number; rotation?: n
   return (
     <group position={[x, 0, z]} rotation={[0, rotation, 0]}>
       {/* Moldura */}
-      <mesh position={[0, 1.5, 0]}>
-        <boxGeometry args={[2.6, 1.6, 0.06]} />
+      <mesh position={[0, 0.92, 0]}>
+        <boxGeometry args={[1.9, 1.0, 0.06]} />
         <meshStandardMaterial color="#888" metalness={0.5} />
       </mesh>
       {/* Superfície branca */}
-      <mesh position={[0, 1.5, 0.04]}>
-        <boxGeometry args={[2.44, 1.44, 0.02]} />
+      <mesh position={[0, 0.92, 0.04]}>
+        <boxGeometry args={[1.78, 0.9, 0.02]} />
         <meshStandardMaterial color="#f8f8f8" roughness={0.1} />
       </mesh>
       {/* Linhas de escrita simuladas */}
-      {[0.36, 0.12, -0.12, -0.36].map((dy, i) => (
-        <mesh key={i} position={[-0.3 + (i % 2) * 0.2, 1.5 + dy, 0.06]}>
-          <boxGeometry args={[0.9 + i * 0.15, 0.012, 0.005]} />
+      {[0.22, 0.06, -0.1, -0.26].map((dy, i) => (
+        <mesh key={i} position={[-0.2 + (i % 2) * 0.15, 0.92 + dy, 0.06]}>
+          <boxGeometry args={[0.65 + i * 0.1, 0.01, 0.005]} />
           <meshStandardMaterial color="#3b82f6" />
         </mesh>
       ))}
       {/* Calha de marcadores */}
-      <mesh position={[0, 0.72, 0.035]}>
-        <boxGeometry args={[2.44, 0.06, 0.06]} />
+      <mesh position={[0, 0.43, 0.035]}>
+        <boxGeometry args={[1.78, 0.05, 0.05]} />
         <meshStandardMaterial color="#aaa" metalness={0.4} />
       </mesh>
       {/* Marcadores */}
-      {([-0.4, 0, 0.4] as number[]).map((mx, i) => (
-        <mesh key={i} position={[mx, 0.76, 0.07]} rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.015, 0.015, 0.16, 6]} />
+      {([-0.3, 0, 0.3] as number[]).map((mx, i) => (
+        <mesh key={i} position={[mx, 0.46, 0.07]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.012, 0.012, 0.12, 6]} />
           <meshStandardMaterial color={["#ef4444", "#3b82f6", "#22c55e"][i]} />
         </mesh>
       ))}
@@ -583,21 +591,21 @@ function Bookshelf({ x, z, rotation = 0, color = "#5a3a1a" }: { x: number; z: nu
   const bookColors = ["#ef4444", "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#06b6d4", "#f97316", "#64748b"];
   return (
     <group position={[x, 0, z]} rotation={[0, rotation, 0]}>
-      {/* Estrutura */}
-      <mesh position={[0, 1.1, 0]} castShadow>
-        <boxGeometry args={[1.5, 2.2, 0.36]} />
+      {/* Estrutura — 1.5m de altura */}
+      <mesh position={[0, 0.75, 0]} castShadow>
+        <boxGeometry args={[1.2, 1.5, 0.32]} />
         <meshStandardMaterial color={color} roughness={0.6} />
       </mesh>
       {/* Prateleiras e livros */}
-      {[0.3, 0.8, 1.3, 1.8].map((shelf, si) => (
+      {[0.22, 0.56, 0.9, 1.24].map((shelf, si) => (
         <group key={si}>
           <mesh position={[0, shelf, 0.02]}>
-            <boxGeometry args={[1.4, 0.04, 0.32]} />
+            <boxGeometry args={[1.12, 0.035, 0.28]} />
             <meshStandardMaterial color="#6b4a2a" />
           </mesh>
-          {Array.from({ length: 8 }, (_, bi) => (
-            <mesh key={bi} position={[-0.6 + bi * 0.17, shelf + 0.13, 0.07]}>
-              <boxGeometry args={[0.13, 0.22 + (bi % 3) * 0.04, 0.22]} />
+          {Array.from({ length: 7 }, (_, bi) => (
+            <mesh key={bi} position={[-0.46 + bi * 0.155, shelf + 0.1, 0.07]}>
+              <boxGeometry args={[0.11, 0.18 + (bi % 3) * 0.03, 0.2]} />
               <meshStandardMaterial color={bookColors[(si * 4 + bi) % bookColors.length]!} roughness={0.7} />
             </mesh>
           ))}
@@ -864,7 +872,7 @@ function AgentAvatar3D({
     agentPosR.current[agent.id] = mv.pos;
 
     const sit = mv.isSitting && !mv.isMoving;
-    g.position.set(mv.pos.x, sit ? -0.18 : 0, mv.pos.z);
+    g.position.set(mv.pos.x, sit ? 0.04 : 0, mv.pos.z);
     if (mv.isMoving) g.rotation.y = mv.facingAngle;
 
     const wp = mv.walkPhase;
@@ -879,7 +887,7 @@ function AgentAvatar3D({
       rightArmRef.current.rotation.x = walk ? Math.sin(wp) * 0.32 : sit ? -0.5 : 0;
 
     if (status === "working" && sit)
-      g.position.y = -0.18 + Math.sin(Date.now() / 400) * 0.016;
+      g.position.y = 0.04 + Math.sin(Date.now() / 400) * 0.016;
   });
 
   const shortName = agent.name.split(" ").slice(0, 2).join(" ");
@@ -1149,17 +1157,17 @@ function Room({
           <Whiteboard x={0} z={-3.7} />
           <Bookshelf x={3.5} z={-1.0} color="#3d2b1a" />
           {/* Quadros na parede */}
-          <mesh position={[-1.5, 2.0, -halfD + WALL_T + 0.02]}>
-            <boxGeometry args={[1.0, 0.7, 0.03]} />
+          <mesh position={[-1.5, 1.6, -halfD + WALL_T + 0.02]}>
+            <boxGeometry args={[1.0, 0.65, 0.03]} />
             <meshStandardMaterial color="#1a2a1a" emissive="#2d6a2d" emissiveIntensity={0.1} />
           </mesh>
-          <mesh position={[1.8, 2.1, -halfD + WALL_T + 0.02]}>
-            <boxGeometry args={[0.8, 0.55, 0.03]} />
+          <mesh position={[1.8, 1.7, -halfD + WALL_T + 0.02]}>
+            <boxGeometry args={[0.8, 0.5, 0.03]} />
             <meshStandardMaterial color="#1a1a2a" emissive="#2d2d6a" emissiveIntensity={0.1} />
           </mesh>
-          {/* Capacete no canto da mesa (conforme imagem) */}
-          <mesh position={[1.8, 0.88, -0.8]}>
-            <sphereGeometry args={[0.14, 8, 6]} />
+          {/* Capacete no canto da mesa */}
+          <mesh position={[1.8, 0.7, -0.8]}>
+            <sphereGeometry args={[0.12, 8, 6]} />
             <meshStandardMaterial color="#f5c033" roughness={0.4} />
           </mesh>
         </>
@@ -1169,28 +1177,29 @@ function Room({
         <>
           {/* Mesa de conferência */}
           <mesh position={[0, 0.42, 0]} castShadow>
-            <boxGeometry args={[7.0, 0.08, 1.5]} />
+            <boxGeometry args={[6.0, 0.07, 1.2]} />
             <meshStandardMaterial color="#3b2c1e" roughness={0.4} />
           </mesh>
-          {([-3.0, -1.5, 0, 1.5, 3.0] as number[]).map((mx) =>
-            ([-0.62, 0.62] as number[]).map((mz) => (
+          {([-2.5, -1.25, 0, 1.25, 2.5] as number[]).map((mx) =>
+            ([-0.52, 0.52] as number[]).map((mz) => (
               <mesh key={`${mx}-${mz}`} position={[mx, 0.2, mz]}>
-                <boxGeometry args={[0.07, 0.38, 0.07]} />
+                <boxGeometry args={[0.06, 0.38, 0.06]} />
                 <meshStandardMaterial color="#2a1e10" />
               </mesh>
             ))
           )}
-          {MEETING_CHAIRS_SMALL.map(([cchx, cchz], i) => (
-            <PixelChair key={i} x={cchx} z={cchz} color="#1e1e2e" />
-          ))}
+          {MEETING_CHAIRS_SMALL.map(([cchx, cchz], i) => {
+            const rot = cchz < -0.5 ? 0 : cchz > 0.5 ? Math.PI : cchx < 0 ? Math.PI / 2 : -Math.PI / 2;
+            return <PixelChair key={i} x={cchx} z={cchz} color="#1e1e2e" rotation={rot} />;
+          })}
           {/* Tela de projeção */}
-          <mesh position={[0, 1.4, -halfD + WALL_T + 0.04]}>
-            <boxGeometry args={[5.0, 1.6, 0.03]} />
+          <mesh position={[0, 1.3, -halfD + WALL_T + 0.04]}>
+            <boxGeometry args={[4.0, 1.2, 0.03]} />
             <meshStandardMaterial color="#050810" emissive="#4c1d95" emissiveIntensity={0.25} />
           </mesh>
           {/* Projetor no teto */}
-          <mesh position={[0, 3.0, 0.5]}>
-            <boxGeometry args={[0.3, 0.15, 0.5]} />
+          <mesh position={[0, WALL_H - 0.1, 0.5]}>
+            <boxGeometry args={[0.24, 0.12, 0.4]} />
             <meshStandardMaterial color="#222" metalness={0.6} />
           </mesh>
           <Whiteboard x={-3.2} z={-halfD + WALL_T + 0.04} />
