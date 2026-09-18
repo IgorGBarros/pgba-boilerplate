@@ -2,8 +2,10 @@
 import { useState, useCallback, useEffect } from "react";
 import type { ChatMessage, Conversation } from "@/types/builder";
 
-const MESSAGES_KEY = "pgba-studio-messages";
-const HISTORY_KEY = "pgba-studio-history";
+const DEFAULT_NS = "pgba-studio";
+
+function msgKey(ns: string) { return `${ns}-messages`; }
+function histKey(ns: string) { return `${ns}-history`; }
 
 function serializeMessages(msgs: ChatMessage[]): string {
   return JSON.stringify(msgs.map((m) => ({ ...m, timestamp: m.timestamp.toISOString() })));
@@ -18,9 +20,9 @@ function deserializeMessages(raw: string): ChatMessage[] {
   }
 }
 
-function loadHistory(): Conversation[] {
+function loadHistory(ns: string): Conversation[] {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = localStorage.getItem(histKey(ns));
     if (!raw) return [];
     const arr = JSON.parse(raw);
     return arr.map((c: Conversation) => ({
@@ -33,9 +35,9 @@ function loadHistory(): Conversation[] {
   }
 }
 
-function saveHistory(convs: Conversation[]) {
+function saveHistory(ns: string, convs: Conversation[]) {
   localStorage.setItem(
-    HISTORY_KEY,
+    histKey(ns),
     JSON.stringify(
       convs.map((c) => ({
         ...c,
@@ -52,20 +54,23 @@ function buildTitle(messages: ChatMessage[]): string {
   return firstUserMsg.content.length > 50 ? firstUserMsg.content.slice(0, 50) + "…" : firstUserMsg.content;
 }
 
-export function useChatPersistence() {
+export function useChatPersistence(namespace = DEFAULT_NS) {
+  const ns = namespace;
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    const raw = localStorage.getItem(MESSAGES_KEY);
-    return raw ? deserializeMessages(raw) : [];
+    try {
+      const raw = localStorage.getItem(msgKey(ns));
+      return raw ? deserializeMessages(raw) : [];
+    } catch { return []; }
   });
-  const [history, setHistory] = useState<Conversation[]>(loadHistory);
+  const [history, setHistory] = useState<Conversation[]>(() => loadHistory(ns));
 
   useEffect(() => {
-    localStorage.setItem(MESSAGES_KEY, serializeMessages(messages));
-  }, [messages]);
+    try { localStorage.setItem(msgKey(ns), serializeMessages(messages)); } catch {}
+  }, [messages, ns]);
 
   useEffect(() => {
-    saveHistory(history);
-  }, [history]);
+    saveHistory(ns, history);
+  }, [history, ns]);
 
   const clearAndArchive = useCallback(() => {
     if (messages.length === 0) return;
