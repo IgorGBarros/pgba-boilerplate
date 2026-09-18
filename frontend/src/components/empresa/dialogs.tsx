@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Github, Download, Plus } from "lucide-react";
+import { FolderOpen, Github, Download, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,12 +47,28 @@ export function NewProjectDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const [step, setStep] = useState<"form" | "workspace">("form");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [createWorkspace, setCreateWorkspace] = useState(false);
+  const [workspacePath, setWorkspacePath] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handle = async () => {
+  const resetAndClose = () => {
+    setStep("form");
+    setName("");
+    setDescription("");
+    setCreateWorkspace(false);
+    setWorkspacePath("");
+    onOpenChange(false);
+  };
+
+  const handleFormNext = () => {
     if (!name.trim()) return;
+    setStep("workspace");
+  };
+
+  const handle = async () => {
     setLoading(true);
     try {
       const agent = await findOrchestratorAgent();
@@ -64,11 +80,10 @@ export function NewProjectDialog({
         requestingAgentId: agent.id,
         name: name.trim(),
         description: description.trim(),
+        workspace: createWorkspace ? workspacePath.trim() : "",
       });
       toast.success(`Projeto "${name}" criado`);
-      onOpenChange(false);
-      setName("");
-      setDescription("");
+      resetAndClose();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao criar projeto");
     } finally {
@@ -77,49 +92,110 @@ export function NewProjectDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) resetAndClose(); }}>
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Github className="size-5" />
-            Novo projeto
-          </DialogTitle>
-          <DialogDescription>
-            Cria um repositório GitHub via o agente Orquestrador-Geral.
-          </DialogDescription>
-        </DialogHeader>
+        {step === "form" ? (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Github className="size-5" />
+                Novo projeto
+              </DialogTitle>
+              <DialogDescription>
+                Cria um repositório GitHub via o agente Orquestrador-Geral.
+              </DialogDescription>
+            </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="np-name">Nome do projeto</Label>
-            <Input
-              id="np-name"
-              placeholder="meu-projeto"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="font-mono"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="np-desc">Descrição (opcional)</Label>
-            <Textarea
-              id="np-desc"
-              placeholder="Descreva o objetivo do projeto..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="min-h-20"
-            />
-          </div>
-        </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="np-name">Nome do projeto</Label>
+                <Input
+                  id="np-name"
+                  placeholder="meu-projeto"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="np-desc">Descrição (opcional)</Label>
+                <Textarea
+                  id="np-desc"
+                  placeholder="Descreva o objetivo do projeto..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="min-h-20"
+                />
+              </div>
+            </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button onClick={handle} disabled={!name.trim() || loading}>
-            {loading ? "Criando..." : "Criar projeto"}
-          </Button>
-        </DialogFooter>
+            <DialogFooter>
+              <Button variant="outline" onClick={resetAndClose}>
+                Cancelar
+              </Button>
+              <Button onClick={handleFormNext} disabled={!name.trim()}>
+                Próximo
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FolderOpen className="size-5" />
+                Diretório de trabalho local
+              </DialogTitle>
+              <DialogDescription>
+                Os agentes só trabalharão dentro deste diretório. Deixe em branco para
+                não restringir.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 rounded-md border border-border p-4">
+                <input
+                  type="checkbox"
+                  id="np-create-ws"
+                  checked={createWorkspace}
+                  onChange={(e) => setCreateWorkspace(e.target.checked)}
+                  className="size-4"
+                />
+                <label htmlFor="np-create-ws" className="cursor-pointer text-sm">
+                  Criar pasta local para este projeto
+                </label>
+              </div>
+
+              {createWorkspace && (
+                <div className="space-y-2">
+                  <Label htmlFor="np-ws-path">Caminho do diretório</Label>
+                  <Input
+                    id="np-ws-path"
+                    placeholder="/home/usuario/projetos/meu-projeto"
+                    value={workspacePath}
+                    onChange={(e) => setWorkspacePath(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Caminho absoluto no sistema de arquivos local. O backend registrará
+                    este diretório como workspace do projeto.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setStep("form")}>
+                Voltar
+              </Button>
+              <Button
+                onClick={handle}
+                disabled={loading || (createWorkspace && !workspacePath.trim())}
+              >
+                {loading ? "Criando..." : "Criar projeto"}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

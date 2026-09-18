@@ -590,3 +590,46 @@ export interface AgentMetricsOverview {
 export async function getAgentMetricsOverview(): Promise<AgentMetricsOverview> {
   return request<AgentMetricsOverview>("/api/v1/agency/metrics/overview/");
 }
+
+// Métricas por agente (tokens + custo)
+export interface AgentMetric {
+  agent_id: number;
+  agent_name: string;
+  sector_name: string | null;
+  tokens: number;
+  cost_usd: number;
+  interactions_count: number;
+}
+
+export async function getAgentMetrics(): Promise<AgentMetric[]> {
+  return request<AgentMetric[]>("/api/v1/agency/metrics/agents/");
+}
+
+// Deleção de projeto
+export async function deleteProject(id: number): Promise<void> {
+  await request<void>(`/api/v1/agency/projects/${id}/`, { method: "DELETE" });
+}
+
+export async function updateProject(
+  id: number,
+  params: { name?: string; description?: string },
+): Promise<Project> {
+  return request<Project>(`/api/v1/agency/projects/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(params),
+  });
+}
+
+// Atualização de agente (role + skills_md)
+export async function updateAgent(
+  id: number,
+  params: { role?: string; skillsMd?: string },
+): Promise<Agent> {
+  return request<Agent>(`/api/v1/agency/agents/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      ...(params.role !== undefined ? { role: params.role } : {}),
+      ...(params.skillsMd !== undefined ? { skills_md: params.skillsMd } : {}),
+    }),
+  });
+}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import {
   Boxes,
   Building2,
@@ -6,7 +6,7 @@ import {
   FolderTree,
   ScrollText,
   ShieldCheck,
-  Sparkles,
+  Cuboid,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Overview } from "@/components/empresa/overview";
@@ -15,13 +15,15 @@ import { Tasks } from "@/components/empresa/tasks";
 import { Approvals } from "@/components/empresa/approvals";
 import { Knowledge } from "@/components/empresa/knowledge";
 import { Logs } from "@/components/empresa/logs";
-import { Gerar } from "@/components/empresa/gerar";
 import {
   ImportProjectDialog,
   NewProjectDialog,
   NewTaskDialog,
 } from "@/components/empresa/dialogs";
 import { Toaster } from "sonner";
+
+// Carregado sob demanda — react-three-fiber + drei pesa ~960KB
+const CompanyOffice3D = lazy(() => import("@/components/builder/CompanyOffice3D"));
 
 const tabs = [
   { id: "empresa", label: "Empresa", icon: Building2 },
@@ -30,7 +32,7 @@ const tabs = [
   { id: "aprovacoes", label: "Aprovações", icon: ShieldCheck },
   { id: "conhecimento", label: "Conhecimento", icon: Boxes },
   { id: "logs", label: "Logs", icon: ScrollText },
-  { id: "gerar", label: "Gerar", icon: Sparkles },
+  { id: "escritorio3d", label: "Escritório 3D", icon: Cuboid },
 ];
 
 export default function Studio() {
@@ -85,8 +87,18 @@ export default function Studio() {
             <TabsContent value="logs">
               <Logs />
             </TabsContent>
-            <TabsContent value="gerar" className="p-0">
-              <Gerar />
+            <TabsContent value="escritorio3d" className="p-0">
+              <Suspense
+                fallback={
+                  <div className="flex h-96 items-center justify-center">
+                    <p className="text-sm text-muted-foreground">Carregando escritório 3D...</p>
+                  </div>
+                }
+              >
+                <div style={{ height: "calc(100vh - 110px)" }}>
+                  <CompanyOffice3D />
+                </div>
+              </Suspense>
             </TabsContent>
           </div>
         </Tabs>
