@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Github, Download, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { sectors } from "@/lib/pgba-data";
+import {
+  createProject,
+  importProject,
+  createTask,
+  listAgents,
+  listSectors,
+  type Agent,
+  type Sector,
+} from "@/lib/api";
+
+/** Returns the first CEO/general-orchestrator agent, or null. */
+async function findOrchestratorAgent(): Promise<Agent | null> {
+  const agents = await listAgents();
+  return (
+    agents.find(
+      (a) => a.access_level === "ceo" || a.access_level === "general_orchestrator",
+    ) ?? null
+  );
+}
 
 export function NewProjectDialog({
   open,
@@ -36,12 +54,26 @@ export function NewProjectDialog({
   const handle = async () => {
     if (!name.trim()) return;
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setLoading(false);
-    toast.success(`Projeto "${name}" criado com repositório GitHub (protótipo)`);
-    onOpenChange(false);
-    setName("");
-    setDescription("");
+    try {
+      const agent = await findOrchestratorAgent();
+      if (!agent) {
+        toast.error("Nenhum agente CEO ou Orquestrador-Geral encontrado");
+        return;
+      }
+      await createProject({
+        requestingAgentId: agent.id,
+        name: name.trim(),
+        description: description.trim(),
+      });
+      toast.success(`Projeto "${name}" criado`);
+      onOpenChange(false);
+      setName("");
+      setDescription("");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao criar projeto");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -53,7 +85,7 @@ export function NewProjectDialog({
             Novo projeto
           </DialogTitle>
           <DialogDescription>
-            Cria uma pasta local e um repositório GitHub atomicamente.
+            Cria um repositório GitHub via o agente Orquestrador-Geral.
           </DialogDescription>
         </DialogHeader>
 
@@ -101,16 +133,33 @@ export function ImportProjectDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const [repo, setRepo] = useState("");
+  const [projectName, setProjectName] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handle = async () => {
     if (!repo.trim()) return;
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setLoading(false);
-    toast.success(`Repositório "${repo}" importado (protótipo)`);
-    onOpenChange(false);
-    setRepo("");
+    try {
+      const agent = await findOrchestratorAgent();
+      if (!agent) {
+        toast.error("Nenhum agente CEO ou Orquestrador-Geral encontrado");
+        return;
+      }
+      const nameFallback = projectName.trim() || repo.trim().split("/").pop() || repo.trim();
+      await importProject({
+        requestingAgentId: agent.id,
+        name: nameFallback,
+        githubFullName: repo.trim(),
+      });
+      toast.success(`Repositório "${repo}" importado`);
+      onOpenChange(false);
+      setRepo("");
+      setProjectName("");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao importar repositório");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -137,6 +186,15 @@ export function ImportProjectDialog({
               className="font-mono"
             />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="ip-name">Nome exibido (opcional)</Label>
+            <Input
+              id="ip-name"
+              placeholder="Deixe em branco para usar o nome do repositório"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+            />
+          </div>
         </div>
 
         <DialogFooter>
@@ -155,25 +213,58 @@ export function ImportProjectDialog({
 export function NewTaskDialog({
   open,
   onOpenChange,
-  sector: initialSector,
+  sector: initialSectorName,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   sector?: string;
 }) {
-  const [title, setTitle] = useState("");
-  const [sector, setSector] = useState(initialSector ?? sectors[0]!.name);
-  const [priority, setPriority] = useState<"alta" | "media" | "baixa">("media");
+  const [brief, setBrief] = useState("");
+  const [sectors, setSectors] = useState<Sector[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [sectorId, setSectorId] = useState<string>("");
+  const [agentId, setAgentId] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (!open) return;
+    listSectors()
+      .then((s) => {
+        setSectors(s);
+        if (s.length > 0) {
+          const match = initialSectorName
+            ? s.find((x) => x.name === initialSectorName)
+            : undefined;
+          setSectorId(String(match?.id ?? s[0]!.id));
+        }
+      })
+      .catch(console.error);
+  }, [open, initialSectorName]);
+
+  useEffect(() => {
+    if (!sectorId) return;
+    listAgents(Number(sectorId))
+      .then((a) => {
+        setAgents(a);
+        if (a.length > 0) setAgentId(String(a[0]!.id));
+        else setAgentId("");
+      })
+      .catch(console.error);
+  }, [sectorId]);
+
   const handle = async () => {
-    if (!title.trim()) return;
+    if (!brief.trim() || !agentId) return;
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setLoading(false);
-    toast.success(`Tarefa criada para ${sector} (protótipo)`);
-    onOpenChange(false);
-    setTitle("");
+    try {
+      await createTask({ agentId: Number(agentId), brief: brief.trim() });
+      toast.success("Tarefa criada");
+      onOpenChange(false);
+      setBrief("");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao criar tarefa");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -185,31 +276,31 @@ export function NewTaskDialog({
             Nova tarefa
           </DialogTitle>
           <DialogDescription>
-            Cria uma tarefa no helpdesk interno e a direciona a um setor.
+            Cria uma tarefa no helpdesk interno e a direciona a um agente.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="nt-title">Título</Label>
+            <Label htmlFor="nt-brief">Descrição</Label>
             <Input
-              id="nt-title"
+              id="nt-brief"
               placeholder="Descreva o que precisa ser feito..."
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              value={brief}
+              onChange={(e) => setBrief(e.target.value)}
             />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Setor</Label>
-              <Select value={sector} onValueChange={setSector}>
+              <Select value={sectorId} onValueChange={setSectorId}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Escolha o setor" />
                 </SelectTrigger>
                 <SelectContent>
                   {sectors.map((s) => (
-                    <SelectItem key={s.id} value={s.name}>
+                    <SelectItem key={s.id} value={String(s.id)}>
                       {s.name}
                     </SelectItem>
                   ))}
@@ -218,15 +309,17 @@ export function NewTaskDialog({
             </div>
 
             <div className="space-y-2">
-              <Label>Prioridade</Label>
-              <Select value={priority} onValueChange={(v) => setPriority(v as typeof priority)}>
+              <Label>Agente</Label>
+              <Select value={agentId} onValueChange={setAgentId} disabled={agents.length === 0}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder={agents.length === 0 ? "Sem agentes" : "Escolha"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="alta">Alta</SelectItem>
-                  <SelectItem value="media">Média</SelectItem>
-                  <SelectItem value="baixa">Baixa</SelectItem>
+                  {agents.map((a) => (
+                    <SelectItem key={a.id} value={String(a.id)}>
+                      {a.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -237,7 +330,7 @@ export function NewTaskDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handle} disabled={!title.trim() || loading}>
+          <Button onClick={handle} disabled={!brief.trim() || !agentId || loading}>
             {loading ? "Criando..." : "Criar tarefa"}
           </Button>
         </DialogFooter>

@@ -561,3 +561,32 @@ export async function relaySectorMessage(messageId: number, relayingAgentId: num
     }),
   });
 }
+// --- orchestration: query logs (auditoria de interações de IA) -----------
+
+export interface QueryLog {
+  id: number;
+  question: string;
+  function_called: string | null;
+  params: Record<string, unknown>;
+  result: Record<string, unknown>;
+  model_used: string;
+  status: "ok" | "function_error" | "llm_error" | "rejected";
+  created_at: string;
+}
+
+export async function listQueryLogs(): Promise<QueryLog[]> {
+  return requestList<QueryLog>("/api/v1/orchestration/query-logs/");
+}
+
+// --- agency: agent metrics overview -------------------------------------
+
+export interface AgentMetricsOverview {
+  total_agents: number;
+  working_now: number;
+  paused: number;
+  total_cost_usd: number;
+}
+
+export async function getAgentMetricsOverview(): Promise<AgentMetricsOverview> {
+  return request<AgentMetricsOverview>("/api/v1/agency/metrics/overview/");
+}
