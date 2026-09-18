@@ -396,18 +396,18 @@ export default function Studio() {
             <button
               onClick={() => setImportProjectOpen(true)}
               className="flex items-center gap-1.5 rounded-card border border-white/10 px-2.5 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/5 sm:px-3"
-              title="Registra um repositório GitHub que já existe (nunca cria um novo) — mesmo new-pgba -Import do PowerShell"
+              title="Registra um repositório GitHub que já existe (nunca cria um novo)"
             >
               <Download className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Importar Projeto</span>
+              <span className="hidden sm:inline">Importar projeto</span>
             </button>
             <button
               onClick={() => setNewProjectOpen(true)}
               className="flex items-center gap-1.5 rounded-card bg-brand-500 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-700 sm:px-3"
-              title="Cria um repositório GitHub real com o template simple-commercial (independente do projeto local selecionado acima)"
+              title="Cria pasta local + repositório GitHub com o template simple-commercial, atomicamente"
             >
               <Rocket className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Publicar no GitHub</span>
+              <span className="hidden sm:inline">Novo projeto</span>
             </button>
           </div>
         </div>
@@ -462,7 +462,13 @@ export default function Studio() {
         {view === "logs" && <LogsPanel />}
         {view === "knowledge" && <KnowledgePanel />}
         {view === "messages" && <SectorMessagesPanel />}
-        {view === "projects" && <ProjectsTree onOpenGerar={handleOpenGerar} />}
+        {view === "projects" && (
+          <ProjectsTree
+            onOpenGerar={handleOpenGerar}
+            onNewProject={() => setNewProjectOpen(true)}
+            onImportProject={() => setImportProjectOpen(true)}
+          />
+        )}
       </div>
 
       <CommandPalette

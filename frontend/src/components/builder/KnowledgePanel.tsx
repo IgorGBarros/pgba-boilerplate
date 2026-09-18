@@ -1,6 +1,6 @@
 // frontend/src/components/builder/KnowledgePanel.tsx
 import { useEffect, useState } from "react";
-import { UploadCloud, FileText, FileWarning, Loader2, Boxes } from "lucide-react";
+import { UploadCloud, FileText, FileWarning, Loader2 } from "lucide-react";
 import { listSectors, listDocuments, uploadDocumentFile, type Sector, type KnowledgeDocument, ApiError } from "@/lib/api";
 
 const STATUS_LABEL: Record<KnowledgeDocument["status"], string> = {
@@ -94,13 +94,17 @@ export default function KnowledgePanel() {
   }
 
   return (
-    <div className="grid h-full gap-4 overflow-y-auto p-4 sm:p-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="border-b border-white/10 px-4 py-4 sm:px-6">
+        <h2 className="text-base font-semibold text-slate-100">Conhecimento e RAG</h2>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Envie PDFs, documentos e textos para alimentar a base de conhecimento de cada setor.
+        </p>
+      </div>
+
+    <div className="grid flex-1 gap-4 overflow-y-auto p-4 sm:p-6 lg:grid-cols-[320px_minmax(0,1fr)]">
       <div className="space-y-4">
         <div>
-          <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-200">
-            <Boxes className="h-4 w-4 text-slate-400" />
-            Conhecimento e RAG
-          </h2>
           <label className="mb-1 block text-xs uppercase tracking-wide text-slate-400">Setor de destino</label>
           <select
             value={selectedSectorId}
@@ -168,6 +172,7 @@ export default function KnowledgePanel() {
           )}
         </div>
       </div>
+    </div>
     </div>
   );
 }

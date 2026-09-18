@@ -1,6 +1,6 @@
 // frontend/src/components/builder/ProjectsTree.tsx
 import { useEffect, useState } from "react";
-import { FolderTree, Github, Server, ExternalLink, Loader2, Monitor, Sparkles } from "lucide-react";
+import { FolderTree, Github, Server, ExternalLink, Loader2, Monitor, Sparkles, Download, Plus } from "lucide-react";
 import { listProjects, type Project } from "@/lib/api";
 import { listWorkspaces, type Workspace } from "@/lib/devserver";
 
@@ -28,7 +28,15 @@ const ORIGIN_COLOR: Record<Project["origin"], string> = {
  * NewProjectModal/ImportProjectModal. O Motor Principal continua à
  * parte, sempre existe, nunca é "um projeto" no banco.
  */
-export default function ProjectsTree({ onOpenGerar }: { onOpenGerar: (workspace: string | null) => void }) {
+export default function ProjectsTree({
+  onOpenGerar,
+  onNewProject,
+  onImportProject,
+}: {
+  onOpenGerar: (workspace: string | null) => void;
+  onNewProject?: () => void;
+  onImportProject?: () => void;
+}) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedId, setSelectedId] = useState<number | "principal" | null>("principal");
@@ -68,7 +76,38 @@ export default function ProjectsTree({ onOpenGerar }: { onOpenGerar: (workspace:
   }
 
   return (
-    <div className="grid gap-4 overflow-y-auto p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-100">Árvore de projetos</h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Motor principal, template de workspace e todos os projetos derivados ou importados.
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {onImportProject && (
+            <button
+              onClick={onImportProject}
+              className="flex items-center gap-1.5 rounded-card border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/5"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Importar projeto
+            </button>
+          )}
+          {onNewProject && (
+            <button
+              onClick={onNewProject}
+              className="flex items-center gap-1.5 rounded-card bg-brand-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm shadow-brand-500/30 transition hover:bg-brand-700"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Novo projeto
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid flex-1 gap-4 overflow-y-auto p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-4">
         {error && <p className="rounded-card border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</p>}
 
@@ -205,6 +244,7 @@ export default function ProjectsTree({ onOpenGerar }: { onOpenGerar: (workspace:
           <p className="text-sm text-slate-500">Selecione um item.</p>
         )}
       </aside>
+      </div>
     </div>
   );
 }
