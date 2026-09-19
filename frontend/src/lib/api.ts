@@ -360,15 +360,16 @@ export async function importProject(params: {
   });
 }
 
-/** Atualiza campos editáveis de um projeto (local_path, github_full_name, description). */
+/** Atualiza campos editáveis de um projeto (local_path, github_full_name, description, name). */
 export async function updateProject(
   id: number,
-  params: { localPath?: string; githubFullName?: string; description?: string },
+  params: { name?: string; description?: string; localPath?: string; githubFullName?: string },
 ): Promise<Project> {
   const body: Record<string, string> = {};
+  if (params.name !== undefined) body.name = params.name;
+  if (params.description !== undefined) body.description = params.description;
   if (params.localPath !== undefined) body.local_path = params.localPath;
   if (params.githubFullName !== undefined) body.github_full_name = params.githubFullName;
-  if (params.description !== undefined) body.description = params.description;
   return request<Project>(`/api/v1/agency/projects/${id}/`, {
     method: "PATCH",
     body: JSON.stringify(body),
@@ -660,15 +661,6 @@ export async function deleteProject(id: number): Promise<void> {
   await request<void>(`/api/v1/agency/projects/${id}/`, { method: "DELETE" });
 }
 
-export async function updateProject(
-  id: number,
-  params: { name?: string; description?: string },
-): Promise<Project> {
-  return request<Project>(`/api/v1/agency/projects/${id}/`, {
-    method: "PATCH",
-    body: JSON.stringify(params),
-  });
-}
 
 // Atualização de agente (role + skills_md)
 export async function updateAgent(

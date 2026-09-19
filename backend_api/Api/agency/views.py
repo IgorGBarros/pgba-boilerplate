@@ -182,16 +182,6 @@ class ProjectViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSe
             is_active=True,
         ).exclude(status="failed")
 
-    def get_queryset(self):
-        tenant_id = getattr(self.request, "tenant_id", None)
-        if not tenant_id:
-            return Project.objects.none()
-        # Exclui soft-deleted e projetos que falharam — só mostra ready/pending
-        return Project.objects.filter(
-            tenant_id=tenant_id,
-            is_active=True,
-        ).exclude(status="failed")
-
     @action(detail=False, methods=["post"], url_path="create")
     def create_project_action(self, request):
         """
