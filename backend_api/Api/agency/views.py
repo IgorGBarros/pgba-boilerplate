@@ -159,17 +159,18 @@ class SectorMessageViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ReadO
         return Response(SectorMessageSerializer(message).data)
 
 
-class ProjectViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ReadOnlyModelViewSet):
+class ProjectViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
     """
     Projetos comerciais simples criados a pedido (setor de
-    Desenvolvimento). Só leitura + a action `create_project/` — não dá
-    para editar um projeto depois de criado por aqui, só consultar o
-    status e o link do repositório.
+    Desenvolvimento). Leitura + delete + a action `create_project/` —
+    não dá para editar um projeto depois de criado por aqui, só
+    consultar o status, o link do repositório, ou remover.
     """
 
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
     permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "delete", "head", "options"]
 
     @action(detail=False, methods=["post"], url_path="create")
     def create_project_action(self, request):
