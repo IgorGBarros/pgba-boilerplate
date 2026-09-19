@@ -95,7 +95,7 @@ export default function FileExplorer({ files = [], activeFile, onSelectFile }: F
   const fileTree = useMemo(() => buildFileTree(files), [files]);
 
   return (
-    <div className="flex h-full w-60 shrink-0 flex-col border-r border-white/10 bg-surface">
+    <div className="flex h-full w-full flex-col border-r border-white/10 bg-surface">
       <div className="border-b border-white/10 bg-white/5 px-3 py-2">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Explorer</span>
       </div>
