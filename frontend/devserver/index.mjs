@@ -50,6 +50,7 @@ function listFilesRecursive(rootDir, relBase = "") {
 }
 
 const jobClients = new Map();
+const terminalClients = new Map();
 
 function sendEvent(jobId, event) {
   const clients = jobClients.get(jobId);
@@ -231,8 +232,6 @@ const server = http.createServer(async (req, res) => {
   }
 
   // --- Terminal interativo (SSE) ---
-
-  const terminalClients = new Map();
 
   if (req.method === "GET" && url.pathname === "/api/terminal/stream") {
     const jobId = url.searchParams.get("jobId");
