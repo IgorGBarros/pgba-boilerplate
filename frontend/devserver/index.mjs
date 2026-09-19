@@ -145,10 +145,24 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/project-files") {
     const workspace = url.searchParams.get("workspace");
-    const base = workspace ? workspacePath(workspace) : ROOT;
+    const localPath = url.searchParams.get("localPath");
+    // localPath (caminho absoluto ou relativo à home) tem precedência sobre workspace interno
+    let base;
+    if (localPath) {
+      base = localPath.startsWith("~") ? path.join(process.env.HOME || "/root", localPath.slice(1)) : localPath;
+    } else {
+      base = workspace ? workspacePath(workspace) : ROOT;
+    }
     if (!fs.existsSync(base)) return sendJson(res, 404, { error: "Projeto não encontrado", files: [] });
 
-    const roots = workspace ? ["src/pages", "src/components"] : EXPLORER_ROOTS;
+    // Para localPath, servimos uma lista mais ampla de raízes comuns de projeto React/TS
+    const roots = localPath
+      ? ["src/pages", "src/components", "src/lib", "src/hooks", "src/types", "src/utils"].filter((r) =>
+          fs.existsSync(path.join(base, r)),
+        )
+      : workspace
+        ? ["src/pages", "src/components"]
+        : EXPLORER_ROOTS;
     const files = roots.flatMap((root) => {
       if (!fs.existsSync(path.join(base, root))) return [];
       const parts = root.split("/");
@@ -159,7 +173,13 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/file-content") {
     const workspace = url.searchParams.get("workspace");
-    const base = workspace ? workspacePath(workspace) : ROOT;
+    const localPath = url.searchParams.get("localPath");
+    let base;
+    if (localPath) {
+      base = localPath.startsWith("~") ? path.join(process.env.HOME || "/root", localPath.slice(1)) : localPath;
+    } else {
+      base = workspace ? workspacePath(workspace) : ROOT;
+    }
     const relPath = url.searchParams.get("path") || "";
     const fullPath = path.normalize(path.join(base, relPath));
     if (!fullPath.startsWith(path.normalize(base)) || !fs.existsSync(fullPath)) {

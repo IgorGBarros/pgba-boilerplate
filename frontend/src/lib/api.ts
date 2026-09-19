@@ -305,6 +305,7 @@ export interface Project {
   description: string;
   origin: ProjectOrigin;
   workspace: string;
+  local_path: string;
   requested_by: number | null;
   requested_by_name: string | null;
   status: ProjectStatus;
@@ -344,6 +345,7 @@ export async function importProject(params: {
   githubFullName: string;
   description?: string;
   workspace?: string;
+  localPath?: string;
 }): Promise<Project> {
   return request<Project>("/api/v1/agency/projects/import/", {
     method: "POST",
@@ -353,7 +355,23 @@ export async function importProject(params: {
       github_full_name: params.githubFullName,
       description: params.description ?? "",
       workspace: params.workspace ?? "",
+      local_path: params.localPath ?? "",
     }),
+  });
+}
+
+/** Atualiza campos editáveis de um projeto (local_path, github_full_name, description). */
+export async function updateProject(
+  id: number,
+  params: { localPath?: string; githubFullName?: string; description?: string },
+): Promise<Project> {
+  const body: Record<string, string> = {};
+  if (params.localPath !== undefined) body.local_path = params.localPath;
+  if (params.githubFullName !== undefined) body.github_full_name = params.githubFullName;
+  if (params.description !== undefined) body.description = params.description;
+  return request<Project>(`/api/v1/agency/projects/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
   });
 }
 

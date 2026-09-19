@@ -106,7 +106,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
         fields = [
-            "id", "name", "description", "origin", "workspace", "requested_by", "requested_by_name",
+            "id", "name", "description", "origin", "workspace", "local_path", "requested_by", "requested_by_name",
             "status", "github_repo_url", "github_full_name", "error_message", "created_at",
         ]
         read_only_fields = [
@@ -151,6 +151,7 @@ class ImportProjectSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=100)
     description = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="")
     workspace = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    local_path = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
 
     def validate_requesting_agent_id(self, value):
         from agency.models import Agent

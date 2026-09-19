@@ -263,6 +263,12 @@ class Project(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     # correspondente). Mesma regra de segurança do Task.workspace: só o
     # nome da pasta, nunca um caminho completo.
     workspace = models.CharField(max_length=100, blank=True)
+    # Caminho absoluto (ou relativo à home) da pasta LOCAL do projeto no
+    # disco do desenvolvedor — permite o devserver servir a árvore de
+    # arquivos real em vez do workspace interno. Opcional; vazio = usa
+    # workspace interno (frontend/workspace/<nome>/). Nunca validado como
+    # FK nem executado — só lido pelo devserver Node, que faz a resolução.
+    local_path = models.CharField(max_length=500, blank=True)
     requested_by = models.ForeignKey(
         Agent, on_delete=models.SET_NULL, null=True, blank=True, related_name="requested_projects",
         help_text="Agente (tipicamente do setor de Desenvolvimento) que processou o pedido.",
