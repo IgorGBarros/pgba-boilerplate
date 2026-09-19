@@ -26,11 +26,28 @@ const tabs = [
   { id: "logs", label: "Logs", icon: ScrollText },
 ];
 
+const STUDIO_TAB_KEY = "studio_active_tab";
+const VALID_TABS = new Set(["gerar", "empresa", "tarefas", "aprovacoes", "conhecimento", "logs"]);
+
+function readStoredTab(): string {
+  try {
+    const stored = sessionStorage.getItem(STUDIO_TAB_KEY);
+    return stored && VALID_TABS.has(stored) ? stored : "empresa";
+  } catch {
+    return "empresa";
+  }
+}
+
 export default function Studio() {
-  const [activeTab, setActiveTab] = useState("empresa");
+  const [activeTab, setActiveTab] = useState(readStoredTab);
   const [newTask, setNewTask] = useState(false);
   const [taskSector, setTaskSector] = useState<string | undefined>(undefined);
   const [gerarProjectId, setGerarProjectId] = useState<number | undefined>(undefined);
+
+  function changeTab(tab: string) {
+    try { sessionStorage.setItem(STUDIO_TAB_KEY, tab); } catch { /* private window */ }
+    setActiveTab(tab);
+  }
 
   const openTask = (sector?: string) => {
     setTaskSector(sector);
@@ -39,14 +56,14 @@ export default function Studio() {
 
   const openGerar = (projectId?: number) => {
     if (projectId !== undefined) setGerarProjectId(projectId);
-    setActiveTab("gerar");
+    changeTab("gerar");
   };
 
   return (
     <>
       <Toaster richColors position="top-right" />
       <div className="min-h-screen bg-background">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs value={activeTab} onValueChange={changeTab} className="w-full">
           <div className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
             <div className="px-4 py-2">
               <TabsList className="flex-wrap">
