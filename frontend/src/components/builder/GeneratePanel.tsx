@@ -182,6 +182,8 @@ export default function GeneratePanel() {
             files={files}
             logs={logs}
             onClearLogs={() => setLogs([])}
+            workspace={activeProject?.workspace || undefined}
+            localPath={activeProject?.local_path || undefined}
             isTerminalOpen={isTerminalOpen}
             onToggleTerminal={() => setIsTerminalOpen((v) => !v)}
           />
