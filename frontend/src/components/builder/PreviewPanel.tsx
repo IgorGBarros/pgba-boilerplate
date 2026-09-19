@@ -1,6 +1,6 @@
 // frontend/src/components/builder/PreviewPanel.tsx
 import { useState, useCallback, useEffect, useRef } from "react";
-import { RefreshCw, ExternalLink, PanelLeftClose, PanelLeftOpen, Lock } from "lucide-react";
+import { GripVertical, RefreshCw, ExternalLink, PanelLeftClose, PanelLeftOpen, Lock } from "lucide-react";
 import FileExplorer from "./FileExplorer";
 import FileTabs from "./FileTabs";
 import CodeViewer from "./CodeViewer";
@@ -41,6 +41,9 @@ export default function PreviewPanel({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
   const [isTerminalOpenInternal, setIsTerminalOpenInternal] = useState(true);
+  const [explorerWidth, setExplorerWidth] = useState(240);
+  const explorerDragging = useRef(false);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // URL bar state
   const [currentUrl, setCurrentUrl] = useState(previewUrl);
@@ -102,13 +105,30 @@ export default function PreviewPanel({
     setEditingUrl(false);
   }
 
+  function startExplorerDrag(e: React.MouseEvent) {
+    explorerDragging.current = true;
+    const onMove = (ev: MouseEvent) => {
+      if (!explorerDragging.current || !panelRef.current) return;
+      const rect = panelRef.current.getBoundingClientRect();
+      const newW = ev.clientX - rect.left;
+      setExplorerWidth(Math.max(120, Math.min(480, newW)));
+    };
+    const onUp = () => {
+      explorerDragging.current = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
   function handleUrlKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") commitUrl();
     else if (e.key === "Escape") setEditingUrl(false);
   }
 
   return (
-    <div className="flex h-full flex-col border-l border-white/10 bg-surface">
+    <div ref={panelRef} className="flex h-full flex-col border-l border-white/10 bg-surface">
       <div className="flex items-center justify-between border-b border-white/10 bg-surface-raised px-3 py-2">
         <button
           onClick={() => setShowExplorer(!showExplorer)}
@@ -148,7 +168,20 @@ export default function PreviewPanel({
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {showExplorer && <FileExplorer files={files} activeFile={activeFile} onSelectFile={handleSelectFile} />}
+        {showExplorer && (
+          <>
+            <div style={{ width: explorerWidth, minWidth: 120, maxWidth: 480 }} className="shrink-0 overflow-hidden">
+              <FileExplorer files={files} activeFile={activeFile} onSelectFile={handleSelectFile} />
+            </div>
+            <div
+              onMouseDown={startExplorerDrag}
+              className="flex w-1.5 shrink-0 cursor-col-resize items-center justify-center bg-white/5 hover:bg-white/15 group"
+              title="Arraste para redimensionar o explorer"
+            >
+              <GripVertical className="h-4 w-4 text-slate-700 group-hover:text-slate-500" />
+            </div>
+          </>
+        )}
 
         <div className="flex flex-1 flex-col overflow-hidden">
           <FileTabs

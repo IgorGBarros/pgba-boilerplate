@@ -93,18 +93,22 @@ export default function CodeViewer({ filePath, workspace, localPath }: CodeViewe
             </button>
           </>
         ) : (
-          <button
-            onClick={startEdit}
-            className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-slate-400 hover:bg-white/10 hover:text-slate-100"
-          >
-            <Pencil className="h-3 w-3" />
-            Editar
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-600">duplo clique para editar</span>
+            <button
+              onClick={startEdit}
+              className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-slate-400 hover:bg-white/10 hover:text-slate-100"
+            >
+              <Pencil className="h-3 w-3" />
+              Editar
+            </button>
+          </div>
         )}
       </div>
 
       {editing ? (
         <textarea
+          autoFocus
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           spellCheck={false}
@@ -112,7 +116,11 @@ export default function CodeViewer({ filePath, workspace, localPath }: CodeViewe
           style={{ tabSize: 2 }}
         />
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div
+          className="min-h-0 flex-1 overflow-auto cursor-text"
+          onDoubleClick={startEdit}
+          title="Duplo clique para editar"
+        >
           <SyntaxHighlighter
             language={language}
             style={oneDark}
