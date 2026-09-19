@@ -4,6 +4,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Loader2, Pencil, Save, X } from "lucide-react";
 import { fetchFileContent, saveFileContent } from "@/lib/devserver";
+import { toast } from "sonner";
 
 const LANG_MAP: Record<string, string> = {
   tsx: "typescript",
@@ -54,10 +55,13 @@ export default function CodeViewer({ filePath, workspace, localPath }: CodeViewe
 
   async function handleSave() {
     setSaving(true);
-    const ok = await saveFileContent(filePath, draft, workspace, localPath);
-    if (ok) {
+    const result = await saveFileContent(filePath, draft, workspace, localPath);
+    if (result.ok) {
       setCode(draft);
       setEditing(false);
+      toast.success("Arquivo salvo");
+    } else {
+      toast.error(result.error ?? "Falha ao salvar o arquivo");
     }
     setSaving(false);
   }

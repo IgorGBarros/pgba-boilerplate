@@ -168,15 +168,23 @@ export async function saveFileContent(
   content: string,
   workspace?: string,
   localPath?: string,
-): Promise<boolean> {
+): Promise<{ ok: boolean; error?: string }> {
+  if (!lastReachable) {
+    return { ok: false, error: "Dev-server não está respondendo. Rode 'npm run dev:admin'." };
+  }
   const res = await safeFetch(`${DEV_SERVER_URL}/api/save-file`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: filePath, content, workspace, localPath }),
   });
-  if (!res || !res.ok) return false;
+  if (!res) {
+    return { ok: false, error: "Dev-server não está respondendo. Rode 'npm run dev:admin'." };
+  }
   const data = await res.json().catch(() => ({}));
-  return !!data.success;
+  if (!res.ok || !data.success) {
+    return { ok: false, error: data.error ?? `Servidor retornou ${res.status}` };
+  }
+  return { ok: true };
 }
 
 export async function runTerminalCommand(command: string, jobId: string): Promise<void> {
