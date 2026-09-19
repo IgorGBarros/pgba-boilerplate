@@ -1,0 +1,207 @@
+// frontend/src/components/builder/GitPanel.tsx
+import { useEffect, useRef, useState } from "react";
+import { GitBranch, RefreshCw, ChevronDown, ChevronUp, GitCommit, Loader2 } from "lucide-react";
+import { fetchGitStatus, gitCommit, connectTerminalStream, type GitFileStatus } from "@/lib/devserver";
+
+interface GitPanelProps {
+  isOpen: boolean;
+  onToggle: () => void;
+  workspace?: string;
+  localPath?: string;
+}
+
+export default function GitPanel({ isOpen, onToggle, workspace, localPath }: GitPanelProps) {
+  const [files, setFiles] = useState<GitFileStatus[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [output, setOutput] = useState<string[]>([]);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  async function refresh() {
+    setLoading(true);
+    const result = await fetchGitStatus(workspace, localPath);
+    setFiles(result);
+    setSelected(new Set(result.map((f) => f.path)));
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    if (isOpen) refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, workspace, localPath]);
+
+  useEffect(() => {
+    if (isOpen) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [output, isOpen]);
+
+  function toggleFile(path: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (selected.size === files.length) setSelected(new Set());
+    else setSelected(new Set(files.map((f) => f.path)));
+  }
+
+  async function handleCommit() {
+    if (!message.trim()) return;
+    setCommitting(true);
+    setOutput([]);
+    const jobId = `git_${Date.now()}`;
+    const stream = connectTerminalStream(jobId, (line) => {
+      setOutput((prev) => [...prev, line]);
+    });
+    try {
+      await gitCommit({
+        files: selected.size > 0 ? [...selected] : undefined,
+        message: message.trim(),
+        jobId,
+        workspace,
+        localPath,
+      });
+    } catch (err) {
+      setOutput((prev) => [...prev, err instanceof Error ? err.message : "Erro ao commitar"]);
+    }
+    setTimeout(async () => {
+      setCommitting(false);
+      stream.close();
+      setMessage("");
+      await refresh();
+    }, 5000);
+  }
+
+  const statusLabel: Record<string, string> = {
+    M: "modificado",
+    A: "adicionado",
+    D: "removido",
+    R: "renomeado",
+    "?": "novo",
+    "??": "não rastreado",
+  };
+
+  const statusColor: Record<string, string> = {
+    M: "text-amber-400",
+    A: "text-green-400",
+    D: "text-red-400",
+    R: "text-blue-400",
+    "?": "text-slate-400",
+    "??": "text-slate-400",
+  };
+
+  return (
+    <div className="flex flex-col border-t border-white/10 bg-surface">
+      <div className="flex items-center justify-between border-b border-white/10 px-2">
+        <button
+          onClick={onToggle}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-slate-400 hover:text-slate-100"
+        >
+          <GitBranch className="h-3.5 w-3.5" />
+          Git
+          {files.length > 0 && (
+            <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-400">
+              {files.length}
+            </span>
+          )}
+          {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+        </button>
+        {isOpen && (
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-white/5 hover:text-slate-100 disabled:opacity-40"
+            title="Atualizar status"
+          >
+            <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        )}
+      </div>
+
+      {isOpen && (
+        <div className="flex h-64 flex-col">
+          {/* File list */}
+          <div className="flex-1 overflow-y-auto">
+            {files.length === 0 && !loading ? (
+              <p className="p-3 text-center text-xs text-slate-500">
+                Sem arquivos modificados no repositório.
+              </p>
+            ) : (
+              <>
+                {files.length > 0 && (
+                  <div className="flex items-center gap-2 border-b border-white/5 px-3 py-1.5">
+                    <input
+                      type="checkbox"
+                      checked={selected.size === files.length}
+                      onChange={toggleAll}
+                      className="h-3 w-3 accent-brand-500"
+                    />
+                    <span className="text-[10px] text-slate-500">
+                      {selected.size} de {files.length} selecionado{files.length !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                )}
+                {files.map((f) => {
+                  const code = f.status.replace(/\s/g, "") || "M";
+                  const colorClass = statusColor[code[0]] ?? "text-slate-400";
+                  return (
+                    <label
+                      key={f.path}
+                      className="flex cursor-pointer items-center gap-2 px-3 py-1 hover:bg-white/5"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected.has(f.path)}
+                        onChange={() => toggleFile(f.path)}
+                        className="h-3 w-3 accent-brand-500"
+                      />
+                      <span className={`w-16 shrink-0 font-mono text-[10px] ${colorClass}`}>
+                        {statusLabel[code] ?? code}
+                      </span>
+                      <span className="truncate font-mono text-[11px] text-slate-300">{f.path}</span>
+                    </label>
+                  );
+                })}
+              </>
+            )}
+          </div>
+
+          {/* Output */}
+          {output.length > 0 && (
+            <div className="max-h-20 overflow-y-auto border-t border-white/5 bg-black/40 px-3 py-1 font-mono text-[10px] text-slate-300">
+              {output.map((line, i) => <div key={i}>{line}</div>)}
+              <div ref={bottomRef} />
+            </div>
+          )}
+
+          {/* Commit area */}
+          <div className="shrink-0 border-t border-white/10 bg-black/20 px-3 py-2">
+            <div className="flex gap-2">
+              <input
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !committing) handleCommit(); }}
+                placeholder="Mensagem do commit…"
+                disabled={committing}
+                className="flex-1 rounded border border-white/10 bg-black/30 px-2 py-1 font-mono text-[11px] text-slate-200 placeholder:text-slate-600 outline-none focus:border-brand-500/50 disabled:opacity-50"
+              />
+              <button
+                onClick={handleCommit}
+                disabled={committing || !message.trim() || selected.size === 0}
+                className="flex shrink-0 items-center gap-1.5 rounded bg-brand-500/20 px-3 py-1 text-[11px] font-medium text-brand-400 hover:bg-brand-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {committing ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitCommit className="h-3 w-3" />}
+                Commit & Push
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

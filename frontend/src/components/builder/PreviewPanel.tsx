@@ -5,6 +5,7 @@ import FileExplorer from "./FileExplorer";
 import FileTabs from "./FileTabs";
 import CodeViewer from "./CodeViewer";
 import TerminalPanel from "./TerminalPanel";
+import GitPanel from "./GitPanel";
 import type { GenerateLogEvent } from "@/lib/devserver";
 
 interface ProjectFile {
@@ -41,6 +42,7 @@ export default function PreviewPanel({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
   const [isTerminalOpenInternal, setIsTerminalOpenInternal] = useState(true);
+  const [isGitOpen, setIsGitOpen] = useState(false);
   const [explorerWidth, setExplorerWidth] = useState(240);
   const explorerDragging = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -209,6 +211,7 @@ export default function PreviewPanel({
           </div>
 
           <TerminalPanel isOpen={isTerminalOpen} onToggle={onToggleTerminal} logs={logs} onClearLogs={onClearLogs} />
+          <GitPanel isOpen={isGitOpen} onToggle={() => setIsGitOpen((v) => !v)} workspace={workspace} localPath={localPath} />
         </div>
       </div>
     </div>
