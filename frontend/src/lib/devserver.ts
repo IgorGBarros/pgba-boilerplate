@@ -162,3 +162,52 @@ export async function fetchFileContent(filePath: string, workspace?: string, loc
   if (!res || !res.ok) return "";
   return res.text();
 }
+
+export async function saveFileContent(
+  filePath: string,
+  content: string,
+  workspace?: string,
+  localPath?: string,
+): Promise<boolean> {
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/save-file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: filePath, content, workspace, localPath }),
+  });
+  if (!res || !res.ok) return false;
+  const data = await res.json().catch(() => ({}));
+  return !!data.success;
+}
+
+export async function runTerminalCommand(command: string, jobId: string): Promise<void> {
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/terminal/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command, jobId }),
+  });
+  if (!res) throw new Error("Dev-server não está respondendo.");
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Dev-server respondeu ${res.status}`);
+  }
+}
+
+export function connectTerminalStream(
+  jobId: string,
+  onOutput: (line: string, isError: boolean) => void,
+): EventSource {
+  const source = new EventSource(`${DEV_SERVER_URL}/api/terminal/stream?jobId=${jobId}`);
+  source.onmessage = (e) => {
+    const data = JSON.parse(e.data) as { line: string; isError: boolean; done?: boolean };
+    if (data.done) {
+      source.close();
+    } else {
+      onOutput(data.line, data.isError);
+    }
+  };
+  source.onerror = () => {
+    lastReachable = false;
+    source.close();
+  };
+  return source;
+}

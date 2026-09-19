@@ -121,7 +121,7 @@ export function Projects({
   onNewProject: () => void;
   onImportProject: () => void;
   onNewTask: (sector?: string) => void;
-  onOpenGerar?: () => void;
+  onOpenGerar?: (projectId?: number) => void;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -323,7 +323,7 @@ export function Projects({
                       Criar tarefa neste projeto
                     </Button>
                     {onOpenGerar && (
-                      <Button variant="outline" size="sm" onClick={onOpenGerar}>
+                      <Button variant="outline" size="sm" onClick={() => onOpenGerar(selected?.id)}>
                         <Wand2 className="size-4" />
                         Gerar tela / código
                       </Button>
