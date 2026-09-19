@@ -64,14 +64,14 @@ export default function CodeViewer({ filePath, workspace, localPath }: CodeViewe
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center bg-[#282c34]">
+      <div className="flex flex-1 min-w-0 min-h-0 items-center justify-center bg-[#282c34]">
         <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
       </div>
     );
   }
 
   return (
-    <div className="relative flex h-full flex-col bg-[#282c34]">
+    <div className="flex flex-1 flex-col min-w-0 min-h-0 bg-[#282c34]">
       <div className="flex shrink-0 items-center justify-end gap-1 border-b border-white/10 px-2 py-1">
         {editing ? (
           <>
