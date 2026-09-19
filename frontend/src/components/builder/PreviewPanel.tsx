@@ -19,6 +19,7 @@ interface PreviewPanelProps {
   logs: GenerateLogEvent[];
   onClearLogs: () => void;
   workspace?: string;
+  localPath?: string;
   // Opcionais — se não vierem, o painel usa seu próprio estado interno.
   // Passados pelo GeneratePanel pra ligar o atalho Cmd+K ao terminal real.
   isTerminalOpen?: boolean;
@@ -31,6 +32,7 @@ export default function PreviewPanel({
   logs,
   onClearLogs,
   workspace,
+  localPath,
   isTerminalOpen: isTerminalOpenProp,
   onToggleTerminal: onToggleTerminalProp,
 }: PreviewPanelProps) {
@@ -126,7 +128,7 @@ export default function PreviewPanel({
             {showPreview ? (
               <iframe key={iframeKey} src={previewUrl} className="h-full w-full border-0 bg-white" title="Preview" />
             ) : activeFile ? (
-              <CodeViewer filePath={activeFile} workspace={workspace} />
+              <CodeViewer filePath={activeFile} workspace={workspace} localPath={localPath} />
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
                 Selecione um arquivo ou abra o Preview
