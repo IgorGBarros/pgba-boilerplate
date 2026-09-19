@@ -1062,7 +1062,7 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
 
 // ─── Main: EmpresaView (exported as Overview for backwards compat) ────────────
 
-export function Overview({ onNewTask }: { onNewTask: (sector?: string) => void }) {
+export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: string) => void; onOpenGerar?: () => void }) {
   const [subTab, setSubTab] = useState<"overview" | "projects" | "office">("overview");
   const [newProject, setNewProject] = useState(false);
   const [importProject, setImportProject] = useState(false);
@@ -1096,6 +1096,7 @@ export function Overview({ onNewTask }: { onNewTask: (sector?: string) => void }
             onNewProject={() => setNewProject(true)}
             onImportProject={() => setImportProject(true)}
             onNewTask={onNewTask}
+            onOpenGerar={onOpenGerar}
           />
         </div>
       )}
