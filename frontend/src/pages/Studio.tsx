@@ -30,10 +30,16 @@ export default function Studio() {
   const [activeTab, setActiveTab] = useState("empresa");
   const [newTask, setNewTask] = useState(false);
   const [taskSector, setTaskSector] = useState<string | undefined>(undefined);
+  const [gerarProjectId, setGerarProjectId] = useState<number | undefined>(undefined);
 
   const openTask = (sector?: string) => {
     setTaskSector(sector);
     setNewTask(true);
+  };
+
+  const openGerar = (projectId?: number) => {
+    if (projectId !== undefined) setGerarProjectId(projectId);
+    setActiveTab("gerar");
   };
 
   return (
@@ -56,12 +62,12 @@ export default function Studio() {
 
           {/* Gerar ocupa toda a altura disponível — sem o padding p-4/p-6 das outras abas */}
           <TabsContent value="gerar" className="mt-0">
-            <GeneratePanel />
+            <GeneratePanel initialProjectId={gerarProjectId} />
           </TabsContent>
 
           <div className="p-4 md:p-6">
             <TabsContent value="empresa">
-              <Overview onNewTask={openTask} onOpenGerar={() => setActiveTab("gerar")} />
+              <Overview onNewTask={openTask} onOpenGerar={openGerar} />
             </TabsContent>
             <TabsContent value="tarefas">
               <Tasks onNewTask={openTask} />

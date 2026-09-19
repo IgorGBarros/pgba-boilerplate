@@ -9,6 +9,7 @@
 import http from "node:http";
 import path from "node:path";
 import fs from "node:fs";
+import { exec } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import "dotenv/config";
 import { generatePage } from "../scripts/generator.mjs";
@@ -201,6 +202,67 @@ const server = http.createServer(async (req, res) => {
     }
     res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
     res.end(fs.readFileSync(fullPath, "utf-8"));
+    return;
+  }
+
+  // --- Salvar arquivo ---
+
+  if (req.method === "POST" && url.pathname === "/api/save-file") {
+    const raw = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(raw); } catch { return sendJson(res, 400, { error: "JSON inválido" }); }
+    const { path: relPath, content, workspace: ws, localPath: lp } = payload;
+    if (!relPath || content === undefined) return sendJson(res, 400, { error: "path e content são obrigatórios" });
+    let base;
+    if (lp) {
+      base = lp.startsWith("~") ? path.join(process.env.HOME || "/root", lp.slice(1)) : lp;
+    } else {
+      base = ws ? workspacePath(ws) : ROOT;
+    }
+    const fullPath = path.normalize(path.join(base, relPath));
+    if (!fullPath.startsWith(path.normalize(base))) return sendJson(res, 403, { error: "Caminho não permitido" });
+    try {
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      fs.writeFileSync(fullPath, content, "utf-8");
+      return sendJson(res, 200, { success: true });
+    } catch (err) {
+      return sendJson(res, 500, { error: err.message });
+    }
+  }
+
+  // --- Terminal interativo (SSE) ---
+
+  const terminalClients = new Map();
+
+  if (req.method === "GET" && url.pathname === "/api/terminal/stream") {
+    const jobId = url.searchParams.get("jobId");
+    if (!jobId) { res.writeHead(400); res.end("jobId obrigatório"); return; }
+    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+    if (!terminalClients.has(jobId)) terminalClients.set(jobId, new Set());
+    terminalClients.get(jobId).add(res);
+    req.on("close", () => terminalClients.get(jobId)?.delete(res));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/terminal/run") {
+    const raw = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(raw); } catch { return sendJson(res, 400, { error: "JSON inválido" }); }
+    const { command, jobId } = payload;
+    if (!command || !jobId) return sendJson(res, 400, { error: "command e jobId são obrigatórios" });
+    sendJson(res, 202, { accepted: true });
+    const sendTerminal = (line, isError, done = false) => {
+      const clients = terminalClients.get(jobId);
+      if (!clients) return;
+      const payload = `data: ${JSON.stringify({ line, isError, done })}\n\n`;
+      for (const c of clients) c.write(payload);
+    };
+    exec(command, { shell: true, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (stdout) stdout.split("\n").filter(Boolean).forEach((l) => sendTerminal(l, false));
+      if (stderr) stderr.split("\n").filter(Boolean).forEach((l) => sendTerminal(l, true));
+      if (err && !stdout && !stderr) sendTerminal(err.message, true);
+      sendTerminal("", false, true);
+    });
     return;
   }
 

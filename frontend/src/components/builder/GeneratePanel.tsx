@@ -1,5 +1,6 @@
 // frontend/src/components/builder/GeneratePanel.tsx
 import { useEffect, useRef, useState } from "react";
+import { GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import ChatPanel from "@/components/builder/ChatPanel";
 import HistorySidebar from "@/components/builder/HistorySidebar";
@@ -18,7 +19,11 @@ import type { ChatMessage } from "@/types/builder";
 // Mostra só as páginas geradas, sem carregar o Studio de novo dentro do iframe.
 const PREVIEW_URL = "http://localhost:5173/?embed=1&tab=pages";
 
-export default function GeneratePanel() {
+interface GeneratePanelProps {
+  initialProjectId?: number;
+}
+
+export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) {
   const { messages, setMessages, history, clearAndArchive, deleteConversation, restoreConversation } =
     useChatPersistence("generate");
 
@@ -30,6 +35,9 @@ export default function GeneratePanel() {
   const [isTerminalOpen, setIsTerminalOpen] = useState(true);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
+  const [chatWidth, setChatWidth] = useState(38); // percent
+  const dragging = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? null;
@@ -44,9 +52,21 @@ export default function GeneratePanel() {
   useEffect(() => {
     listProjects().then((list) => {
       setProjects(list);
+      if (initialProjectId != null) {
+        setActiveProjectId(initialProjectId);
+        const proj = list.find((p) => p.id === initialProjectId) ?? null;
+        if (proj) refreshFiles(proj);
+      }
     }).catch(() => {});
-    refreshFiles(null);
+    if (initialProjectId == null) refreshFiles(null);
   }, []);
+
+  useEffect(() => {
+    if (initialProjectId == null) return;
+    setActiveProjectId(initialProjectId);
+    const proj = projects.find((p) => p.id === initialProjectId) ?? null;
+    if (proj) refreshFiles(proj);
+  }, [initialProjectId]);
 
   // Cmd+K (Mac) / Ctrl+K (Windows) — alterna o terminal
   useEffect(() => {
@@ -66,6 +86,23 @@ export default function GeneratePanel() {
       eventSourceRef.current?.close();
     };
   }, []);
+
+  function startDrag(e: React.MouseEvent) {
+    dragging.current = true;
+    const onMove = (ev: MouseEvent) => {
+      if (!dragging.current || !rootRef.current) return;
+      const rect = rootRef.current.getBoundingClientRect();
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+      setChatWidth(Math.max(20, Math.min(60, pct)));
+    };
+    const onUp = () => {
+      dragging.current = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
 
   function addMessage(msg: Omit<ChatMessage, "id" | "timestamp">) {
     setMessages((prev) => [...prev, { ...msg, id: crypto.randomUUID(), timestamp: new Date() }]);
@@ -130,7 +167,7 @@ export default function GeneratePanel() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-112px)] w-full overflow-hidden">
+    <div ref={rootRef} className="flex h-[calc(100dvh-112px)] w-full overflow-hidden">
       <HistorySidebar
         isCollapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -142,8 +179,17 @@ export default function GeneratePanel() {
         onOpenSettings={() => {}}
       />
 
-      <div className="w-[38%] min-w-[340px] shrink-0 xl:w-[34%]">
+      <div className="shrink-0 overflow-hidden" style={{ width: `${chatWidth}%`, minWidth: "280px" }}>
         <ChatPanel messages={messages} isLoading={isLoading} onSend={handleSend} onReset={handleReset} />
+      </div>
+
+      {/* Drag handle */}
+      <div
+        onMouseDown={startDrag}
+        className="flex w-2 shrink-0 cursor-col-resize items-center justify-center bg-white/5 hover:bg-white/10"
+        title="Arraste para redimensionar"
+      >
+        <GripVertical className="h-4 w-4 text-slate-600" />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">

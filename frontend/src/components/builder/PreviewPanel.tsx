@@ -1,5 +1,5 @@
 // frontend/src/components/builder/PreviewPanel.tsx
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { RefreshCw, ExternalLink, PanelLeftClose, PanelLeftOpen, Lock } from "lucide-react";
 import FileExplorer from "./FileExplorer";
 import FileTabs from "./FileTabs";
@@ -20,8 +20,6 @@ interface PreviewPanelProps {
   onClearLogs: () => void;
   workspace?: string;
   localPath?: string;
-  // Opcionais — se não vierem, o painel usa seu próprio estado interno.
-  // Passados pelo GeneratePanel pra ligar o atalho Cmd+K ao terminal real.
   isTerminalOpen?: boolean;
   onToggleTerminal?: () => void;
 }
@@ -43,6 +41,12 @@ export default function PreviewPanel({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
   const [isTerminalOpenInternal, setIsTerminalOpenInternal] = useState(true);
+
+  // URL bar state
+  const [currentUrl, setCurrentUrl] = useState(previewUrl);
+  const [editingUrl, setEditingUrl] = useState(false);
+  const [draftUrl, setDraftUrl] = useState(previewUrl);
+  const urlInputRef = useRef<HTMLInputElement>(null);
 
   const isTerminalOpen = isTerminalOpenProp ?? isTerminalOpenInternal;
   const onToggleTerminal = onToggleTerminalProp ?? (() => setIsTerminalOpenInternal((v) => !v));
@@ -83,6 +87,26 @@ export default function PreviewPanel({
     setTimeout(() => setIsRefreshing(false), 500);
   }
 
+  function startEditUrl() {
+    setDraftUrl(currentUrl);
+    setEditingUrl(true);
+    setTimeout(() => urlInputRef.current?.select(), 0);
+  }
+
+  function commitUrl() {
+    const trimmed = draftUrl.trim();
+    if (trimmed) {
+      setCurrentUrl(trimmed);
+      setIframeKey((k) => k + 1);
+    }
+    setEditingUrl(false);
+  }
+
+  function handleUrlKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") commitUrl();
+    else if (e.key === "Escape") setEditingUrl(false);
+  }
+
   return (
     <div className="flex h-full flex-col border-l border-white/10 bg-surface">
       <div className="flex items-center justify-between border-b border-white/10 bg-surface-raised px-3 py-2">
@@ -94,16 +118,31 @@ export default function PreviewPanel({
           {showExplorer ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
         </button>
 
-        <div className="mx-3 flex flex-1 items-center gap-2 rounded-lg border border-white/10 bg-surface px-2 py-1">
-          <span className="h-2 w-2 rounded-full bg-green-500" />
+        <div
+          className="mx-3 flex flex-1 cursor-text items-center gap-2 rounded-lg border border-white/10 bg-surface px-2 py-1"
+          onClick={() => !editingUrl && startEditUrl()}
+        >
+          <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
           <Lock className="h-3 w-3 shrink-0 text-green-500" />
-          <span className="truncate font-mono text-[11px] text-slate-400">{previewUrl}</span>
+          {editingUrl ? (
+            <input
+              ref={urlInputRef}
+              value={draftUrl}
+              onChange={(e) => setDraftUrl(e.target.value)}
+              onBlur={commitUrl}
+              onKeyDown={handleUrlKey}
+              className="flex-1 bg-transparent font-mono text-[11px] text-slate-200 outline-none"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <span className="truncate font-mono text-[11px] text-slate-400">{currentUrl}</span>
+          )}
         </div>
 
         <button onClick={handleRefresh} className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-white/5 hover:text-slate-100">
           <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
         </button>
-        <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-white/5 hover:text-slate-100">
+        <a href={currentUrl} target="_blank" rel="noopener noreferrer" className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-white/5 hover:text-slate-100">
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
       </div>
@@ -126,7 +165,7 @@ export default function PreviewPanel({
 
           <div className="relative flex flex-1 overflow-hidden">
             {showPreview ? (
-              <iframe key={iframeKey} src={previewUrl} className="h-full w-full border-0 bg-white" title="Preview" />
+              <iframe key={iframeKey} src={currentUrl} className="h-full w-full border-0 bg-white" title="Preview" />
             ) : activeFile ? (
               <CodeViewer filePath={activeFile} workspace={workspace} localPath={localPath} />
             ) : (
