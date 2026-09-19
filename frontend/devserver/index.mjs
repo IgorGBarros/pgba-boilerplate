@@ -155,19 +155,31 @@ const server = http.createServer(async (req, res) => {
     }
     if (!fs.existsSync(base)) return sendJson(res, 404, { error: "Projeto não encontrado", files: [] });
 
-    // Para localPath, servimos uma lista mais ampla de raízes comuns de projeto React/TS
-    const roots = localPath
-      ? ["src/pages", "src/components", "src/lib", "src/hooks", "src/types", "src/utils"].filter((r) =>
-          fs.existsSync(path.join(base, r)),
-        )
-      : workspace
-        ? ["src/pages", "src/components"]
-        : EXPLORER_ROOTS;
-    const files = roots.flatMap((root) => {
-      if (!fs.existsSync(path.join(base, root))) return [];
-      const parts = root.split("/");
-      return [{ name: parts[parts.length - 1], type: "folder", path: root }, ...listFilesRecursive(base, root)];
-    });
+    let files;
+    if (localPath) {
+      // Tenta subpastas padrão React/TS; se nenhuma existir, lista o raiz do projeto
+      const REACT_ROOTS = ["src/pages", "src/components", "src/lib", "src/hooks", "src/types", "src/utils", "src"];
+      const foundRoots = REACT_ROOTS.filter((r) => fs.existsSync(path.join(base, r)));
+      if (foundRoots.length > 0) {
+        // Evita duplicar "src" quando subpastas de src já estão presentes
+        const hasSrcSubs = foundRoots.some((r) => r.startsWith("src/"));
+        const roots = hasSrcSubs ? foundRoots.filter((r) => r !== "src") : foundRoots;
+        files = roots.flatMap((root) => {
+          const parts = root.split("/");
+          return [{ name: parts[parts.length - 1], type: "folder", path: root }, ...listFilesRecursive(base, root)];
+        });
+      } else {
+        // Projeto com estrutura desconhecida — lista raiz completa (sem node_modules/.)
+        files = listFilesRecursive(base);
+      }
+    } else {
+      const roots = workspace ? ["src/pages", "src/components"] : EXPLORER_ROOTS;
+      files = roots.flatMap((root) => {
+        if (!fs.existsSync(path.join(base, root))) return [];
+        const parts = root.split("/");
+        return [{ name: parts[parts.length - 1], type: "folder", path: root }, ...listFilesRecursive(base, root)];
+      });
+    }
     return sendJson(res, 200, { files });
   }
 
