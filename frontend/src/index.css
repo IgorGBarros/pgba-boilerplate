@@ -2,79 +2,90 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    color-scheme: dark;
+/*
+ * PGBA Studio design system — dark-first control room.
+ * All colors are oklch semantic tokens. Never hardcode colors in components.
+ */
 
-    /* ── Backgrounds ──────────────────────────────────────────────────────── */
-    /* Deeper navy-black aligned with AI/RPA dashboard palette (#020617 family) */
-    --background: 224 38% 5%;
-    --foreground: 210 40% 98%;
+:root {
+  --radius: 0.75rem;
 
-    --sidebar: 224 40% 7%;
-    --sidebar-accent: 224 34% 11%;
-    --sidebar-accent-foreground: 210 40% 98%;
+  --background: oklch(0.16 0.012 265);
+  --foreground: oklch(0.96 0.005 250);
+  --surface: oklch(0.2 0.014 265);
+  --surface-foreground: oklch(0.96 0.005 250);
+  --elevated: oklch(0.24 0.016 265);
 
-    --elevated: 224 32% 10%;
+  --card: oklch(0.2 0.014 265);
+  --card-foreground: oklch(0.96 0.005 250);
+  --popover: oklch(0.21 0.015 265);
+  --popover-foreground: oklch(0.96 0.005 250);
 
-    --card: 224 32% 10%;
-    --card-foreground: 210 40% 98%;
+  --primary: oklch(0.62 0.19 266);
+  --primary-foreground: oklch(0.98 0.005 250);
 
-    /* ── Borders / inputs ────────────────────────────────────────────────── */
-    --border: 224 22% 20%;
-    --input: 224 22% 20%;
+  --secondary: oklch(0.26 0.017 265);
+  --secondary-foreground: oklch(0.93 0.006 250);
 
-    /* ── Primary — AI Indigo #6366F1 ─────────────────────────────────────── */
-    --primary: 239 84% 67%;
-    --primary-foreground: 0 0% 100%;
+  --muted: oklch(0.25 0.015 265);
+  --muted-foreground: oklch(0.68 0.018 258);
 
-    /* ── Secondary / muted ───────────────────────────────────────────────── */
-    --secondary: 224 26% 15%;
-    --secondary-foreground: 210 40% 98%;
+  --accent: oklch(0.3 0.03 266);
+  --accent-foreground: oklch(0.96 0.005 250);
 
-    --muted: 224 26% 15%;
-    --muted-foreground: 215 18% 52%;
+  --destructive: oklch(0.6 0.2 25);
+  --destructive-foreground: oklch(0.98 0.005 250);
 
-    --accent: 224 26% 15%;
-    --accent-foreground: 210 40% 98%;
+  --success: oklch(0.72 0.17 152);
+  --success-foreground: oklch(0.18 0.02 152);
 
-    /* ── Semantic ────────────────────────────────────────────────────────── */
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
+  --warning: oklch(0.79 0.15 82);
+  --warning-foreground: oklch(0.2 0.03 82);
 
-    /* Green for working agents (#22C55E) */
-    --success: 142 71% 55%;
-    /* Amber for paused */
-    --warning: 37 90% 60%;
+  --border: oklch(0.3 0.016 265);
+  --input: oklch(0.28 0.016 265);
+  --ring: oklch(0.62 0.19 266);
 
-    /* ── Focus ring ──────────────────────────────────────────────────────── */
-    --ring: 239 84% 67%;
+  --chart-1: oklch(0.62 0.19 266);
+  --chart-2: oklch(0.72 0.17 152);
+  --chart-3: oklch(0.79 0.15 82);
+  --chart-4: oklch(0.68 0.16 20);
+  --chart-5: oklch(0.7 0.12 210);
 
-    /* ── Radius — minimalist, clean ──────────────────────────────────────── */
-    --radius: 0.5rem;
-  }
+  --sidebar: oklch(0.18 0.013 265);
+  --sidebar-foreground: oklch(0.93 0.006 250);
+  --sidebar-primary: oklch(0.62 0.19 266);
+  --sidebar-primary-foreground: oklch(0.98 0.005 250);
+  --sidebar-accent: oklch(0.25 0.016 265);
+  --sidebar-accent-foreground: oklch(0.96 0.005 250);
+  --sidebar-border: oklch(0.28 0.016 265);
+  --sidebar-ring: oklch(0.62 0.19 266);
+
+  --gradient-primary: linear-gradient(135deg, oklch(0.62 0.19 266), oklch(0.55 0.16 290));
+  --shadow-panel: 0 18px 40px -24px oklch(0.05 0.02 265 / 0.9);
+  --shadow-glow: 0 0 0 1px oklch(0.62 0.19 266 / 0.35), 0 12px 32px -18px oklch(0.62 0.19 266 / 0.7);
+}
+
+.dark {
+  color-scheme: dark;
 }
 
 @layer base {
-  body {
-    @apply bg-background text-foreground font-body antialiased;
-  }
-
   * {
-    @apply border-border;
+    border-color: var(--border);
   }
 
-  /* Smooth transitions everywhere — Minimalism & Swiss Style (200ms) */
-  *, *::before, *::after {
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    font-family: "DM Sans", sans-serif;
   }
 
-  /* Headings use Space Grotesk */
   h1, h2, h3, h4, h5, h6 {
-    @apply font-display;
+    font-family: "Space Grotesk", sans-serif;
   }
 
-  /* Custom scrollbar (thin, matches border color) */
   ::-webkit-scrollbar {
     width: 4px;
     height: 4px;
@@ -83,48 +94,55 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply rounded-full bg-border;
+    border-radius: 9999px;
+    background-color: var(--border);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.5);
+    background-color: var(--muted-foreground);
   }
 }
 
 @layer components {
-  /* Base card/panel */
   .panel {
-    @apply rounded-lg border border-border bg-card;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-panel);
   }
 
-  /* AI-indigo glow ring (primary color) */
-  .glow-ring {
-    @apply ring-1 ring-primary/50 shadow-[0_0_24px_hsl(var(--primary)/0.18)];
+  .panel-elevated {
+    background-color: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
   }
 
-  /* Primary gradient: indigo → violet */
   .gradient-primary {
-    background: linear-gradient(135deg, hsl(239 84% 67%) 0%, hsl(262 84% 68%) 100%);
+    background-image: var(--gradient-primary);
   }
 
-  /* Gradient text for hero headings */
-  .gradient-text {
-    @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, hsl(239 84% 72%) 0%, hsl(262 84% 75%) 100%);
+  .glow-ring {
+    box-shadow: var(--shadow-glow);
   }
 
-  /* Subtle inset border glow on interactive panels */
-  .panel-interactive {
-    @apply panel transition-all duration-200 hover:border-primary/40 hover:shadow-[0_0_12px_hsl(var(--primary)/0.08)];
-  }
-
-  /* Status dot pulse — used in agent cards */
   .status-working {
-    @apply size-2 rounded-full bg-success animate-pulse;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    background-color: var(--success);
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
+
   .status-idle {
-    @apply size-2 rounded-full bg-muted-foreground;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    background-color: var(--muted-foreground);
   }
+
   .status-paused {
-    @apply size-2 rounded-full bg-warning;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    background-color: var(--warning);
   }
 }
