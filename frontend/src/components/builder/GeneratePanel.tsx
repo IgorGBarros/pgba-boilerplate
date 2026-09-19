@@ -12,6 +12,7 @@ import {
   type GenerateLogEvent,
   type ProjectFile,
 } from "@/lib/devserver";
+import { listProjects, type Project } from "@/lib/api";
 import type { ChatMessage } from "@/types/builder";
 
 // Mostra só as páginas geradas, sem carregar o Studio de novo dentro do iframe.
@@ -27,10 +28,24 @@ export default function GeneratePanel() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeConversation, setActiveConversation] = useState<string | null>(null);
   const [isTerminalOpen, setIsTerminalOpen] = useState(true);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
+  const activeProject = projects.find((p) => p.id === activeProjectId) ?? null;
+
+  function refreshFiles(project?: Project | null) {
+    const p = project ?? activeProject;
+    listProjectFiles(p?.workspace || undefined, p?.local_path || undefined)
+      .then(setFiles)
+      .catch(() => {});
+  }
+
   useEffect(() => {
-    listProjectFiles().then(setFiles).catch(() => {});
+    listProjects().then((list) => {
+      setProjects(list);
+    }).catch(() => {});
+    refreshFiles(null);
   }, []);
 
   // Cmd+K (Mac) / Ctrl+K (Windows) — alterna o terminal
@@ -75,7 +90,7 @@ export default function GeneratePanel() {
         addMessage({ type: "assistant", content: event.message });
       } else if (event.stage === "complete") {
         setIsLoading(false);
-        listProjectFiles().then(setFiles).catch(() => {});
+        refreshFiles();
         source.close();
       } else if (event.stage === "error") {
         addMessage({ type: "error", content: event.message });
@@ -131,15 +146,46 @@ export default function GeneratePanel() {
         <ChatPanel messages={messages} isLoading={isLoading} onSend={handleSend} onReset={handleReset} />
       </div>
 
-      <div className="min-w-0 flex-1">
-        <PreviewPanel
-          previewUrl={PREVIEW_URL}
-          files={files}
-          logs={logs}
-          onClearLogs={() => setLogs([])}
-          isTerminalOpen={isTerminalOpen}
-          onToggleTerminal={() => setIsTerminalOpen((v) => !v)}
-        />
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Seletor de projeto — define de onde a árvore de arquivos é carregada */}
+        {projects.length > 0 && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-white/10 bg-surface px-3 py-1.5">
+            <span className="text-[10px] uppercase tracking-wide text-slate-500">Projeto</span>
+            <select
+              value={activeProjectId ?? ""}
+              onChange={(e) => {
+                const id = e.target.value ? Number(e.target.value) : null;
+                setActiveProjectId(id);
+                const proj = id ? projects.find((p) => p.id === id) ?? null : null;
+                refreshFiles(proj);
+              }}
+              className="flex-1 rounded border border-white/10 bg-transparent px-2 py-0.5 text-xs text-slate-300 focus:border-brand-500 focus:outline-none"
+            >
+              <option value="">— Studio (padrão) —</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.local_path ? " (pasta local)" : p.workspace ? " (workspace)" : ""}
+                </option>
+              ))}
+            </select>
+            {activeProject?.local_path && (
+              <span className="max-w-[200px] truncate text-[10px] text-slate-500" title={activeProject.local_path}>
+                {activeProject.local_path}
+              </span>
+            )}
+          </div>
+        )}
+        <div className="min-h-0 flex-1">
+          <PreviewPanel
+            previewUrl={PREVIEW_URL}
+            files={files}
+            logs={logs}
+            onClearLogs={() => setLogs([])}
+            isTerminalOpen={isTerminalOpen}
+            onToggleTerminal={() => setIsTerminalOpen((v) => !v)}
+          />
+        </div>
       </div>
     </div>
   );

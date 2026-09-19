@@ -20,6 +20,7 @@ interface ImportProjectModalProps {
 export default function ImportProjectModal({ isOpen, onClose, onImported }: ImportProjectModalProps) {
   const [name, setName] = useState("");
   const [githubFullName, setGithubFullName] = useState("");
+  const [localPath, setLocalPath] = useState("");
   const [description, setDescription] = useState("");
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentId, setAgentId] = useState<number | null>(null);
@@ -65,6 +66,7 @@ export default function ImportProjectModal({ isOpen, onClose, onImported }: Impo
       const project = await importProject({
         requestingAgentId: agentId, name: name.trim(), githubFullName: githubFullName.trim(),
         description: description.trim(), workspace: realWorkspaceName,
+        localPath: localPath.trim(),
       });
       if (project.status === "ready") {
         setSuccessUrl(project.github_repo_url);
@@ -87,6 +89,7 @@ export default function ImportProjectModal({ isOpen, onClose, onImported }: Impo
   function handleClose() {
     setName("");
     setGithubFullName("");
+    setLocalPath("");
     setDescription("");
     setSuccessUrl(null);
     setError(null);
@@ -143,6 +146,17 @@ export default function ImportProjectModal({ isOpen, onClose, onImported }: Impo
               {githubFullName.trim() !== "" && !githubFormatValid && (
                 <p className="mt-1 text-[10px] text-red-400">Formato precisa ser owner/repo, ex: IgorGBarros/Sistema-Financeiro.</p>
               )}
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs uppercase tracking-wide text-slate-400">Pasta local (opcional)</label>
+              <input
+                value={localPath}
+                onChange={(e) => setLocalPath(e.target.value)}
+                placeholder="/Users/igor/projetos/Sistema-Financeiro"
+                className="w-full rounded-md border border-white/10 bg-surface px-3 py-2 text-sm text-slate-100 focus:border-brand-500 focus:outline-none"
+              />
+              <p className="mt-1 text-[10px] text-slate-500">Caminho no seu disco — usado para exibir a árvore real de arquivos no gerador.</p>
             </div>
 
             <div>

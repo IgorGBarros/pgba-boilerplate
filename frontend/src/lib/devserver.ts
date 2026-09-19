@@ -143,17 +143,21 @@ export interface ProjectFile {
   type: string;
 }
 
-export async function listProjectFiles(workspace?: string): Promise<ProjectFile[]> {
-  const query = workspace ? `?workspace=${encodeURIComponent(workspace)}` : "";
+export async function listProjectFiles(workspace?: string, localPath?: string): Promise<ProjectFile[]> {
+  const params = new URLSearchParams();
+  if (localPath) params.set("localPath", localPath);
+  else if (workspace) params.set("workspace", workspace);
+  const query = params.toString() ? `?${params}` : "";
   const res = await safeFetch(`${DEV_SERVER_URL}/api/project-files${query}`);
   if (!res || !res.ok) return [];
   const data = await res.json().catch(() => ({}));
   return data.files ?? [];
 }
 
-export async function fetchFileContent(path: string, workspace?: string): Promise<string> {
-  const params = new URLSearchParams({ path });
-  if (workspace) params.set("workspace", workspace);
+export async function fetchFileContent(filePath: string, workspace?: string, localPath?: string): Promise<string> {
+  const params = new URLSearchParams({ path: filePath });
+  if (localPath) params.set("localPath", localPath);
+  else if (workspace) params.set("workspace", workspace);
   const res = await safeFetch(`${DEV_SERVER_URL}/api/file-content?${params}`);
   if (!res || !res.ok) return "";
   return res.text();

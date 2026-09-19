@@ -170,7 +170,17 @@ class ProjectViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSe
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
     permission_classes = [IsAuthenticated]
-    http_method_names = ["get", "delete", "head", "options"]
+    http_method_names = ["get", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        tenant_id = getattr(self.request, "tenant_id", None)
+        if not tenant_id:
+            return Project.objects.none()
+        # Exclui soft-deleted e projetos que falharam — só mostra ready/pending
+        return Project.objects.filter(
+            tenant_id=tenant_id,
+            is_active=True,
+        ).exclude(status="failed")
 
     def get_queryset(self):
         tenant_id = getattr(self.request, "tenant_id", None)
@@ -242,6 +252,7 @@ class ProjectViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSe
             github_full_name=data["github_full_name"],
             description=data.get("description", ""),
             workspace=data.get("workspace", ""),
+            local_path=data.get("local_path", ""),
         )
         return Response(ProjectSerializer(project).data, status=status.HTTP_201_CREATED)
 

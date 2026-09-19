@@ -405,7 +405,7 @@ def create_project(
 
 
 def import_project(
-    tenant_id, requesting_agent_id, name: str, github_full_name: str, description: str = "", workspace: str = "",
+    tenant_id, requesting_agent_id, name: str, github_full_name: str, description: str = "", workspace: str = "", local_path: str = "",
 ) -> Project:
     """
     Registra um projeto que JÁ EXISTIA (repositório GitHub real, criado
@@ -422,7 +422,7 @@ def import_project(
     """
     project = Project.objects.create(
         tenant_id=tenant_id, name=name, description=description, origin=Project.Origin.IMPORTED, workspace=workspace,
-        requested_by_id=requesting_agent_id, status=Project.Status.PENDING,
+        local_path=local_path, requested_by_id=requesting_agent_id, status=Project.Status.PENDING,
     )
 
     try:
