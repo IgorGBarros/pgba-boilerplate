@@ -27,6 +27,7 @@ const tabs = [
 ];
 
 export default function Studio() {
+  const [activeTab, setActiveTab] = useState("empresa");
   const [newTask, setNewTask] = useState(false);
   const [taskSector, setTaskSector] = useState<string | undefined>(undefined);
 
@@ -39,7 +40,7 @@ export default function Studio() {
     <>
       <Toaster richColors position="top-right" />
       <div className="min-h-screen bg-background">
-        <Tabs defaultValue="empresa" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <div className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
             <div className="px-4 py-2">
               <TabsList className="flex-wrap">
@@ -60,7 +61,7 @@ export default function Studio() {
 
           <div className="p-4 md:p-6">
             <TabsContent value="empresa">
-              <Overview onNewTask={openTask} />
+              <Overview onNewTask={openTask} onOpenGerar={() => setActiveTab("gerar")} />
             </TabsContent>
             <TabsContent value="tarefas">
               <Tasks onNewTask={openTask} />
