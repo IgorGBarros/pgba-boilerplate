@@ -108,13 +108,27 @@ export default function CodeViewer({ filePath, workspace, localPath }: CodeViewe
 
       {editing ? (
         <div className="min-h-0 flex-1 overflow-hidden">
+          <style>{`
+            .dracula-editor::selection { background: #44475a; }
+            .dracula-editor::-moz-selection { background: #44475a; }
+            .dracula-editor::-webkit-scrollbar { width: 8px; height: 8px; }
+            .dracula-editor::-webkit-scrollbar-track { background: #282a36; }
+            .dracula-editor::-webkit-scrollbar-thumb { background: #44475a; border-radius: 4px; }
+            .dracula-editor::-webkit-scrollbar-thumb:hover { background: #6272a4; }
+          `}</style>
           <textarea
             autoFocus
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             spellCheck={false}
-            className="h-full w-full resize-none bg-[#1e2127] p-3 font-mono text-xs text-slate-200 outline-none"
-            style={{ tabSize: 2 }}
+            className="dracula-editor h-full w-full resize-none p-4 font-mono text-[13px] outline-none"
+            style={{
+              tabSize: 2,
+              background: "#282a36",
+              color: "#f8f8f2",
+              caretColor: "#bd93f9",
+              lineHeight: "1.65",
+            }}
           />
         </div>
       ) : (
