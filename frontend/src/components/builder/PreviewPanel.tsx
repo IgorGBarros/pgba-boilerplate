@@ -19,16 +19,26 @@ interface PreviewPanelProps {
   logs: GenerateLogEvent[];
   onClearLogs: () => void;
   workspace?: string;
+  // Opcionais — se não vierem, o painel usa seu próprio estado interno
+  // (comportamento de sempre). Passados pelo Studio.tsx pra ligar o
+  // atalho de teclado (Cmd+K → alternar terminal) ao terminal real,
+  // que antes existia solto, sem efeito nenhum.
+  isTerminalOpen?: boolean;
+  onToggleTerminal?: () => void;
 }
 
-export default function PreviewPanel({ previewUrl, files, logs, onClearLogs, workspace }: PreviewPanelProps) {
+export default function PreviewPanel({
+  previewUrl, files, logs, onClearLogs, workspace, isTerminalOpen: isTerminalOpenProp, onToggleTerminal: onToggleTerminalProp,
+}: PreviewPanelProps) {
   const [showExplorer, setShowExplorer] = useState(true);
   const [showPreview, setShowPreview] = useState(true);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [openFiles, setOpenFiles] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
-  const [isTerminalOpen, setIsTerminalOpen] = useState(true);
+  const [isTerminalOpenInternal, setIsTerminalOpenInternal] = useState(true);
+  const isTerminalOpen = isTerminalOpenProp ?? isTerminalOpenInternal;
+  const onToggleTerminal = onToggleTerminalProp ?? (() => setIsTerminalOpenInternal((v) => !v));
 
   const handleSelectFile = useCallback((path: string) => {
     setActiveFile(path);
@@ -117,7 +127,7 @@ export default function PreviewPanel({ previewUrl, files, logs, onClearLogs, wor
             )}
           </div>
 
-          <TerminalPanel isOpen={isTerminalOpen} onToggle={() => setIsTerminalOpen(!isTerminalOpen)} logs={logs} onClearLogs={onClearLogs} />
+          <TerminalPanel isOpen={isTerminalOpen} onToggle={onToggleTerminal} logs={logs} onClearLogs={onClearLogs} />
         </div>
       </div>
     </div>
