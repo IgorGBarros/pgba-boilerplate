@@ -265,6 +265,68 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // --- Git: status e commit ---
+
+  if (req.method === "GET" && url.pathname === "/api/git/status") {
+    const localPath = url.searchParams.get("localPath");
+    const workspace = url.searchParams.get("workspace");
+    let base;
+    if (localPath) {
+      base = localPath.startsWith("~") ? path.join(process.env.HOME || "/root", localPath.slice(1)) : localPath;
+    } else {
+      base = workspace ? workspacePath(workspace) : ROOT;
+    }
+    if (!fs.existsSync(base)) return sendJson(res, 404, { error: "Projeto não encontrado", files: [] });
+    exec("git status --porcelain", { cwd: base }, (err, stdout) => {
+      if (err) return sendJson(res, 200, { files: [], error: err.message });
+      const files = stdout.split("\n").filter(Boolean).map((line) => ({
+        status: line.slice(0, 2).trim(),
+        path: line.slice(3).trim(),
+      }));
+      sendJson(res, 200, { files });
+    });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/git/commit") {
+    const raw = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(raw); } catch { return sendJson(res, 400, { error: "JSON inválido" }); }
+    const { files, message, localPath: lp, workspace: ws, jobId } = payload;
+    if (!message || !jobId) return sendJson(res, 400, { error: "message e jobId são obrigatórios" });
+    let base;
+    if (lp) {
+      base = lp.startsWith("~") ? path.join(process.env.HOME || "/root", lp.slice(1)) : lp;
+    } else {
+      base = ws ? workspacePath(ws) : ROOT;
+    }
+    if (!fs.existsSync(base)) return sendJson(res, 404, { error: "Projeto não encontrado" });
+
+    const escapedMsg = message.replace(/"/g, '\\"');
+    const addArgs = files && files.length > 0 ? files.map((f) => `"${f}"`).join(" ") : ".";
+    const command = `git add ${addArgs} && git commit -m "${escapedMsg}" && git push`;
+
+    sendJson(res, 202, { accepted: true, jobId });
+
+    const sendGit = (line, isError, done = false) => {
+      const clients = terminalClients.get(jobId);
+      if (!clients) return;
+      const payload = `data: ${JSON.stringify({ line, isError, done })}\n\n`;
+      for (const c of clients) c.write(payload);
+    };
+
+    // pequeno delay pra garantir que o SSE client já está conectado
+    setTimeout(() => {
+      exec(command, { shell: true, cwd: base, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+        if (stdout) stdout.split("\n").filter(Boolean).forEach((l) => sendGit(l, false));
+        if (stderr) stderr.split("\n").filter(Boolean).forEach((l) => sendGit(l, false));
+        if (err && !stdout && !stderr) sendGit(err.message, true);
+        sendGit("", false, true);
+      });
+    }, 200);
+    return;
+  }
+
   // --- Workspaces (projetos SECUNDÁRIOS: processo + porta próprios) ---
 
   if (req.method === "GET" && url.pathname === "/api/workspace") {

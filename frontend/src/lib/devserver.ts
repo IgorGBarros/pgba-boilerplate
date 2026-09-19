@@ -211,3 +211,40 @@ export function connectTerminalStream(
   };
   return source;
 }
+
+// --- Git: status e commit ---
+
+export interface GitFileStatus {
+  status: string;
+  path: string;
+}
+
+export async function fetchGitStatus(workspace?: string, localPath?: string): Promise<GitFileStatus[]> {
+  const params = new URLSearchParams();
+  if (localPath) params.set("localPath", localPath);
+  else if (workspace) params.set("workspace", workspace);
+  const query = params.toString() ? `?${params}` : "";
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/git/status${query}`);
+  if (!res || !res.ok) return [];
+  const data = await res.json().catch(() => ({}));
+  return data.files ?? [];
+}
+
+export async function gitCommit(params: {
+  files?: string[];
+  message: string;
+  jobId: string;
+  workspace?: string;
+  localPath?: string;
+}): Promise<void> {
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/git/commit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res) throw new Error("Dev-server não está respondendo.");
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Dev-server respondeu ${res.status}`);
+  }
+}
