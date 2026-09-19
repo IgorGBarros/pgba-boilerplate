@@ -107,14 +107,16 @@ export default function CodeViewer({ filePath, workspace, localPath }: CodeViewe
       </div>
 
       {editing ? (
-        <textarea
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          spellCheck={false}
-          className="flex-1 resize-none bg-[#1e2127] p-3 font-mono text-xs text-slate-200 outline-none"
-          style={{ tabSize: 2 }}
-        />
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <textarea
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            spellCheck={false}
+            className="h-full w-full resize-none bg-[#1e2127] p-3 font-mono text-xs text-slate-200 outline-none"
+            style={{ tabSize: 2 }}
+          />
+        </div>
       ) : (
         <div
           className="min-h-0 flex-1 overflow-auto cursor-text"
