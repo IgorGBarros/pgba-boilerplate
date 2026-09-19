@@ -19,16 +19,31 @@ interface PreviewPanelProps {
   logs: GenerateLogEvent[];
   onClearLogs: () => void;
   workspace?: string;
+  // Opcionais — se não vierem, o painel usa seu próprio estado interno.
+  // Passados pelo GeneratePanel pra ligar o atalho Cmd+K ao terminal real.
+  isTerminalOpen?: boolean;
+  onToggleTerminal?: () => void;
 }
 
-export default function PreviewPanel({ previewUrl, files, logs, onClearLogs, workspace }: PreviewPanelProps) {
+export default function PreviewPanel({
+  previewUrl,
+  files,
+  logs,
+  onClearLogs,
+  workspace,
+  isTerminalOpen: isTerminalOpenProp,
+  onToggleTerminal: onToggleTerminalProp,
+}: PreviewPanelProps) {
   const [showExplorer, setShowExplorer] = useState(true);
   const [showPreview, setShowPreview] = useState(true);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [openFiles, setOpenFiles] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
-  const [isTerminalOpen, setIsTerminalOpen] = useState(true);
+  const [isTerminalOpenInternal, setIsTerminalOpenInternal] = useState(true);
+
+  const isTerminalOpen = isTerminalOpenProp ?? isTerminalOpenInternal;
+  const onToggleTerminal = onToggleTerminalProp ?? (() => setIsTerminalOpenInternal((v) => !v));
 
   const handleSelectFile = useCallback((path: string) => {
     setActiveFile(path);
@@ -113,11 +128,13 @@ export default function PreviewPanel({ previewUrl, files, logs, onClearLogs, wor
             ) : activeFile ? (
               <CodeViewer filePath={activeFile} workspace={workspace} />
             ) : (
-              <div className="flex flex-1 items-center justify-center text-sm text-slate-500">Selecione um arquivo ou abra o Preview</div>
+              <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
+                Selecione um arquivo ou abra o Preview
+              </div>
             )}
           </div>
 
-          <TerminalPanel isOpen={isTerminalOpen} onToggle={() => setIsTerminalOpen(!isTerminalOpen)} logs={logs} onClearLogs={onClearLogs} />
+          <TerminalPanel isOpen={isTerminalOpen} onToggle={onToggleTerminal} logs={logs} onClearLogs={onClearLogs} />
         </div>
       </div>
     </div>
