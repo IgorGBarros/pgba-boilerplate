@@ -5,6 +5,7 @@ import {
   ClipboardList,
   ScrollText,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Overview } from "@/components/empresa/overview";
@@ -13,9 +14,11 @@ import { Approvals } from "@/components/empresa/approvals";
 import { Knowledge } from "@/components/empresa/knowledge";
 import { Logs } from "@/components/empresa/logs";
 import { NewTaskDialog } from "@/components/empresa/dialogs";
+import GeneratePanel from "@/components/builder/GeneratePanel";
 import { Toaster } from "sonner";
 
 const tabs = [
+  { id: "gerar", label: "Gerar", icon: Sparkles },
   { id: "empresa", label: "Empresa", icon: Building2 },
   { id: "tarefas", label: "Tarefas", icon: ClipboardList },
   { id: "aprovacoes", label: "Aprovações", icon: ShieldCheck },
@@ -49,6 +52,11 @@ export default function Studio() {
               </TabsList>
             </div>
           </div>
+
+          {/* Gerar ocupa toda a altura disponível — sem o padding p-4/p-6 das outras abas */}
+          <TabsContent value="gerar" className="mt-0">
+            <GeneratePanel />
+          </TabsContent>
 
           <div className="p-4 md:p-6">
             <TabsContent value="empresa">
