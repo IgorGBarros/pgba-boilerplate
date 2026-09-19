@@ -1,11 +1,38 @@
 # backend_api/Api/orchestration/views.py
-from rest_framework import serializers, status
+from rest_framework import serializers, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.mixins import TenantContextMixin
+from orchestration.models import QueryLog
 from orchestration.services import answer_question
+
+
+class QueryLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QueryLog
+        fields = [
+            "id", "question", "model_category", "model_name",
+            "function_called", "function_params", "function_result",
+            "answer", "status", "error_message", "latency_ms", "created_at",
+        ]
+        read_only_fields = fields
+
+
+class QueryLogViewSet(TenantContextMixin, viewsets.ReadOnlyModelViewSet):
+    """
+    GET /api/v1/orchestration/query-logs/
+    Retorna o histórico de interações de IA do tenant atual (auditoria).
+    """
+    serializer_class = QueryLogSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        tenant_id = getattr(self.request, "tenant_id", None)
+        if not tenant_id:
+            return QueryLog.objects.none()
+        return QueryLog.objects.filter(tenant_id=tenant_id)
 
 
 class AskSerializer(serializers.Serializer):
