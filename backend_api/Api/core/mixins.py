@@ -4,15 +4,28 @@ from django.utils import timezone
 from simple_history.models import HistoricalRecords  # ← Certifique-se que django-simple-history está instalado
 
 
+import logging as _logging
+_tenant_logger = _logging.getLogger(__name__)
+
+
 class TenantMixin(models.Model):
+    # null=True mantido para compatibilidade com `create_superuser` (sem tenant).
+    # A violação real é detectada em save() com warning, e em runtime pelas
+    # views via TenantContextMixin (request.tenant_id nunca vira None após auth).
     tenant_id = models.UUIDField(editable=False, db_index=True, null=True, blank=True)
-    
+
     class Meta:
         abstract = True
-    
+
     def save(self, *args, **kwargs):
-        if not self.tenant_id and hasattr(self, '_current_tenant'):
-            self.tenant_id = self._current_tenant
+        if not self.tenant_id:
+            # Não levanta exceção pois superusuários são criados sem tenant_id.
+            # Se isso aparecer em logs para modelos de negócio, é um bug.
+            _tenant_logger.warning(
+                "%s.save() chamado sem tenant_id — registro ficará invisível "
+                "para qualquer queryset filtrado por tenant.",
+                self.__class__.__name__,
+            )
         super().save(*args, **kwargs)
 
 

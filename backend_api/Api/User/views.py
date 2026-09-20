@@ -37,7 +37,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 class CustomUserCreateView(generics.CreateAPIView):
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserSerializer
-    permission_classes = [AllowAny]  # Permissão para qualquer usuário
+    permission_classes = [AllowAny]
+    throttle_classes = [AnonRateThrottle]
 
 
 User = get_user_model()
@@ -129,7 +130,8 @@ class PasswordResetRequestView(APIView):
 
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
-    
+    throttle_classes = [AuthRateThrottle]
+
     def post(self, request, uidb64, token):
         try:
             # Decodifica o UID

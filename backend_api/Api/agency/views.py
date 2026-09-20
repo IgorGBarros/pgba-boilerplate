@@ -447,3 +447,19 @@ class MetricsBudgetsView(TenantContextMixin, APIView):
         if not getattr(request, "tenant_id", None):
             return Response({"detail": "Acesso requer tenant válido"}, status=403)
         return Response(get_budget_status(request.tenant_id))
+
+
+class WSTicketView(APIView):
+    """
+    POST /api/v1/agency/ws-ticket/
+
+    Emite um ticket de uso único (UUID, TTL 15s) para abertura do WebSocket.
+    O cliente usa ?ticket=<uuid> na URL do WS em vez do JWT, evitando que o
+    token de acesso apareça em logs de reverse proxy.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from agency.ws_ticket import issue_ticket
+        ticket = issue_ticket(request.user.id)
+        return Response({"ticket": ticket})

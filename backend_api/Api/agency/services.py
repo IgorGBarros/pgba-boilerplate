@@ -258,21 +258,37 @@ def get_overview(tenant_id) -> dict:
 
 
 def get_sector_metrics(tenant_id) -> list[dict]:
-    sectors = Sector.objects.filter(tenant_id=tenant_id, is_active=True)
+    sectors = list(Sector.objects.filter(tenant_id=tenant_id, is_active=True))
+    sector_ids = [s.id for s in sectors]
+
+    # 2 queries para todos os setores ao invés de 2*N queries num loop
+    agg_by_sector: dict = {
+        row["agent__sector_id"]: row
+        for row in AgentInteraction.objects
+        .filter(tenant_id=tenant_id, agent__sector_id__in=sector_ids)
+        .values("agent__sector_id")
+        .annotate(cost=Sum("estimated_cost_usd"), tokens=Sum("tokens_used"), calls=Count("id"))
+    }
+    agents_count_by_sector: dict = {
+        row["sector_id"]: row["n"]
+        for row in Agent.objects
+        .filter(tenant_id=tenant_id, sector_id__in=sector_ids, is_active=True)
+        .values("sector_id")
+        .annotate(n=Count("id"))
+    }
+
     metrics = []
     for sector in sectors:
-        agg = AgentInteraction.objects.filter(
-            tenant_id=tenant_id, agent__sector=sector
-        ).aggregate(cost=Sum("estimated_cost_usd"), tokens=Sum("tokens_used"), calls=Count("id"))
-        spent = float(agg["cost"] or 0)
+        agg = agg_by_sector.get(sector.id, {})
+        spent = float(agg.get("cost") or 0)
         budget = float(sector.monthly_budget_usd)
         usage_percent = round((spent / budget) * 100, 1) if budget > 0 else None
         metrics.append({
             "sector_id": sector.id,
             "sector_name": sector.name,
-            "agents_count": sector.agents.filter(is_active=True).count(),
+            "agents_count": agents_count_by_sector.get(sector.id, 0),
             "has_own_knowledge_base": sector.knowledge_source_id is not None,
-            "tokens": agg["tokens"] or 0,
+            "tokens": agg.get("tokens") or 0,
             "cost_usd": spent,
             "budget_usd": budget,
             "usage_percent": usage_percent,

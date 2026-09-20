@@ -357,8 +357,9 @@ def generate_answer(query: str, context: str, tenant_id=None) -> str:
     except GroundingError:
         return NoAnswer.TEXT
 
-    provider = getattr(settings, "CHAT_PROVIDER", "ollama")
-    model = getattr(settings, "OLLAMA_CHAT_MODEL", "llama3")
+    from harness.views import _resolve_chat_provider
+    provider = _resolve_chat_provider(tenant_id)
+    model = None  # resolve via get_credential().default_model
 
     system_prompt = (
         "Você é um assistente que responde exclusivamente com base no "

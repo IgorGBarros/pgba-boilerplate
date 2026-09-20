@@ -9,8 +9,25 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { getAccessToken } from "@/lib/auth";
 import type { Agent, PendingApproval, Task } from "@/lib/api";
 
-const WS_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/^http/, "ws");
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const WS_URL = API_URL.replace(/^http/, "ws");
 const RECONNECT_DELAY_MS = 3000;
+
+async function fetchWsTicket(): Promise<string | null> {
+  const token = getAccessToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${API_URL}/api/v1/agency/ws-ticket/`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.ticket ?? null;
+  } catch {
+    return null;
+  }
+}
 
 interface RealtimeState {
   connected: boolean;
@@ -37,11 +54,14 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
-    function connect() {
-      const token = getAccessToken();
-      if (!token || cancelled) return;
+    async function connect() {
+      if (cancelled) return;
 
-      const ws = new WebSocket(`${WS_URL}/ws/agency/?token=${token}`);
+      // Obtém ticket de uso único para não expor o JWT na URL do WebSocket
+      const ticket = await fetchWsTicket();
+      if (!ticket || cancelled) return;
+
+      const ws = new WebSocket(`${WS_URL}/ws/agency/?ticket=${ticket}`);
       wsRef.current = ws;
 
       ws.onopen = () => { if (!cancelled) setConnected(true); };
@@ -58,13 +78,13 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       ws.onclose = () => {
         if (cancelled) return;
         setConnected(false);
-        reconnectTimerRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
+        reconnectTimerRef.current = setTimeout(() => { void connect(); }, RECONNECT_DELAY_MS);
       };
 
       ws.onerror = () => { ws.close(); };
     }
 
-    connect();
+    void connect();
 
     return () => {
       cancelled = true;
