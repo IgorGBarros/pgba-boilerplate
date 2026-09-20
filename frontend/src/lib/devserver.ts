@@ -238,6 +238,98 @@ export async function fetchGitStatus(workspace?: string, localPath?: string): Pr
   return data.files ?? [];
 }
 
+export async function fetchGitDiff(file?: string, workspace?: string, localPath?: string): Promise<string> {
+  const params = new URLSearchParams();
+  if (file) params.set("file", file);
+  if (localPath) params.set("localPath", localPath);
+  else if (workspace) params.set("workspace", workspace);
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/git/diff?${params}`);
+  if (!res || !res.ok) return "";
+  const data = await res.json().catch(() => ({}));
+  return data.diff ?? "";
+}
+
+export interface GitCommit {
+  hash: string;
+  short: string;
+  subject: string;
+  author: string;
+  date: string;
+}
+
+export async function fetchGitLog(workspace?: string, localPath?: string): Promise<GitCommit[]> {
+  const params = new URLSearchParams();
+  if (localPath) params.set("localPath", localPath);
+  else if (workspace) params.set("workspace", workspace);
+  const query = params.toString() ? `?${params}` : "";
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/git/log${query}`);
+  if (!res || !res.ok) return [];
+  const data = await res.json().catch(() => ({}));
+  return data.commits ?? [];
+}
+
+export async function gitRevert(file: string, workspace?: string, localPath?: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/git/revert`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file, workspace, localPath }),
+  });
+  if (!res) return { ok: false, error: "Dev-server não está respondendo." };
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) return { ok: false, error: data.error ?? `Servidor retornou ${res.status}` };
+  return { ok: true };
+}
+
+export async function createFile(filePath: string, isFolder = false, content = "", workspace?: string, localPath?: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/file/create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: filePath, isFolder, content, workspace, localPath }),
+  });
+  if (!res) return { ok: false, error: "Dev-server não está respondendo." };
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) return { ok: false, error: data.error ?? `Servidor retornou ${res.status}` };
+  return { ok: true };
+}
+
+export async function deleteFile(filePath: string, workspace?: string, localPath?: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/file/delete`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: filePath, workspace, localPath }),
+  });
+  if (!res) return { ok: false, error: "Dev-server não está respondendo." };
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) return { ok: false, error: data.error ?? `Servidor retornou ${res.status}` };
+  return { ok: true };
+}
+
+export interface SearchResult {
+  file: string;
+  line: number;
+  text: string;
+}
+
+export async function searchFiles(query: string, workspace?: string, localPath?: string): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ q: query });
+  if (localPath) params.set("localPath", localPath);
+  else if (workspace) params.set("workspace", workspace);
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/search?${params}`);
+  if (!res || !res.ok) return [];
+  const data = await res.json().catch(() => ({}));
+  return data.results ?? [];
+}
+
+export async function fetchFileHash(filePath: string, workspace?: string, localPath?: string): Promise<string | null> {
+  const params = new URLSearchParams({ path: filePath });
+  if (localPath) params.set("localPath", localPath);
+  else if (workspace) params.set("workspace", workspace);
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/file/hash?${params}`);
+  if (!res || !res.ok) return null;
+  const data = await res.json().catch(() => ({}));
+  return data.hash ?? null;
+}
+
 export async function gitCommit(params: {
   files?: string[];
   message: string;
