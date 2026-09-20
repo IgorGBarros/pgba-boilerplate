@@ -143,15 +143,19 @@ export interface ProjectFile {
   type: string;
 }
 
-export async function listProjectFiles(workspace?: string, localPath?: string): Promise<ProjectFile[]> {
+export async function listProjectFiles(workspace?: string, localPath?: string): Promise<{ files: ProjectFile[]; error?: string }> {
   const params = new URLSearchParams();
   if (localPath) params.set("localPath", localPath);
   else if (workspace) params.set("workspace", workspace);
   const query = params.toString() ? `?${params}` : "";
   const res = await safeFetch(`${DEV_SERVER_URL}/api/project-files${query}`);
-  if (!res || !res.ok) return [];
+  if (!res) return { files: [], error: "Devserver não está respondendo. Rode 'npm run dev:admin'." };
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    return { files: [], error: data?.error ?? `HTTP ${res.status}` };
+  }
   const data = await res.json().catch(() => ({}));
-  return data.files ?? [];
+  return { files: data.files ?? [] };
 }
 
 export async function fetchFileContent(filePath: string, workspace?: string, localPath?: string): Promise<string> {

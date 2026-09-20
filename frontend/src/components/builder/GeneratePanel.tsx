@@ -46,7 +46,7 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
   function refreshFiles(project?: Project | null) {
     const p = project ?? activeProject;
     listProjectFiles(p?.workspace || undefined, p?.local_path || undefined)
-      .then(setFiles)
+      .then(({ files }) => { if (files.length > 0) setFiles(files); })
       .catch(() => {});
   }
 
