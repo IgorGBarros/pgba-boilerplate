@@ -237,7 +237,19 @@ function TaskDetailModal({
                 <Tag className="size-3.5 text-muted-foreground shrink-0" />
                 <div>
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Projeto</p>
-                  <p className="font-medium text-xs">{task.project_name}</p>
+                  {task.project_github_url ? (
+                    <a
+                      href={task.project_github_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 font-medium text-xs text-blue-400 hover:underline"
+                    >
+                      {task.project_name}
+                      <ExternalLink className="size-3" />
+                    </a>
+                  ) : (
+                    <p className="font-medium text-xs">{task.project_name}</p>
+                  )}
                 </div>
               </div>
             )}

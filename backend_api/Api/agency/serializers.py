@@ -211,13 +211,15 @@ class TaskSerializer(serializers.ModelSerializer):
     agent_name = serializers.CharField(source="agent.name", read_only=True)
     sector_name = serializers.CharField(source="agent.sector.name", read_only=True, default=None)
     project_name = serializers.CharField(source="project.name", read_only=True, default=None)
+    project_github_url = serializers.CharField(source="project.github_repo_url", read_only=True, default=None)
     snapshots = TaskSnapshotSerializer(many=True, read_only=True)
 
     class Meta:
         model = Task
         fields = [
-            "id", "agent", "agent_name", "sector_name", "project", "project_name", "brief", "status",
-            "progress", "current_files", "result", "version", "task_type", "workspace", "snapshots", "created_at", "updated_at",
+            "id", "agent", "agent_name", "sector_name", "project", "project_name", "project_github_url",
+            "brief", "status", "progress", "current_files", "result", "version", "task_type",
+            "workspace", "snapshots", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "status", "result", "version", "snapshots", "created_at", "updated_at"]
 

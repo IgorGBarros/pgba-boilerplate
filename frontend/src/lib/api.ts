@@ -393,6 +393,7 @@ export interface Task {
   sector_name: string | null;
   project: number | null;
   project_name: string | null;
+  project_github_url: string | null;
   brief: string;
   status: TaskStatus;
   progress: number;
