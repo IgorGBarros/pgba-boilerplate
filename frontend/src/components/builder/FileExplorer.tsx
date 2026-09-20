@@ -171,11 +171,12 @@ interface FileExplorerProps {
   onRefreshFiles?: () => void;
   workspace?: string;
   localPath?: string;
+  loadError?: string;
 }
 
 type CreateMode = { folderPath: string; type: "file" | "folder" } | null;
 
-export default function FileExplorer({ files = [], activeFile, onSelectFile, onRefreshFiles, workspace, localPath }: FileExplorerProps) {
+export default function FileExplorer({ files = [], activeFile, onSelectFile, onRefreshFiles, workspace, localPath, loadError }: FileExplorerProps) {
   const fileTree = useMemo(() => buildFileTree(files), [files]);
   const [createMode, setCreateMode] = useState<CreateMode>(null);
   const [newName, setNewName] = useState("");
@@ -268,7 +269,39 @@ export default function FileExplorer({ files = [], activeFile, onSelectFile, onR
 
       <div className="flex-1 overflow-y-auto py-1">
         {fileTree.length === 0 ? (
-          <div className="p-4 text-center text-xs text-slate-500">Nenhum arquivo ainda.</div>
+          <div className="flex flex-col items-center gap-2 p-4 text-center">
+            {loadError ? (
+              <>
+                <p className="text-xs font-medium text-red-400">Não foi possível carregar os arquivos</p>
+                <p className="max-w-[180px] break-all font-mono text-[10px] text-slate-500">{localPath || workspace || "caminho não configurado"}</p>
+                <p className="text-[10px] text-slate-600">{loadError}</p>
+                {onRefreshFiles && (
+                  <button
+                    onClick={onRefreshFiles}
+                    className="mt-1 rounded px-2 py-1 text-[10px] text-brand-400 hover:bg-white/5"
+                  >
+                    Tentar novamente
+                  </button>
+                )}
+              </>
+            ) : localPath ? (
+              <>
+                <p className="text-xs text-slate-500">Nenhum arquivo carregado</p>
+                <p className="max-w-[180px] break-all font-mono text-[10px] text-slate-600">{localPath}</p>
+                <p className="text-[10px] text-slate-600">Verifique se o devserver está rodando e o caminho existe.</p>
+                {onRefreshFiles && (
+                  <button
+                    onClick={onRefreshFiles}
+                    className="mt-1 rounded px-2 py-1 text-[10px] text-brand-400 hover:bg-white/5"
+                  >
+                    Tentar novamente
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-slate-500">Nenhum arquivo ainda.</p>
+            )}
+          </div>
         ) : (
           fileTree.map((node) => (
             <FileTreeItem

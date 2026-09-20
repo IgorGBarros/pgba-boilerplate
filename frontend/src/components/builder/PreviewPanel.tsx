@@ -70,6 +70,7 @@ export default function PreviewPanel({
   const [splitView, setSplitView] = useState(false);
   const [activeFile2, setActiveFile2] = useState<string | null>(null);
   const [files, setFiles] = useState<ProjectFile[]>(initialFiles);
+  const [loadError, setLoadError] = useState<string | undefined>(undefined);
   const explorerDragging = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -86,7 +87,8 @@ export default function PreviewPanel({
   useEffect(() => { setFiles(initialFiles); }, [initialFiles]);
 
   const refreshFiles = useCallback(async () => {
-    const updated = await listProjectFiles(workspace, localPath);
+    const { files: updated, error } = await listProjectFiles(workspace, localPath);
+    setLoadError(error);
     if (updated.length > 0) setFiles(updated);
   }, [workspace, localPath]);
 
@@ -244,6 +246,7 @@ export default function PreviewPanel({
                   onRefreshFiles={refreshFiles}
                   workspace={workspace}
                   localPath={localPath}
+                  loadError={loadError}
                 />
               )}
             </div>
