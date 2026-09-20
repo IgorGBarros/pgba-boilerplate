@@ -170,7 +170,7 @@ class ProjectViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSe
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
     permission_classes = [IsAuthenticated]
-    http_method_names = ["get", "patch", "delete", "head", "options"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         tenant_id = getattr(self.request, "tenant_id", None)
