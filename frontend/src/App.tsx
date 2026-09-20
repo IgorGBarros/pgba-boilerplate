@@ -5,6 +5,7 @@ import KnowledgeChat from "@/components/KnowledgeChat";
 import GeneratedRouter from "@/components/GeneratedRouter";
 import LoginScreen from "@/components/LoginScreen";
 import { isLoggedIn, logout } from "@/lib/auth";
+import { RealtimeProvider } from "@/lib/RealtimeContext";
 
 // Carregado sob demanda: só quem abre o Estúdio paga o custo de
 // framer-motion + cmdk + react-syntax-highlighter (~700KB) — sem isso, o
@@ -68,6 +69,7 @@ export default function App() {
   }
 
   return (
+    <RealtimeProvider>
     <main className="min-h-screen bg-surface">
       <header
         style={{ height: HEADER_HEIGHT_PX }}
@@ -114,5 +116,6 @@ export default function App() {
       {tab === "knowledge" && <KnowledgeChat />}
       {tab === "pages" && <GeneratedRouter />}
     </main>
+    </RealtimeProvider>
   );
 }
