@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     "channels",
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "django_filters",
     "simple_history",
@@ -74,6 +75,15 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "20/min",
+        "user": "200/min",
+        "auth": "10/min",
+    },
 }
 
 SIMPLE_JWT = {
@@ -97,6 +107,9 @@ SPECTACULAR_SETTINGS = {
 CPF_SALT = os.environ.get("CPF_SALT", "dev_salt")
 ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "")
 DATA_RETENTION_DAYS = int(os.environ.get("DATA_RETENTION_DAYS", "730"))
+
+# 🌐 Frontend URL (usado em e-mails de reset de senha, etc.)
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 
 # 📧 Email
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")

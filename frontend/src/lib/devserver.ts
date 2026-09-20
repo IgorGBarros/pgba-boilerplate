@@ -16,10 +16,21 @@
  */
 const DEV_SERVER_URL = "http://localhost:5174";
 
+// Secret compartilhado com o devserver para proteger endpoints destrutivos.
+// Defina VITE_DEVSERVER_SECRET no .env.local do frontend com o mesmo valor
+// de DEVSERVER_SECRET no .env do devserver.
+const DEVSERVER_SECRET = import.meta.env.VITE_DEVSERVER_SECRET ?? "";
+
 let lastReachable = true;
 
 export function isDevServerReachable(): boolean {
   return lastReachable;
+}
+
+function devserverHeaders(extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = { ...extra };
+  if (DEVSERVER_SECRET) headers["X-Devserver-Secret"] = DEVSERVER_SECRET;
+  return headers;
 }
 
 async function safeFetch(input: string, init?: RequestInit): Promise<Response | null> {
@@ -194,7 +205,7 @@ export async function saveFileContent(
 export async function runTerminalCommand(command: string, jobId: string): Promise<void> {
   const res = await safeFetch(`${DEV_SERVER_URL}/api/terminal/run`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: devserverHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ command, jobId }),
   });
   if (!res) throw new Error("Dev-server não está respondendo.");
@@ -363,7 +374,7 @@ export async function gitCommit(params: {
 }): Promise<void> {
   const res = await safeFetch(`${DEV_SERVER_URL}/api/git/commit`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: devserverHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(params),
   });
   if (!res) throw new Error("Dev-server não está respondendo.");

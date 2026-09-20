@@ -1,22 +1,19 @@
+import logging
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializer import CustomTokenObtainPairSerializer, CustomUserSerializer
 from .models import CustomUser, Plan
 
+logger = logging.getLogger(__name__)
+
 from rest_framework.permissions import AllowAny
-
 from rest_framework.response import Response
-
 from rest_framework.views import APIView
-
+from rest_framework.throttling import AnonRateThrottle
 from django.contrib.auth import get_user_model
-
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
-
 from .permissions import IsAdmin
-
 from django.http import HttpResponse
-
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
@@ -24,12 +21,17 @@ from django.core.mail import send_mail
 from django.conf import settings
 from rest_framework import status, generics
 
+
+class AuthRateThrottle(AnonRateThrottle):
+    rate = "10/min"
+
 def health_check(request):
     return HttpResponse("OK")
 
 # Create your views here.
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+    throttle_classes = [AuthRateThrottle]
 
 
 class CustomUserCreateView(generics.CreateAPIView):
@@ -61,7 +63,8 @@ class FirebaseLoginView(APIView):
         try:
             # Cria ou obtém o usuário usando o token do Firebase
             user = User.objects.create_user_with_firebase(firebase_token)
-            print(f"Usuário autenticado com sucesso: {user.email}")  # Log da mensagem no console do Docker
+            from core.utils.lgpd import mask_email
+            logger.info("Usuário autenticado via Firebase: %s", mask_email(user.email))
 
             return Response({"message": "Usuário autenticado com sucesso.", "email": user.email})
 
@@ -91,6 +94,7 @@ def upgrade_plan(request):
 
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [AuthRateThrottle]
     
     def post(self, request):
         email = request.data.get("email")

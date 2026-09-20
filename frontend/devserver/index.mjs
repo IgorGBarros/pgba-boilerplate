@@ -9,7 +9,7 @@
 import http from "node:http";
 import path from "node:path";
 import fs from "node:fs";
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import "dotenv/config";
 import { generatePage } from "../scripts/generator.mjs";
@@ -25,6 +25,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const PORT = 5174;
 const ALLOWED_ORIGIN = "http://localhost:5173";
+
+// Secret compartilhado para proteger endpoints destrutivos (terminal/git).
+// Em dev, basta definir DEVSERVER_SECRET no .env do frontend; se não estiver
+// definido, o devserver ainda funciona mas loga um aviso — útil para não
+// quebrar setups existentes que não têm o .env configurado.
+const DEVSERVER_SECRET = process.env.DEVSERVER_SECRET || "";
+if (!DEVSERVER_SECRET) {
+  console.warn("[devserver] AVISO: DEVSERVER_SECRET não definido. Endpoint /api/terminal/run está sem proteção.");
+}
+
+function checkSecret(req) {
+  if (!DEVSERVER_SECRET) return true; // sem secret configurado, passa (mas logou aviso acima)
+  const header = req.headers["x-devserver-secret"];
+  return header === DEVSERVER_SECRET;
+}
 
 const EXPLORER_ROOTS = ["src/pages", "src/components", "src/lib"];
 
@@ -244,6 +259,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === "/api/terminal/run") {
+    if (!checkSecret(req)) return sendJson(res, 401, { error: "Não autorizado — header X-Devserver-Secret inválido ou ausente." });
     const raw = await readBody(req);
     let payload;
     try { payload = JSON.parse(raw); } catch { return sendJson(res, 400, { error: "JSON inválido" }); }
@@ -324,18 +340,30 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const gitRoot = rootOut.trim();
-      const escapedMsg = message.replace(/"/g, '\\"');
-      const addArgs = files && files.length > 0 ? files.map((f) => `"${f}"`).join(" ") : ".";
-      const command = `git add ${addArgs} && git commit -m "${escapedMsg}" && git pull --rebase && git push`;
+      const addArgs = files && files.length > 0 ? files : ["."];
+
+      // Usa execFile (sem shell) para cada etapa — evita injeção de comando
+      // via mensagem de commit (backticks, $(...), newlines, etc.).
+      const runGit = (args) =>
+        new Promise((resolve, reject) => {
+          execFile("git", args, { cwd: gitRoot, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+            if (stdout) stdout.split("\n").filter(Boolean).forEach((l) => sendGit(l, false));
+            if (stderr) stderr.split("\n").filter(Boolean).forEach((l) => sendGit(l, false));
+            if (err) reject(err); else resolve();
+          });
+        });
 
       // pequeno delay pra garantir que o SSE client já está conectado
-      setTimeout(() => {
-        exec(command, { shell: true, cwd: gitRoot, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-          if (stdout) stdout.split("\n").filter(Boolean).forEach((l) => sendGit(l, false));
-          if (stderr) stderr.split("\n").filter(Boolean).forEach((l) => sendGit(l, false));
-          if (err && !stdout && !stderr) sendGit(err.message, true);
-          sendGit("", false, true);
-        });
+      setTimeout(async () => {
+        try {
+          await runGit(["add", ...addArgs]);
+          await runGit(["commit", "-m", message]);
+          await runGit(["pull", "--rebase"]);
+          await runGit(["push"]);
+        } catch (err) {
+          sendGit(err.message, true);
+        }
+        sendGit("", false, true);
       }, 200);
     });
     return;

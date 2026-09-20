@@ -1,9 +1,12 @@
 # backend_api/core/utils/lgpd.py
 import re
 import hashlib
+import logging
 from django.conf import settings
 from django.utils import timezone
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
+
+logger = logging.getLogger(__name__)
 
 
 def mask_cpf(cpf: str) -> str:
@@ -50,28 +53,30 @@ def encrypt_field(value: str, field_name: str) -> str:
     if settings.DEBUG:
         salt = getattr(settings, 'CPF_SALT', 'dev_salt_change_in_prod')
         return hashlib.sha256(f"{value}{salt}_{field_name}".encode()).hexdigest()
-    try:
-        encryption_key = getattr(settings, 'ENCRYPTION_KEY', '')
-        if not encryption_key:
-            salt = getattr(settings, 'CPF_SALT', 'fallback_salt')
-            return hashlib.sha256(f"{value}{salt}_{field_name}".encode()).hexdigest()
-        fernet = Fernet(encryption_key.encode())
-        return fernet.encrypt(value.encode()).decode()
-    except Exception:
+    encryption_key = getattr(settings, 'ENCRYPTION_KEY', '')
+    if not encryption_key:
+        logger.warning("ENCRYPTION_KEY não configurada; campo '%s' será armazenado como hash irreversível.", field_name)
         salt = getattr(settings, 'CPF_SALT', 'fallback_salt')
         return hashlib.sha256(f"{value}{salt}_{field_name}".encode()).hexdigest()
+    try:
+        fernet = Fernet(encryption_key.encode())
+        return fernet.encrypt(value.encode()).decode()
+    except (ValueError, TypeError) as exc:
+        logger.error("Falha ao criptografar campo '%s': %s — verifique ENCRYPTION_KEY.", field_name, exc)
+        raise
 
 
 def decrypt_field(encrypted: str, field_name: str) -> str | None:
     if not encrypted or settings.DEBUG:
         return None
+    encryption_key = getattr(settings, 'ENCRYPTION_KEY', '')
+    if not encryption_key:
+        return None
     try:
-        encryption_key = getattr(settings, 'ENCRYPTION_KEY', '')
-        if not encryption_key:
-            return None
         fernet = Fernet(encryption_key.encode())
         return fernet.decrypt(encrypted.encode()).decode()
-    except Exception:
+    except (InvalidToken, ValueError, TypeError) as exc:
+        logger.error("Falha ao descriptografar campo '%s': %s", field_name, exc)
         return None
 
 
