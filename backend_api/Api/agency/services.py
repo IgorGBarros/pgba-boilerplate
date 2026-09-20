@@ -22,6 +22,7 @@ from django.db.models import Sum, Count, Avg
 from django.utils import timezone
 
 from agency.models import Sector, Agent, AgentInteraction, SectorMessage, Project, PendingApproval
+from harness.injection_guard import sanitize_user_input
 from agency.realtime import broadcast_pending_approval_update
 from integrations.services import create_project_repository, get_project_repository, IntegrationConfigError
 from orchestration import registry
@@ -77,6 +78,7 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
     from agency.policy import make_policy_check
 
     agent = Agent.objects.select_related("sector").get(id=agent_id, tenant_id=tenant_id)
+    question = sanitize_user_input(question, source=f"agent_{agent_id}")
     agent.work_status = Agent.WorkStatus.WORKING
     agent.current_task = question[:255]
     agent.save(update_fields=["work_status", "current_task"])
@@ -166,11 +168,12 @@ def request_cross_sector_message(tenant_id, from_agent_id, to_sector_id, content
     if from_agent.sector_id == to_sector_id:
         raise ValueError("from_agent já pertence a este setor — não é uma mensagem cruzada.")
 
+    safe_content = sanitize_user_input(content, source=f"sector_message:agent_{from_agent_id}")
     return SectorMessage.objects.create(
         tenant_id=tenant_id,
         from_agent=from_agent,
         to_sector_id=to_sector_id,
-        content=content,
+        content=safe_content,
     )
 
 
