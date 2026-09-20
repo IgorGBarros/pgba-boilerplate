@@ -277,13 +277,18 @@ const server = http.createServer(async (req, res) => {
       base = workspace ? workspacePath(workspace) : ROOT;
     }
     if (!fs.existsSync(base)) return sendJson(res, 404, { error: "Projeto não encontrado", files: [] });
-    exec("git status --porcelain", { cwd: base }, (err, stdout) => {
-      if (err) return sendJson(res, 200, { files: [], error: err.message });
-      const files = stdout.split("\n").filter(Boolean).map((line) => ({
-        status: line.slice(0, 2).trim(),
-        path: line.slice(3).trim(),
-      }));
-      sendJson(res, 200, { files });
+    // Resolve git root so paths from `git status` são relativos a ele
+    exec("git rev-parse --show-toplevel", { cwd: base }, (rootErr, rootOut) => {
+      if (rootErr) return sendJson(res, 200, { files: [], error: "Não é um repositório git" });
+      const gitRoot = rootOut.trim();
+      exec("git status --porcelain", { cwd: gitRoot }, (err, stdout) => {
+        if (err) return sendJson(res, 200, { files: [], error: err.message });
+        const files = stdout.split("\n").filter(Boolean).map((line) => ({
+          status: line.slice(0, 2).trim(),
+          path: line.slice(3).trim(),
+        }));
+        sendJson(res, 200, { files, gitRoot });
+      });
     });
     return;
   }
@@ -302,28 +307,37 @@ const server = http.createServer(async (req, res) => {
     }
     if (!fs.existsSync(base)) return sendJson(res, 404, { error: "Projeto não encontrado" });
 
-    const escapedMsg = message.replace(/"/g, '\\"');
-    const addArgs = files && files.length > 0 ? files.map((f) => `"${f}"`).join(" ") : ".";
-    const command = `git add ${addArgs} && git commit -m "${escapedMsg}" && git push`;
-
     sendJson(res, 202, { accepted: true, jobId });
 
     const sendGit = (line, isError, done = false) => {
       const clients = terminalClients.get(jobId);
       if (!clients) return;
-      const payload = `data: ${JSON.stringify({ line, isError, done })}\n\n`;
-      for (const c of clients) c.write(payload);
+      const data = `data: ${JSON.stringify({ line, isError, done })}\n\n`;
+      for (const c of clients) c.write(data);
     };
 
-    // pequeno delay pra garantir que o SSE client já está conectado
-    setTimeout(() => {
-      exec(command, { shell: true, cwd: base, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-        if (stdout) stdout.split("\n").filter(Boolean).forEach((l) => sendGit(l, false));
-        if (stderr) stderr.split("\n").filter(Boolean).forEach((l) => sendGit(l, false));
-        if (err && !stdout && !stderr) sendGit(err.message, true);
-        sendGit("", false, true);
-      });
-    }, 200);
+    // Resolve git root antes de rodar qualquer comando — paths do status são
+    // relativos ao root do repositório, não ao diretório do projeto.
+    exec("git rev-parse --show-toplevel", { cwd: base }, (rootErr, rootOut) => {
+      if (rootErr) {
+        setTimeout(() => { sendGit("Erro: não é um repositório git", true); sendGit("", false, true); }, 200);
+        return;
+      }
+      const gitRoot = rootOut.trim();
+      const escapedMsg = message.replace(/"/g, '\\"');
+      const addArgs = files && files.length > 0 ? files.map((f) => `"${f}"`).join(" ") : ".";
+      const command = `git add ${addArgs} && git commit -m "${escapedMsg}" && git push`;
+
+      // pequeno delay pra garantir que o SSE client já está conectado
+      setTimeout(() => {
+        exec(command, { shell: true, cwd: gitRoot, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+          if (stdout) stdout.split("\n").filter(Boolean).forEach((l) => sendGit(l, false));
+          if (stderr) stderr.split("\n").filter(Boolean).forEach((l) => sendGit(l, false));
+          if (err && !stdout && !stderr) sendGit(err.message, true);
+          sendGit("", false, true);
+        });
+      }, 200);
+    });
     return;
   }
 
