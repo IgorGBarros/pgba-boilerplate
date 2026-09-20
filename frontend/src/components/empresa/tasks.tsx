@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/empresa/shared";
@@ -108,6 +109,10 @@ export function Tasks({ onNewTask }: { onNewTask: (sector?: string) => void }) {
     const result = await moveTask(task, colId);
     if (result) {
       setTasks((prev) => prev.map((t) => (t.id === result.id ? result : t)));
+    } else {
+      // Rollback optimistic update
+      setTasks((prev) => prev.map((t) => (t.id === id ? task : t)));
+      toast.error("Não foi possível mover a tarefa. Tente novamente.");
     }
   };
 

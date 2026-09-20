@@ -625,8 +625,19 @@ export interface QueryLog {
   created_at: string;
 }
 
-export async function listQueryLogs(): Promise<QueryLog[]> {
-  return requestList<QueryLog>("/api/v1/orchestration/query-logs/");
+export async function listQueryLogs(params?: { status?: string; page?: number; pageSize?: number }): Promise<{ results: QueryLog[]; count: number }> {
+  const q = new URLSearchParams();
+  if (params?.status) q.set("status", params.status);
+  if (params?.page) q.set("page", String(params.page));
+  if (params?.pageSize) q.set("page_size", String(params.pageSize));
+  const query = q.toString() ? `?${q}` : "";
+  const data = await request<QueryLog[] | { results: QueryLog[]; count: number }>(`/api/v1/orchestration/query-logs/${query}`);
+  if (Array.isArray(data)) return { results: data, count: data.length };
+  return { results: data.results ?? [], count: (data as { count: number }).count ?? 0 };
+}
+
+export async function syncKnowledgeSource(id: number): Promise<void> {
+  await request<{ detail: string }>(`/api/v1/ingestion/sources/${id}/sync/`, { method: "POST" });
 }
 
 // --- agency: agent metrics overview -------------------------------------

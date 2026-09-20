@@ -8,9 +8,10 @@ interface FileTabsProps {
   onCloseFile: (path: string) => void;
   showPreview: boolean;
   onSelectPreview: () => void;
+  dirtyFiles?: Set<string>;
 }
 
-export default function FileTabs({ openFiles, activeFile, onSelectFile, onCloseFile, showPreview, onSelectPreview }: FileTabsProps) {
+export default function FileTabs({ openFiles, activeFile, onSelectFile, onCloseFile, showPreview, onSelectPreview, dirtyFiles }: FileTabsProps) {
   const getFileName = (path: string) => path.split("/").pop() ?? path;
 
   return (
@@ -37,6 +38,9 @@ export default function FileTabs({ openFiles, activeFile, onSelectFile, onCloseF
         >
           <FileCode2 className="h-3 w-3 shrink-0" />
           <span className="max-w-[120px] truncate">{getFileName(file)}</span>
+          {dirtyFiles?.has(file) && (
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" title="Não salvo" />
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();

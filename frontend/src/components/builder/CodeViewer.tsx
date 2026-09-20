@@ -24,11 +24,13 @@ interface CodeViewerProps {
   filePath: string;
   workspace?: string;
   localPath?: string;
+  goToLine?: number;
+  onDirtyChange?: (path: string, dirty: boolean) => void;
 }
 
 type SaveState = "idle" | "saving" | "saved" | "conflict";
 
-export default function CodeViewer({ filePath, workspace, localPath }: CodeViewerProps) {
+export default function CodeViewer({ filePath, workspace, localPath, goToLine, onDirtyChange }: CodeViewerProps) {
   const [code, setCode] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
@@ -36,6 +38,9 @@ export default function CodeViewer({ filePath, workspace, localPath }: CodeViewe
   const [isDirty, setIsDirty] = useState(false);
   const baseHashRef = useRef<string | null>(null);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editorViewRef = useRef<import("@codemirror/view").EditorView | null>(null);
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
   const extensions = getExtensions(filePath);
 
   useEffect(() => {
@@ -75,6 +80,7 @@ export default function CodeViewer({ filePath, workspace, localPath }: CodeViewe
     if (result.ok) {
       setCode(content);
       setIsDirty(false);
+      onDirtyChangeRef.current?.(filePath, false);
       setSaveState("saved");
       // Refresh hash after save
       fetchFileHash(filePath, workspace, localPath).then((h) => { baseHashRef.current = h; });
@@ -86,9 +92,18 @@ export default function CodeViewer({ filePath, workspace, localPath }: CodeViewe
     }
   }, [filePath, workspace, localPath]);
 
+  useEffect(() => {
+    if (goToLine == null || !editorViewRef.current) return;
+    const view = editorViewRef.current;
+    const line = view.state.doc.line(Math.min(goToLine, view.state.doc.lines));
+    view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true });
+  }, [goToLine]);
+
   const handleChange = useCallback((value: string) => {
+    const dirty = value !== code;
     setDraft(value);
-    setIsDirty(value !== code);
+    setIsDirty(dirty);
+    onDirtyChangeRef.current?.(filePath, dirty);
     setSaveState("idle");
     // Autosave debounce: 1500ms after last keystroke
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
@@ -165,6 +180,7 @@ export default function CodeViewer({ filePath, workspace, localPath }: CodeViewe
           extensions={extensions}
           theme={oneDark}
           onChange={handleChange}
+          onCreateEditor={(view) => { editorViewRef.current = view; }}
           basicSetup={{
             lineNumbers: true,
             foldGutter: true,

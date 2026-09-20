@@ -97,20 +97,21 @@ export default function GitPanel({ isOpen, onToggle, workspace, localPath, initi
     setCommitting(true);
     setOutput([]);
     const jobId = `git_${Date.now()}`;
-    const stream = connectTerminalStream(jobId, (line) => {
-      setOutput((prev) => [...prev, line]);
-    });
+    connectTerminalStream(
+      jobId,
+      (line) => { setOutput((prev) => [...prev, line]); },
+      async () => {
+        setCommitting(false);
+        setMessage("");
+        await refresh();
+      },
+    );
     try {
       await gitCommit({ files: selected.size > 0 ? [...selected] : undefined, message: message.trim(), jobId, workspace, localPath });
     } catch (err) {
       setOutput((prev) => [...prev, err instanceof Error ? err.message : "Erro ao commitar"]);
-    }
-    setTimeout(async () => {
       setCommitting(false);
-      stream.close();
-      setMessage("");
-      await refresh();
-    }, 5000);
+    }
   }
 
   async function handleRevert(file: string) {

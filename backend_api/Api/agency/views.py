@@ -16,7 +16,7 @@ from agency.serializers import (
     ApproveTaskSerializer, RejectTaskSerializer,
 )
 from agency.tasks import (
-    create_task, execute_task, interrupt_task, adapt_and_resume, approve_task, reject_task, report_task_result, TaskStateError,
+    create_task, interrupt_task, adapt_and_resume, approve_task, reject_task, report_task_result, TaskStateError,
 )
 from agency.services import (
     ask_as_agent,
@@ -321,17 +321,25 @@ class TaskViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def execute(self, request, pk=None):
-        """POST tasks/{id}/execute/ — dispara a execução via o modelo configurado no harness."""
-        from harness.providers import ProviderConfigError
+        """
+        POST tasks/{id}/execute/ — enfileira a execução no Celery e retorna 202.
+        O resultado chega ao frontend via WebSocket (agency.realtime) quando
+        a task termina. O status inicial (IN_PROGRESS) é retornado imediatamente
+        para que o Kanban atualize localmente sem esperar o LLM terminar.
+        """
+        from agency.celery_tasks import execute_task_async
 
         task = self.get_object()
-        try:
-            updated = execute_task(request.tenant_id, task.id)
-        except TaskStateError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-        except ProviderConfigError as exc:
-            return Response({"detail": f"Falha ao consultar o modelo: {exc}"}, status=502)
-        return Response(TaskSerializer(updated).data)
+        if task.status not in ("created", "adapted"):
+            return Response(
+                {"detail": f"Task não pode ser executada no status '{task.status}'."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        execute_task_async.delay(request.tenant_id, task.id)
+        # Retorna a task como está (status ainda created/adapted) —
+        # o WebSocket vai atualizar o frontend quando o worker mudar o status.
+        return Response(TaskSerializer(task).data, status=status.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=["post"], url_path="report-result")
     def report_result(self, request, pk=None):
