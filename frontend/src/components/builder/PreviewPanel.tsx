@@ -73,6 +73,8 @@ export default function PreviewPanel({
   const explorerDragging = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
+  const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
+  const [goToLine, setGoToLine] = useState<{ path: string; line: number } | null>(null);
   const [currentUrl, setCurrentUrl] = useState(previewUrl);
   const [editingUrl, setEditingUrl] = useState(false);
   const [draftUrl, setDraftUrl] = useState(previewUrl);
@@ -88,12 +90,13 @@ export default function PreviewPanel({
     if (updated.length > 0) setFiles(updated);
   }, [workspace, localPath]);
 
-  const handleSelectFile = useCallback((filePath: string) => {
+  const handleSelectFile = useCallback((filePath: string, line?: number) => {
     if (splitView && activeFile) {
       setActiveFile2(filePath);
     } else {
       setActiveFile(filePath);
     }
+    if (line != null) setGoToLine({ path: filePath, line });
     setShowPreview(false);
     setOpenFiles((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]));
     // Navigate preview to the matching route
@@ -262,6 +265,7 @@ export default function PreviewPanel({
             onCloseFile={handleCloseFile}
             showPreview={showPreview}
             onSelectPreview={() => setShowPreview(true)}
+            dirtyFiles={dirtyFiles}
           />
 
           <div className="relative flex flex-1 overflow-hidden">
@@ -271,21 +275,51 @@ export default function PreviewPanel({
               <div className="flex flex-1 overflow-hidden">
                 <div className="flex-1 overflow-hidden border-r border-white/10">
                   {activeFile ? (
-                    <CodeViewer filePath={activeFile} workspace={workspace} localPath={localPath} />
+                    <CodeViewer
+                      filePath={activeFile}
+                      workspace={workspace}
+                      localPath={localPath}
+                      goToLine={goToLine?.path === activeFile ? goToLine.line : undefined}
+                      onDirtyChange={(path, dirty) => setDirtyFiles((prev) => {
+                        const next = new Set(prev);
+                        if (dirty) next.add(path); else next.delete(path);
+                        return next;
+                      })}
+                    />
                   ) : (
                     <div className="flex flex-1 items-center justify-center text-sm text-slate-500">Selecione um arquivo</div>
                   )}
                 </div>
                 <div className="flex-1 overflow-hidden">
                   {activeFile2 ? (
-                    <CodeViewer filePath={activeFile2} workspace={workspace} localPath={localPath} />
+                    <CodeViewer
+                      filePath={activeFile2}
+                      workspace={workspace}
+                      localPath={localPath}
+                      goToLine={goToLine?.path === activeFile2 ? goToLine.line : undefined}
+                      onDirtyChange={(path, dirty) => setDirtyFiles((prev) => {
+                        const next = new Set(prev);
+                        if (dirty) next.add(path); else next.delete(path);
+                        return next;
+                      })}
+                    />
                   ) : (
                     <div className="flex flex-1 items-center justify-center text-sm text-slate-500">Clique em outro arquivo para split</div>
                   )}
                 </div>
               </div>
             ) : activeFile ? (
-              <CodeViewer filePath={activeFile} workspace={workspace} localPath={localPath} />
+              <CodeViewer
+                filePath={activeFile}
+                workspace={workspace}
+                localPath={localPath}
+                goToLine={goToLine?.path === activeFile ? goToLine.line : undefined}
+                onDirtyChange={(path, dirty) => setDirtyFiles((prev) => {
+                  const next = new Set(prev);
+                  if (dirty) next.add(path); else next.delete(path);
+                  return next;
+                })}
+              />
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
                 Selecione um arquivo ou abra o Preview

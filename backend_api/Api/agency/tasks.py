@@ -75,7 +75,8 @@ def execute_task(tenant_id, task_id) -> Task:
     task.save(update_fields=["status", "updated_at"])
     broadcast_task_update(task)
 
-    provider = getattr(settings, "CHAT_PROVIDER", "ollama")
+    from harness.views import _resolve_chat_provider
+    provider = _resolve_chat_provider(tenant_id)
 
     def _finish_with_error(detail: dict):
         task.status = Task.Status.REJECTED

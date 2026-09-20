@@ -27,6 +27,39 @@ from harness.guardrails import extract_code_block
 from harness.providers import chat_completion, ProviderConfigError
 from harness.serializers import GenerateCodeSerializer
 
+_PROVIDER_PRIORITY = ["openrouter", "groq", "openai", "anthropic", "ollama"]
+
+
+def _resolve_chat_provider(tenant_id) -> str:
+    """
+    Escolhe o provider de chat para este tenant. Ordem:
+    1. Credencial ativa no banco para este tenant (qualquer provider)
+    2. Credencial ativa global (tenant_id nulo)
+    3. settings.CHAT_PROVIDER (fallback global)
+
+    Prioriza provedores na ordem `_PROVIDER_PRIORITY`; Ollama é o último
+    (mais lento), mas sempre disponível como fallback.
+    """
+    from harness.models import AIProviderCredential
+
+    tenant_cred = (
+        AIProviderCredential.objects.filter(tenant_id=tenant_id, is_active=True)
+        .order_by(*[f"-provider" if p == "ollama" else f"provider" for p in _PROVIDER_PRIORITY])
+        .first()
+    )
+    if tenant_cred:
+        return tenant_cred.provider
+
+    global_cred = (
+        AIProviderCredential.objects.filter(tenant_id__isnull=True, is_active=True)
+        .first()
+    )
+    if global_cred:
+        return global_cred.provider
+
+    return getattr(settings, "CHAT_PROVIDER", "ollama")
+
+
 DEFAULT_SYSTEM_PROMPT = (
     "Você é um especialista em React + TypeScript + TailwindCSS trabalhando "
     "no frontend do PGBA Boilerplate. Gere APENAS o código completo do "
@@ -94,7 +127,7 @@ class GenerateCodeView(TenantContextMixin, APIView):
                 "completo corrigido, não só o trecho alterado."
             )
 
-        provider = getattr(settings, "CHAT_PROVIDER", "ollama")
+        provider = _resolve_chat_provider(request.tenant_id)
 
         try:
             raw = chat_completion(

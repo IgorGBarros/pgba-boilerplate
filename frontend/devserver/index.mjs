@@ -466,6 +466,32 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (req.method === "POST" && url.pathname === "/api/file/rename") {
+    const raw = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(raw); } catch { return sendJson(res, 400, { error: "JSON inválido" }); }
+    const { from: fromRel, to: toRel, localPath: lp, workspace: ws } = payload;
+    if (!fromRel || !toRel) return sendJson(res, 400, { error: "from e to são obrigatórios" });
+    let base;
+    if (lp) {
+      base = lp.startsWith("~") ? path.join(process.env.HOME || "/root", lp.slice(1)) : lp;
+    } else {
+      base = ws ? workspacePath(ws) : ROOT;
+    }
+    const fromFull = path.normalize(path.join(base, fromRel));
+    const toFull = path.normalize(path.join(base, toRel));
+    if (!fromFull.startsWith(path.normalize(base)) || !toFull.startsWith(path.normalize(base))) {
+      return sendJson(res, 403, { error: "Caminho não permitido" });
+    }
+    try {
+      fs.mkdirSync(path.dirname(toFull), { recursive: true });
+      fs.renameSync(fromFull, toFull);
+      return sendJson(res, 200, { success: true });
+    } catch (err) {
+      return sendJson(res, 500, { error: err.message });
+    }
+  }
+
   // --- Busca global no projeto ---
 
   if (req.method === "GET" && url.pathname === "/api/search") {

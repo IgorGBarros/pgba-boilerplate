@@ -15,6 +15,7 @@ import {
   listKnowledgeSources,
   listDocuments,
   uploadDocumentFile,
+  syncKnowledgeSource,
   type KnowledgeSource,
   type KnowledgeDocument,
 } from "@/lib/api";
@@ -69,8 +70,22 @@ export function Knowledge() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleReindex = () => {
-    toast.info("Reindexação iniciada pelo backend");
+  const [reindexing, setReindexing] = useState(false);
+
+  const handleReindex = async () => {
+    if (!selectedSource) return;
+    setReindexing(true);
+    try {
+      await syncKnowledgeSource(Number(selectedSource));
+      toast.success("Reindexação enfileirada pelo backend");
+      setTimeout(() => {
+        listDocuments(Number(selectedSource)).then(setDocs).catch(console.error);
+      }, 2000);
+    } catch (e: unknown) {
+      toast.error(`Erro ao reindexar: ${e instanceof Error ? e.message : "falha"}`);
+    } finally {
+      setReindexing(false);
+    }
   };
 
   return (
@@ -118,8 +133,8 @@ export function Knowledge() {
             />
           </label>
 
-          <Button className="w-full" onClick={handleReindex} disabled={!selectedSource}>
-            Reindexar base da fonte
+          <Button className="w-full" onClick={handleReindex} disabled={!selectedSource || reindexing}>
+            {reindexing ? "Enfileirando…" : "Reindexar base da fonte"}
           </Button>
         </div>
 

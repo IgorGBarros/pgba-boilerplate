@@ -2,10 +2,10 @@
 import { useState, useMemo } from "react";
 import {
   ChevronRight, ChevronDown, FileCode2, FileJson, FileText,
-  FolderOpen, Folder, Plus, Trash2, FilePlus, FolderPlus,
+  FolderOpen, Folder, Plus, Trash2, FilePlus, FolderPlus, Pencil,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { createFile, deleteFile } from "@/lib/devserver";
+import { createFile, deleteFile, renameFile } from "@/lib/devserver";
 import { toast } from "sonner";
 import type { FileNode } from "@/types/builder";
 
@@ -22,10 +22,26 @@ interface FileTreeItemProps {
   onSelect: (path: string) => void;
   onDelete: (path: string, isFolder: boolean) => void;
   onCreateInFolder: (folderPath: string) => void;
+  onRename: (oldPath: string, newName: string) => void;
 }
 
-function FileTreeItem({ node, depth, activeFile, onSelect, onDelete, onCreateInFolder }: FileTreeItemProps) {
+function FileTreeItem({ node, depth, activeFile, onSelect, onDelete, onCreateInFolder, onRename }: FileTreeItemProps) {
   const [isOpen, setIsOpen] = useState(depth < 1);
+  const [renaming, setRenaming] = useState(false);
+  const [renameVal, setRenameVal] = useState(node.name);
+
+  function startRename(e: React.MouseEvent) {
+    e.stopPropagation();
+    setRenameVal(node.name);
+    setRenaming(true);
+  }
+
+  function commitRename() {
+    if (renameVal.trim() && renameVal !== node.name) {
+      onRename(node.path, renameVal.trim());
+    }
+    setRenaming(false);
+  }
 
   if (node.type === "folder") {
     return (
@@ -37,7 +53,26 @@ function FileTreeItem({ node, depth, activeFile, onSelect, onDelete, onCreateInF
           <button className="flex flex-1 items-center gap-1 truncate" onClick={() => setIsOpen(!isOpen)}>
             {isOpen ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
             {isOpen ? <FolderOpen className="h-3.5 w-3.5 shrink-0 text-brand-500" /> : <Folder className="h-3.5 w-3.5 shrink-0 text-brand-500" />}
-            <span className="truncate">{node.name}</span>
+            {renaming ? (
+              <input
+                autoFocus
+                value={renameVal}
+                onChange={(e) => setRenameVal(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setRenaming(false); }}
+                onClick={(e) => e.stopPropagation()}
+                className="flex-1 rounded border border-brand-500/50 bg-black/40 px-1 font-mono text-[11px] text-slate-200 outline-none"
+              />
+            ) : (
+              <span className="truncate">{node.name}</span>
+            )}
+          </button>
+          <button
+            className="hidden h-4 w-4 shrink-0 items-center justify-center rounded text-slate-500 group-hover:flex hover:text-brand-400"
+            title="Renomear"
+            onClick={startRename}
+          >
+            <Pencil className="h-3 w-3" />
           </button>
           <button
             className="hidden h-4 w-4 shrink-0 items-center justify-center rounded text-slate-500 group-hover:flex hover:text-green-400"
@@ -58,7 +93,7 @@ function FileTreeItem({ node, depth, activeFile, onSelect, onDelete, onCreateInF
           {isOpen && node.children && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.15 }}>
               {node.children.map((child) => (
-                <FileTreeItem key={child.path} node={child} depth={depth + 1} activeFile={activeFile} onSelect={onSelect} onDelete={onDelete} onCreateInFolder={onCreateInFolder} />
+                <FileTreeItem key={child.path} node={child} depth={depth + 1} activeFile={activeFile} onSelect={onSelect} onDelete={onDelete} onCreateInFolder={onCreateInFolder} onRename={onRename} />
               ))}
             </motion.div>
           )}
@@ -75,9 +110,27 @@ function FileTreeItem({ node, depth, activeFile, onSelect, onDelete, onCreateInF
       }`}
       style={{ paddingLeft: `${depth * 12 + 20}px` }}
     >
-      <button className="flex flex-1 items-center gap-1.5 truncate" onClick={() => onSelect(node.path)}>
-        <Icon className="h-3.5 w-3.5 shrink-0" />
-        <span className="truncate">{node.name}</span>
+      {renaming ? (
+        <input
+          autoFocus
+          value={renameVal}
+          onChange={(e) => setRenameVal(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setRenaming(false); }}
+          className="flex-1 rounded border border-brand-500/50 bg-black/40 px-1 font-mono text-[11px] text-slate-200 outline-none"
+        />
+      ) : (
+        <button className="flex flex-1 items-center gap-1.5 truncate" onClick={() => onSelect(node.path)}>
+          <Icon className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{node.name}</span>
+        </button>
+      )}
+      <button
+        className="hidden h-4 w-4 shrink-0 items-center justify-center rounded text-slate-500 group-hover:flex hover:text-brand-400"
+        title="Renomear"
+        onClick={startRename}
+      >
+        <Pencil className="h-3 w-3" />
       </button>
       <button
         className="hidden h-4 w-4 shrink-0 items-center justify-center rounded text-slate-500 group-hover:flex hover:text-red-400"
@@ -126,6 +179,19 @@ export default function FileExplorer({ files = [], activeFile, onSelectFile, onR
   const fileTree = useMemo(() => buildFileTree(files), [files]);
   const [createMode, setCreateMode] = useState<CreateMode>(null);
   const [newName, setNewName] = useState("");
+
+  async function handleRename(oldPath: string, newName: string) {
+    const parts = oldPath.split("/");
+    parts[parts.length - 1] = newName;
+    const newPath = parts.join("/");
+    const result = await renameFile(oldPath, newPath, workspace, localPath);
+    if (result.ok) {
+      toast.success("Renomeado com sucesso");
+      onRefreshFiles?.();
+    } else {
+      toast.error(result.error ?? "Erro ao renomear");
+    }
+  }
 
   async function handleDelete(filePath: string, isFolder: boolean) {
     const label = isFolder ? "pasta" : "arquivo";
@@ -213,6 +279,7 @@ export default function FileExplorer({ files = [], activeFile, onSelectFile, onR
               onSelect={onSelectFile}
               onDelete={handleDelete}
               onCreateInFolder={(fp) => { setCreateMode({ folderPath: fp, type: "file" }); setNewName(""); }}
+              onRename={handleRename}
             />
           ))
         )}

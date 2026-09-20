@@ -203,12 +203,14 @@ export async function runTerminalCommand(command: string, jobId: string): Promis
 export function connectTerminalStream(
   jobId: string,
   onOutput: (line: string, isError: boolean) => void,
+  onDone?: () => void,
 ): EventSource {
   const source = new EventSource(`${DEV_SERVER_URL}/api/terminal/stream?jobId=${jobId}`);
   source.onmessage = (e) => {
     const data = JSON.parse(e.data) as { line: string; isError: boolean; done?: boolean };
     if (data.done) {
       source.close();
+      onDone?.();
     } else {
       onOutput(data.line, data.isError);
     }
@@ -216,8 +218,26 @@ export function connectTerminalStream(
   source.onerror = () => {
     lastReachable = false;
     source.close();
+    onDone?.();
   };
   return source;
+}
+
+export async function renameFile(
+  from: string,
+  to: string,
+  workspace?: string,
+  localPath?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/file/rename`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ from, to, workspace, localPath }),
+  });
+  if (!res) return { ok: false, error: "Dev-server não está respondendo." };
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) return { ok: false, error: data.error ?? `Servidor retornou ${res.status}` };
+  return { ok: true };
 }
 
 // --- Git: status e commit ---

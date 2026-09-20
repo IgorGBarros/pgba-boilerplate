@@ -6,7 +6,7 @@ import { searchFiles, type SearchResult } from "@/lib/devserver";
 interface SearchPanelProps {
   workspace?: string;
   localPath?: string;
-  onSelectFile: (path: string) => void;
+  onSelectFile: (path: string, line?: number) => void;
 }
 
 export default function SearchPanel({ workspace, localPath, onSelectFile }: SearchPanelProps) {
@@ -76,7 +76,7 @@ export default function SearchPanel({ workspace, localPath, onSelectFile }: Sear
               {fileResults.map((r, i) => (
                 <button
                   key={i}
-                  onClick={() => onSelectFile(r.file)}
+                  onClick={() => onSelectFile(r.file, r.line)}
                   className="flex w-full items-start gap-2 px-4 py-1 hover:bg-white/5"
                 >
                   <span className="shrink-0 font-mono text-[10px] text-slate-500">{r.line}</span>
