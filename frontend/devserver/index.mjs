@@ -326,7 +326,7 @@ const server = http.createServer(async (req, res) => {
       const gitRoot = rootOut.trim();
       const escapedMsg = message.replace(/"/g, '\\"');
       const addArgs = files && files.length > 0 ? files.map((f) => `"${f}"`).join(" ") : ".";
-      const command = `git add ${addArgs} && git commit -m "${escapedMsg}" && git push`;
+      const command = `git add ${addArgs} && git commit -m "${escapedMsg}" && git pull --rebase && git push`;
 
       // pequeno delay pra garantir que o SSE client já está conectado
       setTimeout(() => {
