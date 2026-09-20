@@ -33,29 +33,25 @@ _PROVIDER_PRIORITY = ["openrouter", "groq", "openai", "anthropic", "ollama"]
 def _resolve_chat_provider(tenant_id) -> str:
     """
     Escolhe o provider de chat para este tenant. Ordem:
-    1. Credencial ativa no banco para este tenant (qualquer provider)
-    2. Credencial ativa global (tenant_id nulo)
+    1. Credencial ativa no banco para este tenant (respeitando _PROVIDER_PRIORITY)
+    2. Credencial ativa global (tenant_id nulo, mesma prioridade)
     3. settings.CHAT_PROVIDER (fallback global)
-
-    Prioriza provedores na ordem `_PROVIDER_PRIORITY`; Ollama é o último
-    (mais lento), mas sempre disponível como fallback.
     """
     from harness.models import AIProviderCredential
 
-    tenant_cred = (
-        AIProviderCredential.objects.filter(tenant_id=tenant_id, is_active=True)
-        .order_by(*[f"-provider" if p == "ollama" else f"provider" for p in _PROVIDER_PRIORITY])
-        .first()
-    )
-    if tenant_cred:
-        return tenant_cred.provider
+    priority_map = {p: i for i, p in enumerate(_PROVIDER_PRIORITY)}
 
-    global_cred = (
-        AIProviderCredential.objects.filter(tenant_id__isnull=True, is_active=True)
-        .first()
+    tenant_creds = list(
+        AIProviderCredential.objects.filter(tenant_id=tenant_id, is_active=True)
     )
-    if global_cred:
-        return global_cred.provider
+    if tenant_creds:
+        return min(tenant_creds, key=lambda c: priority_map.get(c.provider, 99)).provider
+
+    global_creds = list(
+        AIProviderCredential.objects.filter(tenant_id__isnull=True, is_active=True)
+    )
+    if global_creds:
+        return min(global_creds, key=lambda c: priority_map.get(c.provider, 99)).provider
 
     return getattr(settings, "CHAT_PROVIDER", "ollama")
 

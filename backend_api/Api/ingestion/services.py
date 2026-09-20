@@ -23,6 +23,8 @@ from typing import Iterable
 from django.conf import settings
 from django.utils import timezone
 
+from harness.injection_guard import sanitize_user_input, wrap_rag_context, scan_document_for_injection
+
 logger = logging.getLogger(__name__)
 
 
@@ -130,6 +132,10 @@ def index_document(document) -> None:
     document.status = Document.Status.PROCESSING
     document.save(update_fields=["status"])
 
+    # Escaneia antes de indexar — conteúdo suspeito é logado (não bloqueia,
+    # para não travar ingestão legítima de documentos sobre segurança de IA).
+    scan_document_for_injection(document.content or "", document_ref=str(document.id))
+
     try:
         pieces = chunk_text(document.content)
         if not pieces:
@@ -232,7 +238,8 @@ def build_context_prompt(chunks: Iterable[RetrievedChunk]) -> str:
         parts.append(
             f"[Fonte {i}: {chunk.source_name} / {chunk.document_title}]\n{chunk.content}"
         )
-    return "\n\n---\n\n".join(parts)
+    raw = "\n\n---\n\n".join(parts)
+    return wrap_rag_context(raw) if raw else ""
 
 
 # ---------------------------------------------------------------------------
@@ -357,16 +364,18 @@ def generate_answer(query: str, context: str, tenant_id=None) -> str:
     except GroundingError:
         return NoAnswer.TEXT
 
-    provider = getattr(settings, "CHAT_PROVIDER", "ollama")
-    model = getattr(settings, "OLLAMA_CHAT_MODEL", "llama3")
+    from harness.views import _resolve_chat_provider
+    from harness.injection_guard import build_safe_rag_prompt
+    provider = _resolve_chat_provider(tenant_id)
+    model = None  # resolve via get_credential().default_model
 
-    system_prompt = (
+    system_instruction = (
         "Você é um assistente que responde exclusivamente com base no "
         "CONTEXTO fornecido. Se a resposta não estiver no contexto, diga "
         "claramente que não encontrou essa informação na base de conhecimento. "
         "Nunca invente fatos. Cite a fonte quando possível."
     )
-    user_prompt = f"CONTEXTO:\n{context}\n\nPERGUNTA:\n{query}"
+    system_prompt, user_prompt = build_safe_rag_prompt(query, context, system_instruction)
 
     try:
         return chat_completion(
