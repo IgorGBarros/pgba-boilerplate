@@ -36,6 +36,7 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
   const [chatWidth, setChatWidth] = useState(38); // percent
+  const [lastPrompt, setLastPrompt] = useState("");
   const dragging = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -87,7 +88,7 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
     };
   }, []);
 
-  function startDrag(e: React.MouseEvent) {
+  function startDrag() {
     dragging.current = true;
     const onMove = (ev: MouseEvent) => {
       if (!dragging.current || !rootRef.current) return;
@@ -109,6 +110,7 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
   }
 
   async function handleSend(prompt: string) {
+    setLastPrompt(prompt);
     addMessage({ type: "user", content: prompt });
     addMessage({ type: "plan", content: "Planejando e gerando a página..." });
     setIsLoading(true);
@@ -232,6 +234,7 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
             localPath={activeProject?.local_path || undefined}
             isTerminalOpen={isTerminalOpen}
             onToggleTerminal={() => setIsTerminalOpen((v) => !v)}
+            taskCommitMessage={lastPrompt ? `feat: ${lastPrompt.slice(0, 72)}` : undefined}
           />
         </div>
       </div>

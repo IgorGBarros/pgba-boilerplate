@@ -45,10 +45,10 @@ const AgentPosCtx = createContext<React.MutableRefObject<THREE.Vector3[]>>(
 // Mapeamento: slider 0-2 → polling em ms e autonomy_level
 const AUTONOMY_SPEEDS   = [60_000, 30_000, 10_000];
 const AUTONOMY_LEVELS   = [0, 2, 4];
-const AUTONOMY_LABELS   = ["Observador", "Executor", "Autônomo"] as const;
+// const AUTONOMY_LABELS   = ["Observador", "Executor", "Autônomo"] as const;
 
 // Escala global de móveis — mantém proporção com agentes a 0.65×
-const FURNITURE_SCALE = 0.70;
+// const FURNITURE_SCALE = 0.70;
 
 // Paredes neutras para todos os setores; CEO tem parede verde distinta
 const NEUTRAL_WALL  = "#eae6de";

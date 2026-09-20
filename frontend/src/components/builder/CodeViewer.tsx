@@ -1,20 +1,24 @@
 // frontend/src/components/builder/CodeViewer.tsx
-import { useEffect, useState } from "react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { Loader2, Pencil, Save, X } from "lucide-react";
-import { fetchFileContent, saveFileContent } from "@/lib/devserver";
+import { useEffect, useState, useRef, useCallback } from "react";
+import CodeMirror from "@uiw/react-codemirror";
+import { javascript } from "@codemirror/lang-javascript";
+import { css } from "@codemirror/lang-css";
+import { json } from "@codemirror/lang-json";
+import { markdown } from "@codemirror/lang-markdown";
+import { oneDark } from "@codemirror/theme-one-dark";
+import { Loader2, Save, X, CheckCircle2, AlertTriangle } from "lucide-react";
+import { fetchFileContent, saveFileContent, fetchFileHash } from "@/lib/devserver";
 import { toast } from "sonner";
 
-const LANG_MAP: Record<string, string> = {
-  tsx: "typescript",
-  ts: "typescript",
-  jsx: "javascript",
-  js: "javascript",
-  css: "css",
-  json: "json",
-  md: "markdown",
-};
+function getExtensions(filePath: string) {
+  const ext = filePath.split(".").pop() ?? "";
+  if (ext === "tsx" || ext === "ts") return [javascript({ typescript: true, jsx: ext === "tsx" })];
+  if (ext === "jsx" || ext === "js") return [javascript({ jsx: ext === "jsx" })];
+  if (ext === "css") return [css()];
+  if (ext === "json") return [json()];
+  if (ext === "md") return [markdown()];
+  return [];
+}
 
 interface CodeViewerProps {
   filePath: string;
@@ -22,48 +26,87 @@ interface CodeViewerProps {
   localPath?: string;
 }
 
+type SaveState = "idle" | "saving" | "saved" | "conflict";
+
 export default function CodeViewer({ filePath, workspace, localPath }: CodeViewerProps) {
   const [code, setCode] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const ext = filePath.split(".").pop() ?? "";
-  const language = LANG_MAP[ext] ?? "plaintext";
+  const [loading, setLoading] = useState(true);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [isDirty, setIsDirty] = useState(false);
+  const baseHashRef = useRef<string | null>(null);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const extensions = getExtensions(filePath);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setCode(null);
-    setEditing(false);
+    setIsDirty(false);
+    setSaveState("idle");
 
-    fetchFileContent(filePath, workspace, localPath).then((text) => {
-      if (!cancelled) {
-        setCode(text);
-        setLoading(false);
-      }
+    Promise.all([
+      fetchFileContent(filePath, workspace, localPath),
+      fetchFileHash(filePath, workspace, localPath),
+    ]).then(([text, hash]) => {
+      if (cancelled) return;
+      setCode(text);
+      setDraft(text);
+      baseHashRef.current = hash;
+      setLoading(false);
     });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    };
   }, [filePath, workspace, localPath]);
 
-  function startEdit() {
-    setDraft(code ?? "");
-    setEditing(true);
-  }
-
-  async function handleSave() {
-    setSaving(true);
-    const result = await saveFileContent(filePath, draft, workspace, localPath);
+  const doSave = useCallback(async (content: string) => {
+    // Conflict check: compare current server hash with what we loaded
+    const currentHash = await fetchFileHash(filePath, workspace, localPath);
+    if (currentHash && baseHashRef.current && currentHash !== baseHashRef.current) {
+      setSaveState("conflict");
+      toast.error("Conflito: arquivo foi modificado externamente. Recarregue para ver as mudanças.");
+      return;
+    }
+    setSaveState("saving");
+    const result = await saveFileContent(filePath, content, workspace, localPath);
     if (result.ok) {
-      setCode(draft);
-      setEditing(false);
+      setCode(content);
+      setIsDirty(false);
+      setSaveState("saved");
+      // Refresh hash after save
+      fetchFileHash(filePath, workspace, localPath).then((h) => { baseHashRef.current = h; });
       toast.success("Arquivo salvo");
+      setTimeout(() => setSaveState("idle"), 2000);
     } else {
+      setSaveState("idle");
       toast.error(result.error ?? "Falha ao salvar o arquivo");
     }
-    setSaving(false);
+  }, [filePath, workspace, localPath]);
+
+  const handleChange = useCallback((value: string) => {
+    setDraft(value);
+    setIsDirty(value !== code);
+    setSaveState("idle");
+    // Autosave debounce: 1500ms after last keystroke
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => {
+      doSave(value);
+    }, 1500);
+  }, [code, doSave]);
+
+  function handleManualSave() {
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    doSave(draft);
+  }
+
+  function handleDiscard() {
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    setDraft(code ?? "");
+    setIsDirty(false);
+    setSaveState("idle");
   }
 
   if (loading) {
@@ -76,82 +119,65 @@ export default function CodeViewer({ filePath, workspace, localPath }: CodeViewe
 
   return (
     <div className="flex flex-1 flex-col min-w-0 min-h-0 bg-[#282c34]">
-      <div className="flex shrink-0 items-center justify-end gap-1 border-b border-white/10 px-2 py-1">
-        {editing ? (
-          <>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium text-green-400 hover:bg-white/10 disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-              Salvar
-            </button>
-            <button
-              onClick={() => setEditing(false)}
-              disabled={saving}
-              className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-slate-400 hover:bg-white/10"
-            >
-              <X className="h-3 w-3" />
-              Cancelar
-            </button>
-          </>
-        ) : (
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-slate-600">duplo clique para editar</span>
-            <button
-              onClick={startEdit}
-              className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-slate-400 hover:bg-white/10 hover:text-slate-100"
-            >
-              <Pencil className="h-3 w-3" />
-              Editar
-            </button>
-          </div>
-        )}
+      <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-2 py-1">
+        <span className="truncate font-mono text-[10px] text-slate-500">{filePath}</span>
+        <div className="flex items-center gap-1 shrink-0">
+          {saveState === "saving" && (
+            <span className="flex items-center gap-1 text-[10px] text-slate-400">
+              <Loader2 className="h-3 w-3 animate-spin" /> salvando…
+            </span>
+          )}
+          {saveState === "saved" && (
+            <span className="flex items-center gap-1 text-[10px] text-green-400">
+              <CheckCircle2 className="h-3 w-3" /> salvo
+            </span>
+          )}
+          {saveState === "conflict" && (
+            <span className="flex items-center gap-1 text-[10px] text-red-400">
+              <AlertTriangle className="h-3 w-3" /> conflito
+            </span>
+          )}
+          {isDirty && saveState !== "saving" && saveState !== "conflict" && (
+            <>
+              <button
+                onClick={handleManualSave}
+                className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium text-green-400 hover:bg-white/10"
+              >
+                <Save className="h-3 w-3" /> Salvar
+              </button>
+              <button
+                onClick={handleDiscard}
+                className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-slate-400 hover:bg-white/10"
+              >
+                <X className="h-3 w-3" /> Descartar
+              </button>
+            </>
+          )}
+          {!isDirty && saveState === "idle" && (
+            <span className="text-[10px] text-slate-600">autosave ativo</span>
+          )}
+        </div>
       </div>
 
-      {editing ? (
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <style>{`
-            .dracula-editor::selection { background: #44475a; }
-            .dracula-editor::-moz-selection { background: #44475a; }
-            .dracula-editor::-webkit-scrollbar { width: 8px; height: 8px; }
-            .dracula-editor::-webkit-scrollbar-track { background: #282a36; }
-            .dracula-editor::-webkit-scrollbar-thumb { background: #44475a; border-radius: 4px; }
-            .dracula-editor::-webkit-scrollbar-thumb:hover { background: #6272a4; }
-          `}</style>
-          <textarea
-            autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            spellCheck={false}
-            className="dracula-editor h-full w-full resize-none p-4 font-mono text-[13px] outline-none"
-            style={{
-              tabSize: 2,
-              background: "#282a36",
-              color: "#f8f8f2",
-              caretColor: "#bd93f9",
-              lineHeight: "1.65",
-            }}
-          />
-        </div>
-      ) : (
-        <div
-          className="min-h-0 flex-1 overflow-auto cursor-text"
-          onDoubleClick={startEdit}
-          title="Duplo clique para editar"
-        >
-          <SyntaxHighlighter
-            language={language}
-            style={oneDark}
-            showLineNumbers
-            customStyle={{ margin: 0, padding: "12px", fontSize: "12px", lineHeight: "1.5", background: "transparent", minHeight: "100%" }}
-            lineNumberStyle={{ color: "#636d83", fontSize: "11px", paddingRight: "16px" }}
-          >
-            {code || ""}
-          </SyntaxHighlighter>
-        </div>
-      )}
+      <div className="min-h-0 flex-1 overflow-auto">
+        <CodeMirror
+          value={draft}
+          extensions={extensions}
+          theme={oneDark}
+          onChange={handleChange}
+          basicSetup={{
+            lineNumbers: true,
+            foldGutter: true,
+            highlightActiveLineGutter: true,
+            highlightActiveLine: true,
+            autocompletion: true,
+            bracketMatching: true,
+            indentOnInput: true,
+            tabSize: 2,
+          }}
+          style={{ fontSize: "12px", minHeight: "100%", height: "100%" }}
+        />
+      </div>
     </div>
   );
 }

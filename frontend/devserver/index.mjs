@@ -62,7 +62,7 @@ function sendEvent(jobId, event) {
 function withCors(res) {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
 }
 
 function readBody(req) {
@@ -339,6 +339,191 @@ const server = http.createServer(async (req, res) => {
       }, 200);
     });
     return;
+  }
+
+  // --- Git: diff, log, revert ---
+
+  if (req.method === "GET" && url.pathname === "/api/git/diff") {
+    const localPath = url.searchParams.get("localPath");
+    const workspace = url.searchParams.get("workspace");
+    const filePath = url.searchParams.get("file") || "";
+    let base;
+    if (localPath) {
+      base = localPath.startsWith("~") ? path.join(process.env.HOME || "/root", localPath.slice(1)) : localPath;
+    } else {
+      base = workspace ? workspacePath(workspace) : ROOT;
+    }
+    exec("git rev-parse --show-toplevel", { cwd: base }, (rootErr, rootOut) => {
+      if (rootErr) return sendJson(res, 200, { diff: "" });
+      const gitRoot = rootOut.trim();
+      const target = filePath ? `-- "${filePath}"` : "";
+      // Show staged + unstaged diff
+      exec(`git diff HEAD ${target}`, { cwd: gitRoot, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
+        return sendJson(res, 200, { diff: stdout || "" });
+      });
+    });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/git/log") {
+    const localPath = url.searchParams.get("localPath");
+    const workspace = url.searchParams.get("workspace");
+    let base;
+    if (localPath) {
+      base = localPath.startsWith("~") ? path.join(process.env.HOME || "/root", localPath.slice(1)) : localPath;
+    } else {
+      base = workspace ? workspacePath(workspace) : ROOT;
+    }
+    exec("git rev-parse --show-toplevel", { cwd: base }, (rootErr, rootOut) => {
+      if (rootErr) return sendJson(res, 200, { commits: [] });
+      const gitRoot = rootOut.trim();
+      exec(
+        `git log --pretty=format:'{"hash":"%H","short":"%h","subject":"%s","author":"%an","date":"%ci"}' -30`,
+        { cwd: gitRoot, maxBuffer: 1 * 1024 * 1024 },
+        (err, stdout) => {
+          if (err || !stdout.trim()) return sendJson(res, 200, { commits: [] });
+          const commits = stdout.trim().split("\n").map((line) => {
+            try { return JSON.parse(line); } catch { return null; }
+          }).filter(Boolean);
+          return sendJson(res, 200, { commits });
+        }
+      );
+    });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/git/revert") {
+    const raw = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(raw); } catch { return sendJson(res, 400, { error: "JSON inválido" }); }
+    const { file, localPath: lp, workspace: ws } = payload;
+    if (!file) return sendJson(res, 400, { error: "file é obrigatório" });
+    let base;
+    if (lp) {
+      base = lp.startsWith("~") ? path.join(process.env.HOME || "/root", lp.slice(1)) : lp;
+    } else {
+      base = ws ? workspacePath(ws) : ROOT;
+    }
+    exec("git rev-parse --show-toplevel", { cwd: base }, (rootErr, rootOut) => {
+      if (rootErr) return sendJson(res, 400, { error: "Não é um repositório git" });
+      const gitRoot = rootOut.trim();
+      exec(`git checkout HEAD -- "${file}"`, { cwd: gitRoot }, (err) => {
+        if (err) return sendJson(res, 500, { error: err.message });
+        return sendJson(res, 200, { success: true });
+      });
+    });
+    return;
+  }
+
+  // --- Arquivo: criar e deletar ---
+
+  if (req.method === "POST" && url.pathname === "/api/file/create") {
+    const raw = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(raw); } catch { return sendJson(res, 400, { error: "JSON inválido" }); }
+    const { path: relPath, isFolder, content, localPath: lp, workspace: ws } = payload;
+    if (!relPath) return sendJson(res, 400, { error: "path é obrigatório" });
+    let base;
+    if (lp) {
+      base = lp.startsWith("~") ? path.join(process.env.HOME || "/root", lp.slice(1)) : lp;
+    } else {
+      base = ws ? workspacePath(ws) : ROOT;
+    }
+    const fullPath = path.normalize(path.join(base, relPath));
+    if (!fullPath.startsWith(path.normalize(base))) return sendJson(res, 403, { error: "Caminho não permitido" });
+    try {
+      if (isFolder) {
+        fs.mkdirSync(fullPath, { recursive: true });
+      } else {
+        fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+        fs.writeFileSync(fullPath, content || "", "utf-8");
+      }
+      return sendJson(res, 200, { success: true });
+    } catch (err) {
+      return sendJson(res, 500, { error: err.message });
+    }
+  }
+
+  if (req.method === "DELETE" && url.pathname === "/api/file/delete") {
+    const raw = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(raw); } catch { return sendJson(res, 400, { error: "JSON inválido" }); }
+    const { path: relPath, localPath: lp, workspace: ws } = payload;
+    if (!relPath) return sendJson(res, 400, { error: "path é obrigatório" });
+    let base;
+    if (lp) {
+      base = lp.startsWith("~") ? path.join(process.env.HOME || "/root", lp.slice(1)) : lp;
+    } else {
+      base = ws ? workspacePath(ws) : ROOT;
+    }
+    const fullPath = path.normalize(path.join(base, relPath));
+    if (!fullPath.startsWith(path.normalize(base))) return sendJson(res, 403, { error: "Caminho não permitido" });
+    try {
+      fs.rmSync(fullPath, { recursive: true, force: true });
+      return sendJson(res, 200, { success: true });
+    } catch (err) {
+      return sendJson(res, 500, { error: err.message });
+    }
+  }
+
+  // --- Busca global no projeto ---
+
+  if (req.method === "GET" && url.pathname === "/api/search") {
+    const localPath = url.searchParams.get("localPath");
+    const workspace = url.searchParams.get("workspace");
+    const query = url.searchParams.get("q") || "";
+    if (!query.trim()) return sendJson(res, 200, { results: [] });
+    let base;
+    if (localPath) {
+      base = localPath.startsWith("~") ? path.join(process.env.HOME || "/root", localPath.slice(1)) : localPath;
+    } else {
+      base = workspace ? workspacePath(workspace) : ROOT;
+    }
+    const searchDir = path.join(base, "src");
+    if (!fs.existsSync(searchDir)) return sendJson(res, 200, { results: [] });
+    const escaped = query.replace(/'/g, "'\\''");
+    exec(
+      `grep -rn --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.css" --include="*.json" -i '${escaped}' . 2>/dev/null | head -100`,
+      { cwd: searchDir, maxBuffer: 1 * 1024 * 1024 },
+      (err, stdout) => {
+        if (!stdout) return sendJson(res, 200, { results: [] });
+        const results = stdout.trim().split("\n").filter(Boolean).map((line) => {
+          const colonIdx1 = line.indexOf(":");
+          const colonIdx2 = line.indexOf(":", colonIdx1 + 1);
+          if (colonIdx1 < 0 || colonIdx2 < 0) return null;
+          return {
+            file: "src/" + line.slice(0, colonIdx1),
+            line: parseInt(line.slice(colonIdx1 + 1, colonIdx2), 10) || 0,
+            text: line.slice(colonIdx2 + 1).trim(),
+          };
+        }).filter(Boolean);
+        return sendJson(res, 200, { results });
+      }
+    );
+    return;
+  }
+
+  // --- Hash de arquivo (conflito ao salvar) ---
+
+  if (req.method === "GET" && url.pathname === "/api/file/hash") {
+    const localPath = url.searchParams.get("localPath");
+    const workspace = url.searchParams.get("workspace");
+    const filePath = url.searchParams.get("path") || "";
+    if (!filePath) return sendJson(res, 400, { error: "path é obrigatório" });
+    let base;
+    if (localPath) {
+      base = localPath.startsWith("~") ? path.join(process.env.HOME || "/root", localPath.slice(1)) : localPath;
+    } else {
+      base = workspace ? workspacePath(workspace) : ROOT;
+    }
+    const fullPath = path.normalize(path.join(base, filePath));
+    if (!fullPath.startsWith(path.normalize(base))) return sendJson(res, 403, { error: "Caminho não permitido" });
+    try {
+      const stat = fs.statSync(fullPath);
+      return sendJson(res, 200, { hash: `${stat.mtimeMs}_${stat.size}` });
+    } catch {
+      return sendJson(res, 404, { error: "Arquivo não encontrado" });
+    }
   }
 
   // --- Workspaces (projetos SECUNDÁRIOS: processo + porta próprios) ---

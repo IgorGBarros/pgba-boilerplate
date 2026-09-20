@@ -65,7 +65,7 @@ export function useChatPersistence(namespace = DEFAULT_NS) {
   const [history, setHistory] = useState<Conversation[]>(() => loadHistory(ns));
 
   useEffect(() => {
-    try { localStorage.setItem(msgKey(ns), serializeMessages(messages)); } catch {}
+    try { localStorage.setItem(msgKey(ns), serializeMessages(messages)); } catch { /* private window */ }
   }, [messages, ns]);
 
   useEffect(() => {
