@@ -25,8 +25,10 @@ import {
   importProject,
   createTask,
   listAgents,
+  listProjects,
   listSectors,
   type Agent,
+  type Project,
   type Sector,
 } from "@/lib/api";
 
@@ -298,8 +300,10 @@ export function NewTaskDialog({
   const [brief, setBrief] = useState("");
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [sectorId, setSectorId] = useState<string>("");
   const [agentId, setAgentId] = useState<string>("");
+  const [projectId, setProjectId] = useState<string>("none");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -314,6 +318,9 @@ export function NewTaskDialog({
           setSectorId(String(match?.id ?? s[0]!.id));
         }
       })
+      .catch(console.error);
+    listProjects()
+      .then((p) => setProjects(p.filter((x) => x.status === "ready")))
       .catch(console.error);
   }, [open, initialSectorName]);
 
@@ -332,10 +339,15 @@ export function NewTaskDialog({
     if (!brief.trim() || !agentId) return;
     setLoading(true);
     try {
-      await createTask({ agentId: Number(agentId), brief: brief.trim() });
+      await createTask({
+        agentId: Number(agentId),
+        brief: brief.trim(),
+        projectId: projectId !== "none" ? Number(projectId) : undefined,
+      });
       toast.success("Tarefa criada");
       onOpenChange(false);
       setBrief("");
+      setProjectId("none");
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao criar tarefa");
     } finally {
@@ -401,6 +413,25 @@ export function NewTaskDialog({
             </div>
           </div>
         </div>
+
+        {projects.length > 0 && (
+          <div className="space-y-2">
+            <Label>Projeto (opcional)</Label>
+            <Select value={projectId} onValueChange={setProjectId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Nenhum" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Nenhum</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
