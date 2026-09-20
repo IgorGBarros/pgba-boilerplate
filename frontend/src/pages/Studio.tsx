@@ -5,7 +5,6 @@ import {
   ClipboardList,
   ScrollText,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Overview } from "@/components/empresa/overview";
@@ -17,8 +16,8 @@ import { NewTaskDialog } from "@/components/empresa/dialogs";
 import GeneratePanel from "@/components/builder/GeneratePanel";
 import { Toaster } from "sonner";
 
+// "gerar" não aparece na barra — só abre via openGerar(projectId)
 const tabs = [
-  { id: "gerar", label: "Gerar", icon: Sparkles },
   { id: "empresa", label: "Empresa", icon: Building2 },
   { id: "tarefas", label: "Tarefas", icon: ClipboardList },
   { id: "aprovacoes", label: "Aprovações", icon: ShieldCheck },
