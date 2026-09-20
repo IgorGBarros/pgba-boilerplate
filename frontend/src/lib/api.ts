@@ -390,6 +390,7 @@ export interface Task {
   id: number;
   agent: number;
   agent_name: string;
+  sector_name: string | null;
   project: number | null;
   project_name: string | null;
   brief: string;
