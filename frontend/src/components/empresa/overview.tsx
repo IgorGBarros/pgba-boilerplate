@@ -8,6 +8,9 @@ import {
   Database,
   FileText,
   FolderTree,
+  Handshake,
+  Landmark,
+  Layers,
   MessageSquare,
   PauseCircle,
   Pencil,
@@ -16,6 +19,7 @@ import {
   Save,
   Settings,
   ShoppingCart,
+  ShieldCheck,
   Trash2,
   TrendingUp,
   Users,
@@ -50,6 +54,10 @@ import {
 } from "@/components/empresa/dialogs";
 import { SectorDetailPage } from "@/components/empresa/mercado";
 import { Projects } from "@/components/empresa/projects";
+import { CRMView } from "@/components/empresa/crm";
+import { ERPView } from "@/components/empresa/erp";
+import { ControladoriaView } from "@/components/empresa/controladoria";
+import { DataLakeView } from "@/components/empresa/datalake";
 import SettingsModal from "@/components/builder/SettingsModal";
 import { DEFAULT_SETTINGS, type AppSettings } from "@/types/settings";
 import { aiModels } from "@/lib/pgba-data";
@@ -1074,7 +1082,7 @@ function VisaoGeral({ onNewTask, onSectorClick }: { onNewTask: (sector?: string)
 // ─── Main: EmpresaView (exported as Overview for backwards compat) ────────────
 
 export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: string) => void; onOpenGerar?: (projectId?: number) => void }) {
-  const [subTab, setSubTab] = useState<"overview" | "projects" | "office">("overview");
+  const [subTab, setSubTab] = useState<"overview" | "crm" | "erp" | "controladoria" | "datalake" | "projects" | "office">("overview");
   const [newProject, setNewProject] = useState(false);
   const [importProject, setImportProject] = useState(false);
   const [selectedSector, setSelectedSector] = useState<Sector | null>(null);
@@ -1085,10 +1093,26 @@ export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: stri
     <div className={subTab === "office" ? "-mx-4 md:-mx-6 -mt-4 md:-mt-6 flex flex-col" : ""}>
       {/* Sub-tab nav — oculta no detalhe de setor */}
       {!selectedSector && (
-        <div className={`flex items-center gap-1 border-b border-border ${subTab === "office" ? "px-4 py-2 bg-background" : "pb-4 mb-2"}`}>
+        <div className={`flex items-center gap-1 border-b border-border overflow-x-auto ${subTab === "office" ? "px-4 py-2 bg-background" : "pb-4 mb-2"}`}>
           <SubTabBtn active={subTab === "overview"} onClick={() => setSubTab("overview")}>
             <Building2 className="size-4" />
             Visão Geral
+          </SubTabBtn>
+          <SubTabBtn active={subTab === "crm"} onClick={() => setSubTab("crm")}>
+            <Handshake className="size-4" />
+            CRM
+          </SubTabBtn>
+          <SubTabBtn active={subTab === "erp"} onClick={() => setSubTab("erp")}>
+            <Layers className="size-4" />
+            ERP
+          </SubTabBtn>
+          <SubTabBtn active={subTab === "controladoria"} onClick={() => setSubTab("controladoria")}>
+            <ShieldCheck className="size-4" />
+            Controladoria
+          </SubTabBtn>
+          <SubTabBtn active={subTab === "datalake"} onClick={() => setSubTab("datalake")}>
+            <Landmark className="size-4" />
+            DataLake
           </SubTabBtn>
           <SubTabBtn active={subTab === "projects"} onClick={() => setSubTab("projects")}>
             <FolderTree className="size-4" />
@@ -1098,7 +1122,7 @@ export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: stri
             <Cuboid className="size-4" />
             Escritório 3D
           </SubTabBtn>
-          <div className="ml-auto">
+          <div className="ml-auto shrink-0">
             <button
               onClick={() => setSettingsOpen(true)}
               title="Configurações"
@@ -1118,6 +1142,14 @@ export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: stri
       {!selectedSector && subTab === "overview" && (
         <VisaoGeral onNewTask={onNewTask} onSectorClick={setSelectedSector} />
       )}
+
+      {subTab === "crm" && <CRMView />}
+
+      {subTab === "erp" && <ERPView />}
+
+      {subTab === "controladoria" && <ControladoriaView />}
+
+      {subTab === "datalake" && <DataLakeView />}
 
       {subTab === "projects" && (
         <div className="space-y-4">

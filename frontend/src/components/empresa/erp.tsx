@@ -9,7 +9,6 @@ import {
   Briefcase,
   Building2,
   Calendar,
-  CheckCircle2,
   ChevronRight,
   ClipboardList,
   Clock,
@@ -19,7 +18,6 @@ import {
   Eye,
   FileText,
   Filter,
-  Layers,
   Package,
   Plus,
   Receipt,
@@ -374,7 +372,8 @@ function TabEstoque() {
 
 // ─── Tab: Financeiro ──────────────────────────────────────────────────────────
 
-function TabelaFinanceiro({ rows, tipo }: { rows: typeof contasReceber; tipo: "receber" | "pagar" }) {
+type FinanceiroRow = { descricao: string; vencimento: string; valor: number; status: string; cliente?: string; fornecedor?: string };
+function TabelaFinanceiro({ rows, tipo }: { rows: FinanceiroRow[]; tipo: "receber" | "pagar" }) {
   return (
     <div className="panel-elevated rounded-card overflow-hidden">
       <div className="flex items-center justify-between p-4 border-b border-border">
@@ -438,7 +437,7 @@ function TabFinanceiro() {
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TabelaFinanceiro rows={contasReceber} tipo="receber" />
-        <TabelaFinanceiro rows={contasPagar as typeof contasReceber} tipo="pagar" />
+        <TabelaFinanceiro rows={contasPagar} tipo="pagar" />
       </div>
     </div>
   );

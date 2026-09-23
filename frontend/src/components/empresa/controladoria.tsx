@@ -2,14 +2,8 @@ import { useState } from "react"
 import {
   TrendingUp,
   TrendingDown,
-  AlertTriangle,
-  Shield,
-  Activity,
-  Users,
-  Bell,
   ChevronDown,
   ChevronRight,
-  FileText,
   Lock,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -235,13 +229,13 @@ function TabControladoria() {
       {/* KPI row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {KPI_CONTROLADORIA.map((k) => (
-          <Metric key={k.label} label={k.label} value={k.value} sub={k.sub} />
+          <Metric key={k.label} label={k.label} value={k.value} />
         ))}
       </div>
 
       {/* Budget vs Realizado */}
       <div className="panel-elevated rounded-md p-4 space-y-3">
-        <SectionHeader title="Budget vs Realizado" icon={<FileText size={15} />} />
+        <SectionHeader title="Budget vs Realizado" />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -283,13 +277,13 @@ function TabControladoria() {
 
       {/* Evolução Mensal */}
       <div className="panel-elevated rounded-md p-4 space-y-3">
-        <SectionHeader title="Evolução Mensal — Receita vs Despesas" icon={<Activity size={15} />} />
+        <SectionHeader title="Evolução Mensal — Receita vs Despesas" />
         <BarChart />
       </div>
 
       {/* Top Desvios */}
       <div className="panel-elevated rounded-md p-4 space-y-3">
-        <SectionHeader title="Top Desvios Orçamentários" icon={<AlertTriangle size={15} />} />
+        <SectionHeader title="Top Desvios Orçamentários" />
         <ul className="space-y-2">
           {TOP_DESVIOS.map((d) => (
             <li key={d.area} className="flex items-start gap-3 p-2.5 bg-secondary rounded-md border border-border">
@@ -326,13 +320,13 @@ function TabAuditoria() {
       {/* KPI row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {KPI_AUDITORIA.map((k) => (
-          <Metric key={k.label} label={k.label} value={k.value} sub={k.sub} />
+          <Metric key={k.label} label={k.label} value={k.value} />
         ))}
       </div>
 
       {/* Trilha de Auditoria */}
       <div className="panel-elevated rounded-md p-4 space-y-3">
-        <SectionHeader title="Trilha de Auditoria" icon={<Shield size={15} />} />
+        <SectionHeader title="Trilha de Auditoria" />
 
         {/* Filters */}
         <div className="flex flex-wrap gap-2">
@@ -409,7 +403,7 @@ function TabAuditoria() {
       {/* Alertas de Conformidade */}
       <div className="panel-elevated rounded-md p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <SectionHeader title="Alertas de Conformidade" icon={<Bell size={15} />} />
+          <SectionHeader title="Alertas de Conformidade" />
           <Badge className="bg-destructive text-destructive-foreground text-xs">
             {ALERTAS.filter((a) => a.severidade === "Crítico").length} críticos
           </Badge>

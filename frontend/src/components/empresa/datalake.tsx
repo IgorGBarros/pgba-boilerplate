@@ -6,7 +6,6 @@ import {
   ChevronDown,
   ChevronRight,
   FileText,
-  Tag,
   Clock,
   CheckCircle2,
   Circle,
@@ -497,8 +496,6 @@ function CatalogTab() {
   const totalRows = SCHEMAS.reduce((s, sc) => s + sc.tables.reduce((t, tb) => t + tb.rows, 0), 0);
 
   const activeSchema = SCHEMAS.find((s) => s.id === selectedSchema)!;
-  const activeTable = activeSchema.tables.find((t) => t.name === selectedTable) ?? null;
-
   return (
     <div className="space-y-5">
       {/* KPI row */}
