@@ -1289,6 +1289,34 @@ export async function createObrigacaoFiscal(data: Partial<ObrigacaoFiscal>): Pro
   return request<ObrigacaoFiscal>("/api/v1/erp/obrigacoes-fiscais/", { method: "POST", body: JSON.stringify(data) });
 }
 
+export interface LinhaDRE {
+  id: number;
+  conta: string;
+  valor_atual: string;
+  valor_anterior: string;
+  tipo: "receita" | "deducao" | "subtotal" | "custo" | "despesa" | "imposto" | "resultado";
+  competencia: string;
+  ordem: number;
+}
+
+export interface BalancetePeriodo {
+  id: number;
+  competencia: string;
+  ativo_total: string;
+  passivo_total: string;
+  patrimonio_liquido: string;
+}
+
+export async function listLinhasDRE(params?: Record<string, string>): Promise<LinhaDRE[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<LinhaDRE>(`/api/v1/erp/linhas-dre/${qs}`);
+}
+
+export async function listBalancete(params?: Record<string, string>): Promise<BalancetePeriodo[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<BalancetePeriodo>(`/api/v1/erp/balancete/${qs}`);
+}
+
 // ─── DataLake ─────────────────────────────────────────────────────────────────
 
 export interface SyncEvent {

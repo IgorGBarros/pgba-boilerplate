@@ -53,32 +53,17 @@ import {
   type Funcionario,
   type NotaFiscal,
   type ObrigacaoFiscal,
+  type LinhaDRE,
+  type BalancetePeriodo,
   listOrdensCompra,
   listEstoque,
   listLancamentosFinanceiros,
   listFuncionarios,
   listNotasFiscais,
   listObrigacoesFiscais,
+  listLinhasDRE,
+  listBalancete,
 } from "@/lib/api";
-
-// ─── Static data (no backend model for DRE) ──────────────────────────────────
-
-const dreLinhas = [
-  { conta: "Receita Bruta de Vendas", atual: 312500, anterior: 285000, tipo: "receita" },
-  { conta: "Deduções (Impostos s/ Vendas)", atual: -46875, anterior: -42750, tipo: "deducao" },
-  { conta: "Receita Líquida", atual: 265625, anterior: 242250, tipo: "subtotal" },
-  { conta: "CMV – Custo Mercadoria Vendida", atual: -98400, anterior: -91200, tipo: "custo" },
-  { conta: "Lucro Bruto", atual: 167225, anterior: 151050, tipo: "subtotal" },
-  { conta: "Despesas com Pessoal", atual: -48200, anterior: -46500, tipo: "despesa" },
-  { conta: "Despesas Administrativas", atual: -12400, anterior: -11800, tipo: "despesa" },
-  { conta: "Despesas Comerciais", atual: -8750, anterior: -7900, tipo: "despesa" },
-  { conta: "EBITDA", atual: 97875, anterior: 84850, tipo: "subtotal" },
-  { conta: "Depreciação e Amortização", atual: -4200, anterior: -4100, tipo: "despesa" },
-  { conta: "Resultado Financeiro Líquido", atual: -2300, anterior: -1950, tipo: "despesa" },
-  { conta: "Lucro Antes do IR", atual: 91375, anterior: 78800, tipo: "subtotal" },
-  { conta: "Imposto de Renda + CSLL", atual: -18275, anterior: -15760, tipo: "imposto" },
-  { conta: "Lucro Líquido", atual: 73100, anterior: 63040, tipo: "resultado" },
-];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -461,18 +446,47 @@ function TabFinanceiro() {
 // ─── Tab: Contabilidade ───────────────────────────────────────────────────────
 
 function TabContabilidade() {
-  const receitaBruta = dreLinhas.find((d) => d.conta === "Receita Bruta de Vendas")!;
-  const deducoes     = dreLinhas.find((d) => d.conta === "Deduções (Impostos s/ Vendas)")!;
-  const receitaLiq   = dreLinhas.find((d) => d.conta === "Receita Líquida")!;
-  const ebitda       = dreLinhas.find((d) => d.conta === "EBITDA")!;
+  const [linhas, setLinhas] = useState<LinhaDRE[]>([]);
+  const [balancete, setBalancete] = useState<BalancetePeriodo | null>(null);
+
+  const competencia = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+
+  useEffect(() => {
+    listLinhasDRE({ competencia }).then(setLinhas).catch(() => {});
+    listBalancete({ competencia }).then((rows) => setBalancete(rows[0] ?? null)).catch(() => {});
+  }, [competencia]);
+
+  const findVal = (conta: string) => {
+    const row = linhas.find((l) => l.conta === conta);
+    return row ? parseFloat(row.valor_atual) : 0;
+  };
+
+  const receitaBruta = findVal("Receita Bruta de Vendas");
+  const deducoes = findVal("Deduções (Impostos s/ Vendas)");
+  const receitaLiq = findVal("Receita Líquida");
+  const lucroBruto = findVal("Lucro Bruto");
+  const ebitda = findVal("EBITDA");
+  const lucroLiq = findVal("Lucro Líquido");
+  const pl = balancete ? parseFloat(balancete.patrimonio_liquido) : 0;
+
+  const margemBruta   = receitaLiq !== 0 ? (lucroBruto / receitaLiq) * 100 : null;
+  const margemEbitda  = receitaLiq !== 0 ? (ebitda / receitaLiq) * 100 : null;
+  const margemLiquida = receitaLiq !== 0 ? (lucroLiq / receitaLiq) * 100 : null;
+  const roe           = pl !== 0 ? (lucroLiq / pl) * 100 : null;
+
+  const fmtPct = (v: number | null) => v !== null ? `${fmt(v, 1)}%` : "—";
+
+  const competenciaLabel = linhas[0]?.competencia
+    ? new Date(linhas[0].competencia + "-01").toLocaleString("pt-BR", { month: "long", year: "numeric" })
+    : "—";
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Receita Bruta"   value={fmtBRL(receitaBruta.atual)} icon={<TrendingUp size={16} />} tone="success" />
-        <Metric label="Deduções"        value={fmtBRL(Math.abs(deducoes.atual))} icon={<TrendingDown size={16} />} tone="warning" />
-        <Metric label="Receita Líquida" value={fmtBRL(receitaLiq.atual)} icon={<BarChart2 size={16} />} />
-        <Metric label="EBITDA"          value={fmtBRL(ebitda.atual)} icon={<DollarSign size={16} />} tone="success" />
+        <Metric label="Receita Bruta"   value={fmtBRL(receitaBruta)} icon={<TrendingUp size={16} />} tone="success" />
+        <Metric label="Deduções"        value={fmtBRL(Math.abs(deducoes))} icon={<TrendingDown size={16} />} tone="warning" />
+        <Metric label="Receita Líquida" value={fmtBRL(receitaLiq)} icon={<BarChart2 size={16} />} />
+        <Metric label="EBITDA"          value={fmtBRL(ebitda)} icon={<DollarSign size={16} />} tone="success" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -480,7 +494,7 @@ function TabContabilidade() {
           <div className="flex items-center justify-between p-4 border-b border-border">
             <div>
               <h3 className="text-sm font-semibold">DRE – Demonstração do Resultado</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">Competência: Setembro/2026</p>
+              <p className="text-xs text-muted-foreground mt-0.5 capitalize">Competência: {competenciaLabel}</p>
             </div>
             <Button size="sm" variant="outline" className="h-7 gap-1 text-xs">
               <Download size={12} /> Exportar
@@ -497,14 +511,22 @@ function TabContabilidade() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {dreLinhas.map((row, i) => {
-                  const var_ = variacao(row.atual, row.anterior);
+                {linhas.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-xs text-muted-foreground">
+                      Nenhum lançamento de DRE para este período.
+                    </td>
+                  </tr>
+                ) : linhas.map((row) => {
+                  const atual = parseFloat(row.valor_atual);
+                  const anterior = parseFloat(row.valor_anterior);
+                  const var_ = variacao(atual, anterior);
                   const isSubtotal = row.tipo === "subtotal" || row.tipo === "resultado";
-                  const isNegative = row.atual < 0;
+                  const isNegative = atual < 0;
                   const varPositive = var_ >= 0;
                   return (
                     <tr
-                      key={i}
+                      key={row.id}
                       className={`transition-colors ${
                         row.tipo === "resultado"
                           ? "bg-success/10 font-bold"
@@ -522,10 +544,10 @@ function TabContabilidade() {
                         ) : row.conta}
                       </td>
                       <td className={`px-4 py-2.5 text-right tabular-nums text-xs ${isNegative ? "text-warning" : isSubtotal ? "" : "text-success"}`}>
-                        {isNegative ? `(${fmtBRL(Math.abs(row.atual))})` : fmtBRL(row.atual)}
+                        {isNegative ? `(${fmtBRL(Math.abs(atual))})` : fmtBRL(atual)}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-xs text-muted-foreground">
-                        {row.anterior < 0 ? `(${fmtBRL(Math.abs(row.anterior))})` : fmtBRL(row.anterior)}
+                        {anterior < 0 ? `(${fmtBRL(Math.abs(anterior))})` : fmtBRL(anterior)}
                       </td>
                       <td className={`px-4 py-2.5 text-right tabular-nums text-xs font-medium ${varPositive ? "text-success" : "text-warning"}`}>
                         {varPositive ? "+" : ""}{fmt(var_, 1)}%
@@ -541,34 +563,38 @@ function TabContabilidade() {
         <div className="flex flex-col gap-4">
           <div className="panel-elevated rounded-card p-4">
             <h3 className="text-sm font-semibold mb-4">Balancete Resumido</h3>
-            <div className="space-y-3">
-              {[
-                { label: "Ativo Total",        value: 842300, tone: "success" as const },
-                { label: "Passivo Total",       value: 514800, tone: "warning" as const },
-                { label: "Patrimônio Líquido",  value: 327500, tone: "default" as const },
-              ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between rounded-md bg-secondary px-3 py-2.5">
-                  <span className="text-xs text-muted-foreground">{item.label}</span>
-                  <span className={`text-sm font-bold tabular-nums ${item.tone === "success" ? "text-success" : item.tone === "warning" ? "text-warning" : ""}`}>
-                    {fmtBRL(item.value)}
-                  </span>
+            {balancete ? (
+              <div className="space-y-3">
+                {[
+                  { label: "Ativo Total",       value: parseFloat(balancete.ativo_total),       tone: "success" as const },
+                  { label: "Passivo Total",      value: parseFloat(balancete.passivo_total),     tone: "warning" as const },
+                  { label: "Patrimônio Líquido", value: parseFloat(balancete.patrimonio_liquido), tone: "default" as const },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center justify-between rounded-md bg-secondary px-3 py-2.5">
+                    <span className="text-xs text-muted-foreground">{item.label}</span>
+                    <span className={`text-sm font-bold tabular-nums ${item.tone === "success" ? "text-success" : item.tone === "warning" ? "text-warning" : ""}`}>
+                      {fmtBRL(item.value)}
+                    </span>
+                  </div>
+                ))}
+                <div className="mt-2 rounded-md border border-border px-3 py-2.5 bg-elevated">
+                  <p className="text-xs text-muted-foreground">Equação contábil</p>
+                  <p className="text-xs font-medium mt-1">Ativo = Passivo + PL ✓</p>
                 </div>
-              ))}
-              <div className="mt-2 rounded-md border border-border px-3 py-2.5 bg-elevated">
-                <p className="text-xs text-muted-foreground">Equação contábil</p>
-                <p className="text-xs font-medium mt-1">Ativo = Passivo + PL ✓</p>
               </div>
-            </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">Sem balancete para este período.</p>
+            )}
           </div>
 
           <div className="panel-elevated rounded-card p-4">
             <h3 className="text-sm font-semibold mb-3">Indicadores</h3>
             <div className="space-y-2.5">
               {[
-                { label: "Margem Bruta",    value: "62,9%" },
-                { label: "Margem EBITDA",   value: "31,3%" },
-                { label: "Margem Líquida",  value: "23,4%" },
-                { label: "ROE (mensal)",    value: "22,3%" },
+                { label: "Margem Bruta",   value: fmtPct(margemBruta) },
+                { label: "Margem EBITDA",  value: fmtPct(margemEbitda) },
+                { label: "Margem Líquida", value: fmtPct(margemLiquida) },
+                { label: "ROE (mensal)",   value: fmtPct(roe) },
               ].map((ind) => (
                 <div key={ind.label} className="flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">{ind.label}</span>
