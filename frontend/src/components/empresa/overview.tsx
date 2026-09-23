@@ -696,15 +696,31 @@ function SubTabBtn({
 // ─── Visão Geral content ──────────────────────────────────────────────────────
 
 type ModuleKey = "crm" | "erp" | "controladoria" | "datalake";
+type ModuleState = { key: ModuleKey; erpTab?: string };
 
-const MODULE_CARDS: { key: ModuleKey; label: string; desc: string; icon: React.ElementType; color: string; bg: string; border: string }[] = [
-  { key: "crm", label: "CRM & Comercial", desc: "Pipeline, leads e atividades", icon: Handshake, color: "text-indigo-400", bg: "bg-indigo-500/10 hover:bg-indigo-500/20", border: "border-indigo-500/20 hover:border-indigo-400/40" },
-  { key: "erp", label: "ERP", desc: "Compras, estoque, financeiro, RH", icon: Layers, color: "text-emerald-400", bg: "bg-emerald-500/10 hover:bg-emerald-500/20", border: "border-emerald-500/20 hover:border-emerald-400/40" },
-  { key: "controladoria", label: "Controladoria", desc: "Budget, desvios e auditoria", icon: ShieldCheck, color: "text-amber-400", bg: "bg-amber-500/10 hover:bg-amber-500/20", border: "border-amber-500/20 hover:border-amber-400/40" },
-  { key: "datalake", label: "Data Lake", desc: "Catálogo, Obsidian, Databricks", icon: Landmark, color: "text-violet-400", bg: "bg-violet-500/10 hover:bg-violet-500/20", border: "border-violet-500/20 hover:border-violet-400/40" },
+// Map a sector name to its business module (returns null for sectors that use SectorDetailPage)
+function getSectorModule(name: string): ModuleState | null {
+  const n = name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (n.includes("comercial") || n.includes("vendas") || n.includes("crm")) return { key: "crm" };
+  if (n.includes("compras") || n.includes("procurement") || n.includes("suprimentos")) return { key: "erp", erpTab: "compras" };
+  if (n.includes("financeiro") || n.includes("financ")) return { key: "erp", erpTab: "financeiro" };
+  if (n.includes("contabilidade")) return { key: "erp", erpTab: "contabilidade" };
+  if (n.includes("fiscal") || n.includes("tributar")) return { key: "erp", erpTab: "fiscal" };
+  if (n.includes("rh") || n.includes("recursos humanos") || n.includes("people") || n.includes("pessoal")) return { key: "erp", erpTab: "rh" };
+  if (n.includes("estoque") || n.includes("operac") || n.includes("logistic")) return { key: "erp", erpTab: "estoque" };
+  if (n.includes("controladoria") || n.includes("auditoria") || n.includes("compliance")) return { key: "controladoria" };
+  if (n.includes("ti") || n.includes("tecnologia") || n.includes("dados") || n.includes("data")) return { key: "datalake" };
+  return null;
+}
+
+const MODULE_CARDS: { state: ModuleState; label: string; desc: string; icon: React.ElementType; color: string; bg: string; border: string }[] = [
+  { state: { key: "crm" }, label: "CRM & Comercial", desc: "Pipeline, leads e atividades", icon: Handshake, color: "text-indigo-400", bg: "bg-indigo-500/10 hover:bg-indigo-500/20", border: "border-indigo-500/20 hover:border-indigo-400/40" },
+  { state: { key: "erp" }, label: "ERP", desc: "Compras, estoque, financeiro, RH", icon: Layers, color: "text-emerald-400", bg: "bg-emerald-500/10 hover:bg-emerald-500/20", border: "border-emerald-500/20 hover:border-emerald-400/40" },
+  { state: { key: "controladoria" }, label: "Controladoria", desc: "Budget, desvios e auditoria", icon: ShieldCheck, color: "text-amber-400", bg: "bg-amber-500/10 hover:bg-amber-500/20", border: "border-amber-500/20 hover:border-amber-400/40" },
+  { state: { key: "datalake" }, label: "Data Lake", desc: "Catálogo, Obsidian, Databricks", icon: Landmark, color: "text-violet-400", bg: "bg-violet-500/10 hover:bg-violet-500/20", border: "border-violet-500/20 hover:border-violet-400/40" },
 ];
 
-function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (sector?: string) => void; onSectorClick: (sector: Sector) => void; onModuleClick: (m: ModuleKey) => void }) {
+function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (sector?: string) => void; onSectorClick: (sector: Sector) => void; onModuleClick: (m: ModuleState) => void }) {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [metrics, setMetrics] = useState<AgentMetricsOverview | null>(null);
@@ -868,6 +884,20 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
             const Icon = sectorIcons[inferIcon(sector.name)];
             const sectorAgents = agentsBySector[sector.id] ?? [];
             const hasRag = sector.knowledge_source !== null;
+            const sectorModule = getSectorModule(sector.name);
+
+            const MODULE_LABELS: Record<ModuleKey, string> = {
+              crm: "CRM",
+              erp: "ERP",
+              controladoria: "Controladoria",
+              datalake: "Data Lake",
+            };
+            const MODULE_COLORS: Record<ModuleKey, string> = {
+              crm: "border-indigo-500/40 text-indigo-400 bg-indigo-500/10",
+              erp: "border-emerald-500/40 text-emerald-400 bg-emerald-500/10",
+              controladoria: "border-amber-500/40 text-amber-400 bg-amber-500/10",
+              datalake: "border-violet-500/40 text-violet-400 bg-violet-500/10",
+            };
 
             return (
               <div key={sector.id} className="panel flex h-72 flex-col">
@@ -875,11 +905,16 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
                 <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border p-4">
                   <button
                     type="button"
-                    onClick={() => onSectorClick(sector)}
+                    onClick={() => sectorModule ? onModuleClick(sectorModule) : onSectorClick(sector)}
                     className="flex items-center gap-2 font-semibold hover:text-primary transition-colors"
                   >
                     <Icon className="size-5 text-primary" />
                     {sector.name}
+                    {sectorModule && (
+                      <span className={`ml-1 rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none ${MODULE_COLORS[sectorModule.key]}`}>
+                        {sectorModule.erpTab ? `ERP / ${sectorModule.erpTab}` : MODULE_LABELS[sectorModule.key]}
+                      </span>
+                    )}
                   </button>
                   <div className="flex items-center gap-1.5">
                     {/* RAG badge + add-agent button */}
@@ -1019,11 +1054,11 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
       <div>
         <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Módulos</p>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {MODULE_CARDS.map(({ key, label, desc, icon: Icon, color, bg, border }) => (
+          {MODULE_CARDS.map(({ state, label, desc, icon: Icon, color, bg, border }) => (
             <button
-              key={key}
+              key={state.key}
               type="button"
-              onClick={() => onModuleClick(key)}
+              onClick={() => onModuleClick(state)}
               className={`panel flex items-center gap-3 p-4 text-left transition-colors ${bg} ${border}`}
             >
               <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${bg} ${color}`}>
@@ -1120,7 +1155,7 @@ export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: stri
   const [newProject, setNewProject] = useState(false);
   const [importProject, setImportProject] = useState(false);
   const [selectedSector, setSelectedSector] = useState<Sector | null>(null);
-  const [selectedModule, setSelectedModule] = useState<ModuleKey | null>(null);
+  const [selectedModule, setSelectedModule] = useState<ModuleState | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
@@ -1159,16 +1194,16 @@ export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: stri
       )}
 
       {/* Módulos de negócio — página completa */}
-      {!selectedSector && selectedModule === "crm" && (
+      {!selectedSector && selectedModule?.key === "crm" && (
         <CRMView onBack={() => setSelectedModule(null)} />
       )}
-      {!selectedSector && selectedModule === "erp" && (
-        <ERPView onBack={() => setSelectedModule(null)} />
+      {!selectedSector && selectedModule?.key === "erp" && (
+        <ERPView onBack={() => setSelectedModule(null)} defaultTab={selectedModule.erpTab} />
       )}
-      {!selectedSector && selectedModule === "controladoria" && (
+      {!selectedSector && selectedModule?.key === "controladoria" && (
         <ControladoriaView onBack={() => setSelectedModule(null)} />
       )}
-      {!selectedSector && selectedModule === "datalake" && (
+      {!selectedSector && selectedModule?.key === "datalake" && (
         <DataLakeView onBack={() => setSelectedModule(null)} />
       )}
 

@@ -781,7 +781,7 @@ function TabFiscal() {
 
 // ─── Root export ──────────────────────────────────────────────────────────────
 
-export function ERPView({ onBack }: { onBack: () => void }) {
+export function ERPView({ onBack, defaultTab = "compras" }: { onBack: () => void; defaultTab?: string }) {
   return (
     <div className="space-y-6">
       {/* ── Page Header ─────────────────────────────────────────────────────── */}
@@ -810,7 +810,7 @@ export function ERPView({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <Tabs defaultValue="compras" className="space-y-6">
+      <Tabs defaultValue={defaultTab} className="space-y-6">
         <TabsList className="h-9 gap-1 bg-secondary p-1 rounded-md flex-wrap">
           <TabsTrigger value="compras" className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
             <ShoppingCart size={13} /> Compras
