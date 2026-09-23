@@ -66,9 +66,12 @@ class Contato(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
 
 class Oportunidade(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     STATUS_CHOICES = [
-        ("aberta", "Aberta"),
-        ("ganha", "Ganha"),
-        ("perdida", "Perdida"),
+        ("prospeccao", "Prospecção"),
+        ("qualificacao", "Qualificação"),
+        ("proposta", "Proposta"),
+        ("negociacao", "Negociação"),
+        ("ganho", "Ganho"),
+        ("perdido", "Perdido"),
     ]
 
     titulo = models.CharField(max_length=255)
@@ -76,7 +79,7 @@ class Oportunidade(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         Lead, on_delete=models.CASCADE, related_name="oportunidades"
     )
     valor = models.DecimalField(max_digits=14, decimal_places=2, default=0)
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="aberta")
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="prospeccao")
     data_fechamento_previsto = models.DateField(null=True, blank=True)
     observacoes = models.TextField(blank=True)
     created_at = models.DateTimeField(default=timezone.now)

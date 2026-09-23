@@ -774,8 +774,9 @@ export interface Oportunidade {
   titulo: string;
   lead: number;
   lead_nome: string;
+  lead_empresa: string;
   valor: string;
-  status: "aberta" | "ganha" | "perdida";
+  status: "prospeccao" | "qualificacao" | "proposta" | "negociacao" | "ganho" | "perdido";
   data_fechamento_previsto: string | null;
   observacoes: string;
   created_at: string;

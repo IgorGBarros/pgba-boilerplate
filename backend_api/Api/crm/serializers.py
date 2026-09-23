@@ -27,14 +27,15 @@ class ContatoSerializer(serializers.ModelSerializer):
 
 class OportunidadeSerializer(serializers.ModelSerializer):
     lead_nome = serializers.CharField(source="lead.nome", read_only=True)
+    lead_empresa = serializers.CharField(source="lead.empresa", read_only=True)
 
     class Meta:
         model = Oportunidade
         fields = [
-            "id", "titulo", "lead", "lead_nome", "valor", "status",
+            "id", "titulo", "lead", "lead_nome", "lead_empresa", "valor", "status",
             "data_fechamento_previsto", "observacoes", "created_at",
         ]
-        read_only_fields = ["id", "lead_nome", "created_at"]
+        read_only_fields = ["id", "lead_nome", "lead_empresa", "created_at"]
 
 
 class AtividadeCRMSerializer(serializers.ModelSerializer):
