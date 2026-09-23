@@ -121,7 +121,7 @@ def answer_question(
     except OrchestrationError as exc:
         log.status = QueryLog.Status.LLM_ERROR
         log.error_message = str(exc)
-        _finish(log, start)
+        _finish(log, start, prompt_text=question, provider=provider)
         return {
             "answer": "Não consegui processar sua pergunta agora. Tente novamente em instantes.",
             "function_called": None, "sources": [], "status": log.status,
@@ -221,7 +221,7 @@ PERGUNTA: {question}
 
     log.answer = answer_text
     log.status = QueryLog.Status.OK
-    _finish(log, start)
+    _finish(log, start, prompt_text=final_prompt, answer_text=answer_text, provider=provider)
 
     return {
         "answer": answer_text,
@@ -229,6 +229,28 @@ PERGUNTA: {question}
     }
 
 
-def _finish(log: QueryLog, start: float) -> None:
+def _estimate_tokens(text: str) -> int:
+    """Heurística grosseira (chars/4) — troque por tokenizer real se precisar de precisão."""
+    return max(1, len(text) // 4)
+
+
+_PRICE_PER_1K = {
+    "ollama": "0.000000",
+    "openai": "0.002000",
+    "anthropic": "0.003000",
+    "groq": "0.000200",
+    "openrouter": "0.001000",
+}
+
+
+def _finish(log: QueryLog, start: float, prompt_text: str = "", answer_text: str = "", provider: str = "ollama") -> None:
     log.latency_ms = int((time.monotonic() - start) * 1000)
+    if not log.tokens_prompt and prompt_text:
+        log.tokens_prompt = _estimate_tokens(prompt_text)
+    if not log.tokens_completion and answer_text:
+        log.tokens_completion = _estimate_tokens(answer_text)
+    total_tokens = log.tokens_prompt + log.tokens_completion
+    from decimal import Decimal
+    price = Decimal(_PRICE_PER_1K.get(provider, "0.001000"))
+    log.cost_estimated_usd = (Decimal(total_tokens) / Decimal(1000)) * price
     log.save()

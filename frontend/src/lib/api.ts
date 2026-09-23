@@ -1186,3 +1186,155 @@ export async function listPipelines(): Promise<Pipeline[]> {
 export async function createPipeline(data: Partial<Pipeline>): Promise<Pipeline> {
   return request<Pipeline>("/api/v1/desenvolvimento/pipelines/", { method: "POST", body: JSON.stringify(data) });
 }
+
+// ─── Controladoria ────────────────────────────────────────────────────────────
+
+export interface CentroCusto {
+  id: number;
+  nome: string;
+  codigo: string;
+  budget: string;
+  realizado: string;
+  tendencia: "up" | "down" | "stable";
+  desvio: number;
+  pct_consumido: number;
+  created_at: string;
+}
+
+export interface EntradaAuditoria {
+  id: number;
+  usuario: string;
+  modulo: string;
+  acao: "CREATE" | "UPDATE" | "DELETE" | "LOGIN" | "EXPORT" | "VIEW";
+  recurso: string;
+  ip: string | null;
+  detalhes: string;
+  criticidade: "baixa" | "media" | "alta" | "critica";
+  created_at: string;
+}
+
+export interface AlertaConformidade {
+  id: number;
+  titulo: string;
+  severidade: "critico" | "alto" | "medio" | "baixo";
+  tags: string[];
+  descricao: string;
+  prazo: string | null;
+  status: "aberto" | "em_analise" | "resolvido" | "ignorado";
+  created_at: string;
+}
+
+export async function listCentrosCusto(): Promise<CentroCusto[]> {
+  return requestList<CentroCusto>("/api/v1/controladoria/centros-custo/");
+}
+export async function createCentroCusto(data: Partial<CentroCusto>): Promise<CentroCusto> {
+  return request<CentroCusto>("/api/v1/controladoria/centros-custo/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updateCentroCusto(id: number, data: Partial<CentroCusto>): Promise<CentroCusto> {
+  return request<CentroCusto>(`/api/v1/controladoria/centros-custo/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function listEntradasAuditoria(params?: Record<string, string>): Promise<EntradaAuditoria[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<EntradaAuditoria>(`/api/v1/controladoria/auditoria/${qs}`);
+}
+export async function createEntradaAuditoria(data: Partial<EntradaAuditoria>): Promise<EntradaAuditoria> {
+  return request<EntradaAuditoria>("/api/v1/controladoria/auditoria/", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function listAlertasConformidade(params?: Record<string, string>): Promise<AlertaConformidade[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<AlertaConformidade>(`/api/v1/controladoria/alertas/${qs}`);
+}
+export async function updateAlertaConformidade(id: number, data: Partial<AlertaConformidade>): Promise<AlertaConformidade> {
+  return request<AlertaConformidade>(`/api/v1/controladoria/alertas/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+// ─── ERP Fiscal ───────────────────────────────────────────────────────────────
+
+export interface NotaFiscal {
+  id: number;
+  numero: string;
+  cliente: string;
+  valor: string;
+  cfop: string;
+  status: "autorizada" | "pendente" | "cancelada" | "denegada";
+  emissao: string;
+  created_at: string;
+}
+
+export interface ObrigacaoFiscal {
+  id: number;
+  nome: string;
+  orgao: string;
+  vencimento: string;
+  competencia: string;
+  status: "pendente" | "entregue" | "vencida" | "agendada";
+  created_at: string;
+}
+
+export async function listNotasFiscais(params?: Record<string, string>): Promise<NotaFiscal[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<NotaFiscal>(`/api/v1/erp/notas-fiscais/${qs}`);
+}
+export async function createNotaFiscal(data: Partial<NotaFiscal>): Promise<NotaFiscal> {
+  return request<NotaFiscal>("/api/v1/erp/notas-fiscais/", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function listObrigacoesFiscais(params?: Record<string, string>): Promise<ObrigacaoFiscal[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<ObrigacaoFiscal>(`/api/v1/erp/obrigacoes-fiscais/${qs}`);
+}
+export async function createObrigacaoFiscal(data: Partial<ObrigacaoFiscal>): Promise<ObrigacaoFiscal> {
+  return request<ObrigacaoFiscal>("/api/v1/erp/obrigacoes-fiscais/", { method: "POST", body: JSON.stringify(data) });
+}
+
+// ─── DataLake ─────────────────────────────────────────────────────────────────
+
+export interface SyncEvent {
+  id: number;
+  source_name: string;
+  added: number;
+  updated: number;
+  removed: number;
+  duration_ms: number;
+  duration: string;
+  status: string;
+  error_message: string;
+  created_at: string;
+}
+
+export interface SchemaTable {
+  name: string;
+  rows: number;
+  columns: { name: string; type: string; nullable: boolean; description: string }[];
+  description: string;
+}
+
+export interface SchemaApp {
+  id: string;
+  label: string;
+  tables: SchemaTable[];
+}
+
+export interface ObsidianNote {
+  id: number;
+  title: string;
+  tags: string[];
+  last_modified: string | null;
+  chunks: number;
+  has_embedding: boolean;
+  status: "indexed" | "pending" | "excluded";
+}
+
+export async function listSyncEvents(): Promise<SyncEvent[]> {
+  return requestList<SyncEvent>("/api/v1/datalake/sync-events/");
+}
+
+export async function fetchSchemaCatalog(): Promise<SchemaApp[]> {
+  return request<SchemaApp[]>("/api/v1/datalake/schema/");
+}
+
+export async function listObsidianNotes(): Promise<ObsidianNote[]> {
+  return request<ObsidianNote[]>("/api/v1/datalake/obsidian-notes/");
+}

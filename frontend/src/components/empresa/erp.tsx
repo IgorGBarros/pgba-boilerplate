@@ -51,13 +51,17 @@ import {
   type ItemEstoque,
   type LancamentoFinanceiro,
   type Funcionario,
+  type NotaFiscal,
+  type ObrigacaoFiscal,
   listOrdensCompra,
   listEstoque,
   listLancamentosFinanceiros,
   listFuncionarios,
+  listNotasFiscais,
+  listObrigacoesFiscais,
 } from "@/lib/api";
 
-// ─── Static data (no backend model) ──────────────────────────────────────────
+// ─── Static data (no backend model for DRE) ──────────────────────────────────
 
 const dreLinhas = [
   { conta: "Receita Bruta de Vendas", atual: 312500, anterior: 285000, tipo: "receita" },
@@ -74,23 +78,6 @@ const dreLinhas = [
   { conta: "Lucro Antes do IR", atual: 91375, anterior: 78800, tipo: "subtotal" },
   { conta: "Imposto de Renda + CSLL", atual: -18275, anterior: -15760, tipo: "imposto" },
   { conta: "Lucro Líquido", atual: 73100, anterior: 63040, tipo: "resultado" },
-];
-
-const notasFiscais = [
-  { numero: "000.001.423", cliente: "Alfa Sistemas Ltda", valor: 4800.0, cfop: "5102", status: "Autorizada", emissao: "2026-09-22" },
-  { numero: "000.001.422", cliente: "Beta Corp S.A.", valor: 12000.0, cfop: "5102", status: "Autorizada", emissao: "2026-09-20" },
-  { numero: "000.001.421", cliente: "Gamma Indústria", valor: 9500.0, cfop: "5101", status: "Pendente", emissao: "2026-09-19" },
-  { numero: "000.001.420", cliente: "Delta Varejo ME", valor: 22000.0, cfop: "5102", status: "Autorizada", emissao: "2026-09-15" },
-  { numero: "000.001.419", cliente: "Epsilon Serviços", valor: 3200.0, cfop: "5933", status: "Cancelada", emissao: "2026-09-10" },
-  { numero: "000.001.418", cliente: "Zeta Comércio", valor: 6750.0, cfop: "5102", status: "Autorizada", emissao: "2026-09-08" },
-];
-
-const obrigacoesFiscais = [
-  { nome: "DCTF Mensal", orgao: "Receita Federal", vencimento: "2026-10-15", competencia: "Setembro/2026", status: "Pendente" },
-  { nome: "SPED Fiscal", orgao: "SEFAZ", vencimento: "2026-10-20", competencia: "Setembro/2026", status: "Pendente" },
-  { nome: "EFD-Reinf", orgao: "Receita Federal", vencimento: "2026-10-15", competencia: "Setembro/2026", status: "Pendente" },
-  { nome: "GFIP/SEFIP", orgao: "Caixa Econômica", vencimento: "2026-10-07", competencia: "Setembro/2026", status: "Pendente" },
-  { nome: "DASN-SIMEI", orgao: "Receita Federal", vencimento: "2026-10-31", competencia: "2025 (Anual)", status: "Agendado" },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -162,12 +149,19 @@ function StatusBadgeRH({ status }: { status: Funcionario["status"] }) {
 
 function StatusBadgeFiscal({ status }: { status: string }) {
   const map: Record<string, string> = {
-    Autorizada: "bg-success text-foreground",
-    Cancelada:  "bg-warning text-foreground",
-    Pendente:   "bg-secondary text-muted-foreground border border-border",
-    Agendado:   "bg-primary text-primary-foreground",
+    autorizada: "bg-success text-foreground",
+    cancelada:  "bg-warning text-foreground",
+    denegada:   "bg-destructive/20 text-destructive",
+    pendente:   "bg-secondary text-muted-foreground border border-border",
+    agendada:   "bg-primary text-primary-foreground",
+    entregue:   "bg-success text-foreground",
+    vencida:    "bg-destructive/20 text-destructive",
   };
-  return <Badge className={map[status] ?? "bg-secondary text-muted-foreground"}>{status}</Badge>;
+  const label: Record<string, string> = {
+    autorizada: "Autorizada", cancelada: "Cancelada", denegada: "Denegada",
+    pendente: "Pendente", agendada: "Agendada", entregue: "Entregue", vencida: "Vencida",
+  };
+  return <Badge className={map[status] ?? "bg-secondary text-muted-foreground"}>{label[status] ?? status}</Badge>;
 }
 
 // ─── Tab: Compras ─────────────────────────────────────────────────────────────
@@ -700,13 +694,25 @@ function TabRH() {
 // ─── Tab: Fiscal ──────────────────────────────────────────────────────────────
 
 function TabFiscal() {
+  const [notas, setNotas] = useState<NotaFiscal[]>([]);
+  const [obrigacoes, setObrigacoes] = useState<ObrigacaoFiscal[]>([]);
   const [search, setSearch] = useState("");
-  const nfeAutorizadas = notasFiscais.filter((n) => n.status === "Autorizada").length;
-  const nfePendentes   = notasFiscais.filter((n) => n.status === "Pendente").length;
-  const impostosMes    = 46875 + 18275;
-  const proxObrigacao  = "GFIP – 07/Out";
 
-  const filtered = notasFiscais.filter(
+  useEffect(() => {
+    listNotasFiscais().then(setNotas).catch(() => {});
+    listObrigacoesFiscais().then(setObrigacoes).catch(() => {});
+  }, []);
+
+  const nfeAutorizadas = notas.filter((n) => n.status === "autorizada").length;
+  const nfePendentes   = notas.filter((n) => n.status === "pendente").length;
+  const impostosMes    = notas
+    .filter((n) => n.status === "autorizada")
+    .reduce((acc, n) => acc + parseFloat(n.valor) * 0.15, 0);
+  const proxObrigacao  = obrigacoes
+    .filter((o) => o.status === "pendente")
+    .sort((a, b) => a.vencimento.localeCompare(b.vencimento))[0];
+
+  const filtered = notas.filter(
     (n) =>
       n.numero.includes(search) ||
       n.cliente.toLowerCase().includes(search.toLowerCase()) ||
@@ -719,7 +725,12 @@ function TabFiscal() {
         <Metric label="NF-e Emitidas"      value={String(nfeAutorizadas)} icon={<FileText size={16} />} tone="success" />
         <Metric label="NF-e Pendentes"     value={String(nfePendentes)} icon={<Clock size={16} />} tone="warning" />
         <Metric label="Impostos do Mês"    value={fmtBRL(impostosMes)} icon={<Receipt size={16} />} />
-        <Metric label="Próxima Obrigação"  value={proxObrigacao} icon={<Calendar size={16} />} tone="warning" />
+        <Metric
+          label="Próxima Obrigação"
+          value={proxObrigacao ? `${proxObrigacao.nome.split(" ")[0]} – ${proxObrigacao.vencimento}` : "—"}
+          icon={<Calendar size={16} />}
+          tone="warning"
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -751,10 +762,10 @@ function TabFiscal() {
               </thead>
               <tbody className="divide-y divide-border">
                 {filtered.map((row) => (
-                  <tr key={row.numero} className="hover:bg-secondary/50 transition-colors">
+                  <tr key={row.id} className="hover:bg-secondary/50 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs">{row.numero}</td>
                     <td className="px-4 py-3 text-xs">{row.cliente}</td>
-                    <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(row.valor)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(parseFloat(row.valor))}</td>
                     <td className="px-4 py-3 text-center font-mono text-xs">{row.cfop}</td>
                     <td className="px-4 py-3 text-center"><StatusBadgeFiscal status={row.status} /></td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{row.emissao}</td>
@@ -770,6 +781,11 @@ function TabFiscal() {
                     </td>
                   </tr>
                 ))}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhuma nota fiscal encontrada</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -781,8 +797,8 @@ function TabFiscal() {
             <p className="text-xs text-muted-foreground mt-0.5">Próximos vencimentos</p>
           </div>
           <div className="divide-y divide-border">
-            {obrigacoesFiscais.map((ob, i) => (
-              <div key={i} className="flex items-start justify-between gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors">
+            {obrigacoes.map((ob) => (
+              <div key={ob.id} className="flex items-start justify-between gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors">
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{ob.nome}</p>
                   <p className="text-xs text-muted-foreground">{ob.orgao}</p>
@@ -794,6 +810,9 @@ function TabFiscal() {
                 </div>
               </div>
             ))}
+            {obrigacoes.length === 0 && (
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhuma obrigação cadastrada</p>
+            )}
           </div>
           <div className="p-4 border-t border-border">
             <Button variant="outline" size="sm" className="w-full h-8 text-xs gap-1.5">

@@ -3,10 +3,11 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from core.mixins import TenantContextMixin
 from agency.views import TenantScopedMixin
-from erp.models import Fornecedor, OrdemCompra, ItemEstoque, LancamentoFinanceiro, Funcionario
+from erp.models import Fornecedor, OrdemCompra, ItemEstoque, LancamentoFinanceiro, Funcionario, NotaFiscal, ObrigacaoFiscal
 from erp.serializers import (
     FornecedorSerializer, OrdemCompraSerializer, ItemEstoqueSerializer,
     LancamentoFinanceiroSerializer, FuncionarioSerializer,
+    NotaFiscalSerializer, ObrigacaoFiscalSerializer,
 )
 
 
@@ -58,3 +59,23 @@ class FuncionarioViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelVi
     filterset_fields = ["status", "departamento"]
     search_fields = ["nome", "cargo", "email"]
     ordering_fields = ["nome", "data_admissao", "salario"]
+
+
+class NotaFiscalViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
+    queryset = NotaFiscal.objects.all()
+    serializer_class = NotaFiscalSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["status"]
+    search_fields = ["numero", "cliente", "cfop"]
+    ordering_fields = ["emissao", "valor"]
+
+
+class ObrigacaoFiscalViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
+    queryset = ObrigacaoFiscal.objects.all()
+    serializer_class = ObrigacaoFiscalSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["status"]
+    search_fields = ["nome", "orgao", "competencia"]
+    ordering_fields = ["vencimento"]
