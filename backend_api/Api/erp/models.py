@@ -194,6 +194,52 @@ class NotaFiscal(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         return f"NF-{self.numero}"
 
 
+class LinhaDRE(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
+    TIPO_CHOICES = [
+        ("receita", "Receita"),
+        ("deducao", "Dedução"),
+        ("subtotal", "Subtotal"),
+        ("custo", "Custo"),
+        ("despesa", "Despesa"),
+        ("imposto", "Imposto"),
+        ("resultado", "Resultado"),
+    ]
+
+    conta = models.CharField(max_length=200)
+    valor_atual = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    valor_anterior = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
+    competencia = models.CharField(max_length=7)  # "YYYY-MM"
+    ordem = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["competencia", "ordem"]
+        indexes = [models.Index(fields=["tenant_id", "competencia"])]
+
+    def __str__(self):
+        return f"{self.competencia} | {self.conta}"
+
+
+class BalancetePeriodo(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
+    competencia = models.CharField(max_length=7)  # "YYYY-MM"
+    ativo_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    passivo_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    patrimonio_liquido = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    class Meta:
+        ordering = ["-competencia"]
+        indexes = [models.Index(fields=["tenant_id", "competencia"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "competencia"],
+                name="uniq_balancete_competencia_per_tenant",
+            )
+        ]
+
+    def __str__(self):
+        return f"Balancete {self.competencia}"
+
+
 class ObrigacaoFiscal(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     STATUS_CHOICES = [
         ("pendente", "Pendente"),

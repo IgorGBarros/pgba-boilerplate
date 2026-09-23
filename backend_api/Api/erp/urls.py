@@ -4,6 +4,7 @@ from erp.views import (
     FornecedorViewSet, OrdemCompraViewSet, ItemEstoqueViewSet,
     LancamentoFinanceiroViewSet, FuncionarioViewSet,
     NotaFiscalViewSet, ObrigacaoFiscalViewSet,
+    LinhaDREViewSet, BalancetePeriodoViewSet,
 )
 
 router = DefaultRouter()
@@ -14,5 +15,7 @@ router.register("financeiro", LancamentoFinanceiroViewSet, basename="lancamento-
 router.register("funcionarios", FuncionarioViewSet, basename="funcionario")
 router.register("notas-fiscais", NotaFiscalViewSet, basename="nota-fiscal")
 router.register("obrigacoes-fiscais", ObrigacaoFiscalViewSet, basename="obrigacao-fiscal")
+router.register("linhas-dre", LinhaDREViewSet, basename="linha-dre")
+router.register("balancete", BalancetePeriodoViewSet, basename="balancete-periodo")
 
 urlpatterns = [path("", include(router.urls))]

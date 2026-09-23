@@ -3,11 +3,12 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from core.mixins import TenantContextMixin
 from agency.views import TenantScopedMixin
-from erp.models import Fornecedor, OrdemCompra, ItemEstoque, LancamentoFinanceiro, Funcionario, NotaFiscal, ObrigacaoFiscal
+from erp.models import Fornecedor, OrdemCompra, ItemEstoque, LancamentoFinanceiro, Funcionario, NotaFiscal, ObrigacaoFiscal, LinhaDRE, BalancetePeriodo
 from erp.serializers import (
     FornecedorSerializer, OrdemCompraSerializer, ItemEstoqueSerializer,
     LancamentoFinanceiroSerializer, FuncionarioSerializer,
     NotaFiscalSerializer, ObrigacaoFiscalSerializer,
+    LinhaDRESerializer, BalancetePeriodoSerializer,
 )
 
 
@@ -79,3 +80,21 @@ class ObrigacaoFiscalViewSet(TenantContextMixin, TenantScopedMixin, viewsets.Mod
     filterset_fields = ["status"]
     search_fields = ["nome", "orgao", "competencia"]
     ordering_fields = ["vencimento"]
+
+
+class LinhaDREViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
+    queryset = LinhaDRE.objects.all()
+    serializer_class = LinhaDRESerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["tipo", "competencia"]
+    ordering_fields = ["competencia", "ordem"]
+
+
+class BalancetePeriodoViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
+    queryset = BalancetePeriodo.objects.all()
+    serializer_class = BalancetePeriodoSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["competencia"]
+    ordering_fields = ["competencia"]
