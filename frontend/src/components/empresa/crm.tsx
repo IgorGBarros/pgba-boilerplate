@@ -1,11 +1,13 @@
 // frontend/src/components/empresa/crm.tsx
 import { useState } from "react";
 import {
+  ArrowLeft,
   Building2,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
   DollarSign,
+  Handshake,
   Mail,
   Phone,
   TrendingUp,
@@ -256,7 +258,7 @@ function PipelineColumn({ stage, deals }: { stage: StageConfig; deals: Deal[] })
 
 // ── Main Export ───────────────────────────────────────────────────────────────
 
-export function CRMView() {
+export function CRMView({ onBack }: { onBack: () => void }) {
   const [leadFilter, setLeadFilter] = useState<string>("all");
   const [leadSearch, setLeadSearch] = useState("");
 
@@ -296,19 +298,31 @@ export function CRMView() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* ── KPI Row ───────────────────────────────────────────────────────── */}
-      <div>
-        <SectionHeader
-          title="CRM & Comercial"
-          description="Pipeline de vendas, leads e atividades do time comercial."
-          action={
-            <Button size="sm" className="gap-1.5">
+      {/* ── Page Header ───────────────────────────────────────────────────── */}
+      <div className="rounded-xl bg-gradient-to-r from-indigo-600/20 via-blue-600/10 to-transparent border border-indigo-500/20 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0 text-indigo-300 hover:text-indigo-100 hover:bg-indigo-500/20">
+            <ArrowLeft className="size-4" />
+          </Button>
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-indigo-500/20 text-indigo-300">
+              <Handshake className="size-5" />
+            </span>
+            <div>
+              <h2 className="font-semibold text-lg font-display text-foreground">CRM & Comercial</h2>
+              <p className="text-xs text-muted-foreground">Pipeline de vendas, leads e atividades do time comercial</p>
+            </div>
+          </div>
+          <div className="ml-auto">
+            <Button size="sm" className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white border-0">
               <ChevronRight className="size-3.5" />
               Nova oportunidade
             </Button>
-          }
-        />
-        <div className="mt-4 grid gap-3 grid-cols-2 lg:grid-cols-4">
+          </div>
+        </div>
+      </div>
+      {/* ── KPI Row ───────────────────────────────────────────────────────── */}
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
           <Metric
             label="Total de Leads"
             value={String(totalLeads)}
@@ -331,7 +345,6 @@ export function CRMView() {
             icon={<DollarSign className="size-4" />}
             tone="success"
           />
-        </div>
       </div>
 
       {/* ── Pipeline Kanban ───────────────────────────────────────────────── */}
