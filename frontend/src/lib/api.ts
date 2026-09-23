@@ -734,3 +734,454 @@ export async function createAIProvider(data: AIProviderCredentialInput): Promise
 export async function deleteAIProvider(id: number): Promise<void> {
   await request<void>(`/api/v1/harness/providers/${id}/`, { method: "DELETE" });
 }
+
+// ─── CRM ──────────────────────────────────────────────────────────────────────
+
+export type LeadStatus = "novo" | "contato" | "qualificado" | "proposta" | "negociacao" | "ganho" | "perdido";
+export type LeadOrigem = "site" | "indicacao" | "social" | "evento" | "cold_outreach" | "outro";
+
+export interface Lead {
+  id: number;
+  nome: string;
+  empresa: string;
+  email: string;
+  telefone: string;
+  cargo: string;
+  valor_estimado: string | null;
+  status: LeadStatus;
+  responsavel: string;
+  origem: LeadOrigem;
+  observacoes: string;
+  oportunidades_count: number;
+  atividades_count: number;
+  created_at: string;
+}
+
+export interface Contato {
+  id: number;
+  nome: string;
+  empresa: string;
+  cargo: string;
+  email: string;
+  telefone: string;
+  lead: number | null;
+  lead_nome: string;
+  created_at: string;
+}
+
+export interface Oportunidade {
+  id: number;
+  titulo: string;
+  lead: number;
+  lead_nome: string;
+  valor: string;
+  status: "aberta" | "ganha" | "perdida";
+  data_fechamento_previsto: string | null;
+  observacoes: string;
+  created_at: string;
+}
+
+export interface AtividadeCRM {
+  id: number;
+  titulo: string;
+  tipo: "ligacao" | "email" | "reuniao" | "visita" | "proposta" | "outro";
+  lead: number;
+  lead_nome: string;
+  responsavel: string;
+  data_hora: string;
+  resultado: string;
+  created_at: string;
+}
+
+export async function listLeads(params?: Record<string, string>): Promise<Lead[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<Lead>(`/api/v1/crm/leads/${qs}`);
+}
+export async function createLead(data: Partial<Lead>): Promise<Lead> {
+  return request<Lead>("/api/v1/crm/leads/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updateLead(id: number, data: Partial<Lead>): Promise<Lead> {
+  return request<Lead>(`/api/v1/crm/leads/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+export async function deleteLead(id: number): Promise<void> {
+  await request<void>(`/api/v1/crm/leads/${id}/`, { method: "DELETE" });
+}
+
+export async function listContatos(params?: Record<string, string>): Promise<Contato[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<Contato>(`/api/v1/crm/contatos/${qs}`);
+}
+export async function createContato(data: Partial<Contato>): Promise<Contato> {
+  return request<Contato>("/api/v1/crm/contatos/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function deleteContato(id: number): Promise<void> {
+  await request<void>(`/api/v1/crm/contatos/${id}/`, { method: "DELETE" });
+}
+
+export async function listOportunidades(params?: Record<string, string>): Promise<Oportunidade[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<Oportunidade>(`/api/v1/crm/oportunidades/${qs}`);
+}
+export async function createOportunidade(data: Partial<Oportunidade>): Promise<Oportunidade> {
+  return request<Oportunidade>("/api/v1/crm/oportunidades/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function deleteOportunidade(id: number): Promise<void> {
+  await request<void>(`/api/v1/crm/oportunidades/${id}/`, { method: "DELETE" });
+}
+
+export async function listAtividadesCRM(params?: Record<string, string>): Promise<AtividadeCRM[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<AtividadeCRM>(`/api/v1/crm/atividades/${qs}`);
+}
+export async function createAtividadeCRM(data: Partial<AtividadeCRM>): Promise<AtividadeCRM> {
+  return request<AtividadeCRM>("/api/v1/crm/atividades/", { method: "POST", body: JSON.stringify(data) });
+}
+
+// ─── ERP ──────────────────────────────────────────────────────────────────────
+
+export interface Fornecedor {
+  id: number;
+  nome: string;
+  cnpj: string;
+  email: string;
+  telefone: string;
+  categoria: string;
+  observacoes: string;
+  created_at: string;
+}
+
+export interface OrdemCompra {
+  id: number;
+  numero: string;
+  fornecedor: number;
+  fornecedor_nome: string;
+  status: "rascunho" | "aprovado" | "enviado" | "recebido" | "cancelado";
+  valor_total: string;
+  data_emissao: string;
+  data_entrega_prevista: string | null;
+  observacoes: string;
+  created_at: string;
+}
+
+export interface ItemEstoque {
+  id: number;
+  codigo: string;
+  nome: string;
+  categoria: string;
+  quantidade: number;
+  quantidade_minima: number;
+  unidade: string;
+  custo_unitario: string;
+  fornecedor: number | null;
+  fornecedor_nome: string;
+  localizacao: string;
+  valor_total: number;
+  abaixo_minimo: boolean;
+  created_at: string;
+}
+
+export interface LancamentoFinanceiro {
+  id: number;
+  descricao: string;
+  tipo: "receita" | "despesa";
+  valor: string;
+  vencimento: string;
+  status: "pendente" | "pago" | "vencido" | "cancelado";
+  categoria: string;
+  cliente: string;
+  fornecedor_nome: string;
+  numero_documento: string;
+  created_at: string;
+}
+
+export interface Funcionario {
+  id: number;
+  nome: string;
+  cargo: string;
+  departamento: string;
+  salario: string;
+  data_admissao: string;
+  data_demissao: string | null;
+  status: "ativo" | "ferias" | "afastado" | "desligado";
+  email: string;
+  cpf: string;
+  created_at: string;
+}
+
+export async function listFornecedores(): Promise<Fornecedor[]> {
+  return requestList<Fornecedor>("/api/v1/erp/fornecedores/");
+}
+export async function createFornecedor(data: Partial<Fornecedor>): Promise<Fornecedor> {
+  return request<Fornecedor>("/api/v1/erp/fornecedores/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function deleteFornecedor(id: number): Promise<void> {
+  await request<void>(`/api/v1/erp/fornecedores/${id}/`, { method: "DELETE" });
+}
+
+export async function listOrdensCompra(params?: Record<string, string>): Promise<OrdemCompra[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<OrdemCompra>(`/api/v1/erp/ordens-compra/${qs}`);
+}
+export async function createOrdemCompra(data: Partial<OrdemCompra>): Promise<OrdemCompra> {
+  return request<OrdemCompra>("/api/v1/erp/ordens-compra/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updateOrdemCompra(id: number, data: Partial<OrdemCompra>): Promise<OrdemCompra> {
+  return request<OrdemCompra>(`/api/v1/erp/ordens-compra/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function listEstoque(params?: Record<string, string>): Promise<ItemEstoque[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<ItemEstoque>(`/api/v1/erp/estoque/${qs}`);
+}
+export async function createItemEstoque(data: Partial<ItemEstoque>): Promise<ItemEstoque> {
+  return request<ItemEstoque>("/api/v1/erp/estoque/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updateItemEstoque(id: number, data: Partial<ItemEstoque>): Promise<ItemEstoque> {
+  return request<ItemEstoque>(`/api/v1/erp/estoque/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function listLancamentosFinanceiros(params?: Record<string, string>): Promise<LancamentoFinanceiro[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<LancamentoFinanceiro>(`/api/v1/erp/financeiro/${qs}`);
+}
+export async function createLancamentoFinanceiro(data: Partial<LancamentoFinanceiro>): Promise<LancamentoFinanceiro> {
+  return request<LancamentoFinanceiro>("/api/v1/erp/financeiro/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updateLancamentoFinanceiro(id: number, data: Partial<LancamentoFinanceiro>): Promise<LancamentoFinanceiro> {
+  return request<LancamentoFinanceiro>(`/api/v1/erp/financeiro/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function listFuncionarios(params?: Record<string, string>): Promise<Funcionario[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<Funcionario>(`/api/v1/erp/funcionarios/${qs}`);
+}
+export async function createFuncionario(data: Partial<Funcionario>): Promise<Funcionario> {
+  return request<Funcionario>("/api/v1/erp/funcionarios/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updateFuncionario(id: number, data: Partial<Funcionario>): Promise<Funcionario> {
+  return request<Funcionario>(`/api/v1/erp/funcionarios/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+// ─── Jurídico ─────────────────────────────────────────────────────────────────
+
+export interface Processo {
+  id: number;
+  titulo: string;
+  tipo: string;
+  status: "em_andamento" | "ganho" | "perdido" | "acordo" | "arquivado";
+  parte: string;
+  advogado: string;
+  foro: string;
+  risco: "alto" | "medio" | "baixo";
+  valor_causa: string;
+  prazo_proximo: string | null;
+  observacoes: string;
+  created_at: string;
+}
+
+export interface ContratoJuridico {
+  id: number;
+  titulo: string;
+  tipo: string;
+  partes: string;
+  data_inicio: string;
+  data_fim: string | null;
+  valor_anual: string;
+  status: "vigente" | "expirando" | "vencido" | "negociacao" | "cancelado";
+  renovacao: string;
+  observacoes: string;
+  created_at: string;
+}
+
+export interface Prazo {
+  id: number;
+  titulo: string;
+  tipo: string;
+  prazo: string;
+  urgencia: "critica" | "alta" | "media" | "baixa";
+  responsavel: string;
+  descricao: string;
+  processo: number | null;
+  processo_titulo: string;
+  contrato: number | null;
+  contrato_titulo: string;
+  concluido: boolean;
+  created_at: string;
+}
+
+export async function listProcessos(params?: Record<string, string>): Promise<Processo[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<Processo>(`/api/v1/juridico/processos/${qs}`);
+}
+export async function createProcesso(data: Partial<Processo>): Promise<Processo> {
+  return request<Processo>("/api/v1/juridico/processos/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updateProcesso(id: number, data: Partial<Processo>): Promise<Processo> {
+  return request<Processo>(`/api/v1/juridico/processos/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+export async function deleteProcesso(id: number): Promise<void> {
+  await request<void>(`/api/v1/juridico/processos/${id}/`, { method: "DELETE" });
+}
+
+export async function listContratosJuridico(params?: Record<string, string>): Promise<ContratoJuridico[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<ContratoJuridico>(`/api/v1/juridico/contratos/${qs}`);
+}
+export async function createContratoJuridico(data: Partial<ContratoJuridico>): Promise<ContratoJuridico> {
+  return request<ContratoJuridico>("/api/v1/juridico/contratos/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updateContratoJuridico(id: number, data: Partial<ContratoJuridico>): Promise<ContratoJuridico> {
+  return request<ContratoJuridico>(`/api/v1/juridico/contratos/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function listPrazos(params?: Record<string, string>): Promise<Prazo[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<Prazo>(`/api/v1/juridico/prazos/${qs}`);
+}
+export async function createPrazo(data: Partial<Prazo>): Promise<Prazo> {
+  return request<Prazo>("/api/v1/juridico/prazos/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updatePrazo(id: number, data: Partial<Prazo>): Promise<Prazo> {
+  return request<Prazo>(`/api/v1/juridico/prazos/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+// ─── Helpdesk ─────────────────────────────────────────────────────────────────
+
+export interface Ticket {
+  id: number;
+  titulo: string;
+  descricao: string;
+  solicitante: string;
+  categoria: string;
+  prioridade: "critica" | "alta" | "media" | "baixa";
+  status: "aberto" | "em_atendimento" | "aguardando" | "resolvido" | "fechado";
+  sla_horas: number;
+  atendente: string;
+  created_at: string;
+  resolvido_em: string | null;
+}
+
+export interface EquipamentoTI {
+  id: number;
+  codigo: string;
+  nome: string;
+  tipo: string;
+  usuario: string;
+  setor: string;
+  status: "ativo" | "manutencao" | "disponivel" | "descarte";
+  ultima_revisao: string | null;
+  observacoes: string;
+  created_at: string;
+}
+
+export async function listTickets(params?: Record<string, string>): Promise<Ticket[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<Ticket>(`/api/v1/helpdesk/tickets/${qs}`);
+}
+export async function createTicket(data: Partial<Ticket>): Promise<Ticket> {
+  return request<Ticket>("/api/v1/helpdesk/tickets/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updateTicket(id: number, data: Partial<Ticket>): Promise<Ticket> {
+  return request<Ticket>(`/api/v1/helpdesk/tickets/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function listEquipamentosTI(params?: Record<string, string>): Promise<EquipamentoTI[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<EquipamentoTI>(`/api/v1/helpdesk/equipamentos/${qs}`);
+}
+export async function createEquipamentoTI(data: Partial<EquipamentoTI>): Promise<EquipamentoTI> {
+  return request<EquipamentoTI>("/api/v1/helpdesk/equipamentos/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updateEquipamentoTI(id: number, data: Partial<EquipamentoTI>): Promise<EquipamentoTI> {
+  return request<EquipamentoTI>(`/api/v1/helpdesk/equipamentos/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+// ─── Desenvolvimento ──────────────────────────────────────────────────────────
+
+export interface Sprint {
+  id: number;
+  nome: string;
+  numero: number;
+  data_inicio: string;
+  data_fim: string;
+  status: "planejado" | "ativo" | "concluido" | "cancelado";
+  velocidade_planejada: number;
+  pontos_concluidos: number;
+  pontos_totais: number;
+  created_at: string;
+}
+
+export interface SprintTask {
+  id: number;
+  sprint: number;
+  sprint_nome: string;
+  titulo: string;
+  tipo: "feature" | "bug" | "chore";
+  pontos: number;
+  responsavel: string;
+  status: "backlog" | "em_dev" | "review" | "done";
+  prioridade: "alta" | "media" | "baixa";
+  descricao: string;
+  created_at: string;
+}
+
+export interface PullRequestDev {
+  id: number;
+  numero: number;
+  titulo: string;
+  autor: string;
+  branch: string;
+  status: "open" | "review" | "merged" | "closed";
+  revisoes: number;
+  conflitos: boolean;
+  data_criacao: string;
+  merged_em: string | null;
+  created_at: string;
+}
+
+export interface Pipeline {
+  id: number;
+  nome: string;
+  status: "success" | "running" | "failed" | "pending" | "cancelled";
+  branch: string;
+  duracao: string;
+  commit_sha: string;
+  autor: string;
+  executado_em: string;
+  created_at: string;
+}
+
+export async function listSprints(): Promise<Sprint[]> {
+  return requestList<Sprint>("/api/v1/desenvolvimento/sprints/");
+}
+export async function createSprint(data: Partial<Sprint>): Promise<Sprint> {
+  return request<Sprint>("/api/v1/desenvolvimento/sprints/", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function listSprintTasks(params?: Record<string, string>): Promise<SprintTask[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<SprintTask>(`/api/v1/desenvolvimento/tasks/${qs}`);
+}
+export async function createSprintTask(data: Partial<SprintTask>): Promise<SprintTask> {
+  return request<SprintTask>("/api/v1/desenvolvimento/tasks/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updateSprintTask(id: number, data: Partial<SprintTask>): Promise<SprintTask> {
+  return request<SprintTask>(`/api/v1/desenvolvimento/tasks/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function listPullRequests(): Promise<PullRequestDev[]> {
+  return requestList<PullRequestDev>("/api/v1/desenvolvimento/pull-requests/");
+}
+export async function createPullRequest(data: Partial<PullRequestDev>): Promise<PullRequestDev> {
+  return request<PullRequestDev>("/api/v1/desenvolvimento/pull-requests/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updatePullRequest(id: number, data: Partial<PullRequestDev>): Promise<PullRequestDev> {
+  return request<PullRequestDev>(`/api/v1/desenvolvimento/pull-requests/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function listPipelines(): Promise<Pipeline[]> {
+  return requestList<Pipeline>("/api/v1/desenvolvimento/pipelines/");
+}
+export async function createPipeline(data: Partial<Pipeline>): Promise<Pipeline> {
+  return request<Pipeline>("/api/v1/desenvolvimento/pipelines/", { method: "POST", body: JSON.stringify(data) });
+}

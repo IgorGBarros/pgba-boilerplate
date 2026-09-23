@@ -14,6 +14,11 @@ urlpatterns = [
     path('api/v1/harness/', include('harness.urls')),
     path('api/v1/agency/', include('agency.urls')),
     path('api/v1/users/', include('User.urls')),
+    path('api/v1/crm/', include('crm.urls')),
+    path('api/v1/erp/', include('erp.urls')),
+    path('api/v1/juridico/', include('juridico.urls')),
+    path('api/v1/helpdesk/', include('helpdesk.urls')),
+    path('api/v1/desenvolvimento/', include('desenvolvimento.urls')),
 
     # 📌 Descomente conforme for implementando:
     # path('api/v1/payments/', include('payments.urls')),
