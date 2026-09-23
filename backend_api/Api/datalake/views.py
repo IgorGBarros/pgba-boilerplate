@@ -100,7 +100,9 @@ def obsidian_notes(request):
     """
     Retorna documentos do vault Obsidian do tenant atual via ingestion.Document.
     """
-    tenant_id = getattr(request, "tenant_id", None)
+    # Function-based views don't go through TenantContextMixin.initial(), so
+    # request.tenant_id is never set here — read from the authenticated user directly.
+    tenant_id = getattr(request.user, "tenant_id", None)
     if not tenant_id:
         return Response([])
 
