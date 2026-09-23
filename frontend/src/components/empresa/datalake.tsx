@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  ArrowLeft,
   Database,
   Table2,
   RefreshCw,
@@ -822,13 +823,26 @@ function DatabricksTab() {
 
 // ─── Root Export ──────────────────────────────────────────────────────────────
 
-export function DataLakeView() {
+export function DataLakeView({ onBack }: { onBack: () => void }) {
   return (
     <div className="space-y-5">
-      <SectionHeader
-        title="Data Lake"
-        description="Catálogo de dados, fontes de conhecimento e integrações analíticas"
-      />
+      {/* ── Page Header ─────────────────────────────────────────────────────── */}
+      <div className="rounded-xl bg-gradient-to-r from-violet-600/20 via-purple-600/10 to-transparent border border-violet-500/20 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="shrink-0 grid size-8 place-items-center rounded-md text-violet-300 hover:text-violet-100 hover:bg-violet-500/20 transition-colors">
+            <ArrowLeft className="size-4" />
+          </button>
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-violet-500/20 text-violet-300">
+              <Database className="size-5" />
+            </span>
+            <div>
+              <h2 className="font-semibold text-lg font-display text-foreground">Data Lake</h2>
+              <p className="text-xs text-muted-foreground">Catálogo de dados, fontes de conhecimento e integrações analíticas</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <Tabs defaultValue="catalog">
         <TabsList>

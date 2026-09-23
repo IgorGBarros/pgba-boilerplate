@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   AlertTriangle,
   ArrowDownCircle,
+  ArrowLeft,
   ArrowUpCircle,
   BarChart2,
   BookOpen,
@@ -18,6 +19,7 @@ import {
   Eye,
   FileText,
   Filter,
+  Layers,
   Package,
   Plus,
   Receipt,
@@ -779,23 +781,34 @@ function TabFiscal() {
 
 // ─── Root export ──────────────────────────────────────────────────────────────
 
-export function ERPView() {
+export function ERPView({ onBack }: { onBack: () => void }) {
   return (
     <div className="space-y-6">
-      <SectionHeader
-        title="ERP"
-        description="Gestão integrada de compras, estoque, financeiro, contabilidade, RH e fiscal"
-        action={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+      {/* ── Page Header ─────────────────────────────────────────────────────── */}
+      <div className="rounded-xl bg-gradient-to-r from-emerald-600/20 via-green-600/10 to-transparent border border-emerald-500/20 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0 text-emerald-300 hover:text-emerald-100 hover:bg-emerald-500/20">
+            <ArrowLeft className="size-4" />
+          </Button>
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-500/20 text-emerald-300">
+              <Layers className="size-5" />
+            </span>
+            <div>
+              <h2 className="font-semibold text-lg font-display text-foreground">ERP</h2>
+              <p className="text-xs text-muted-foreground">Gestão integrada de compras, estoque, financeiro, contabilidade, RH e fiscal</p>
+            </div>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10">
               <RefreshCw size={13} /> Sincronizar
             </Button>
-            <Button size="sm" className="h-8 gap-1.5 text-xs bg-primary text-primary-foreground">
+            <Button size="sm" className="h-8 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white border-0">
               <Download size={13} /> Exportar
             </Button>
           </div>
-        }
-      />
+        </div>
+      </div>
 
       <Tabs defaultValue="compras" className="space-y-6">
         <TabsList className="h-9 gap-1 bg-secondary p-1 rounded-md flex-wrap">

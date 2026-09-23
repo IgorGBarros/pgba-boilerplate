@@ -3,6 +3,7 @@ import {
   Activity,
   Brain,
   Building2,
+  ChevronRight,
   Code2,
   Cuboid,
   Database,
@@ -694,7 +695,16 @@ function SubTabBtn({
 
 // ─── Visão Geral content ──────────────────────────────────────────────────────
 
-function VisaoGeral({ onNewTask, onSectorClick }: { onNewTask: (sector?: string) => void; onSectorClick: (sector: Sector) => void }) {
+type ModuleKey = "crm" | "erp" | "controladoria" | "datalake";
+
+const MODULE_CARDS: { key: ModuleKey; label: string; desc: string; icon: React.ElementType; color: string; bg: string; border: string }[] = [
+  { key: "crm", label: "CRM & Comercial", desc: "Pipeline, leads e atividades", icon: Handshake, color: "text-indigo-400", bg: "bg-indigo-500/10 hover:bg-indigo-500/20", border: "border-indigo-500/20 hover:border-indigo-400/40" },
+  { key: "erp", label: "ERP", desc: "Compras, estoque, financeiro, RH", icon: Layers, color: "text-emerald-400", bg: "bg-emerald-500/10 hover:bg-emerald-500/20", border: "border-emerald-500/20 hover:border-emerald-400/40" },
+  { key: "controladoria", label: "Controladoria", desc: "Budget, desvios e auditoria", icon: ShieldCheck, color: "text-amber-400", bg: "bg-amber-500/10 hover:bg-amber-500/20", border: "border-amber-500/20 hover:border-amber-400/40" },
+  { key: "datalake", label: "Data Lake", desc: "Catálogo, Obsidian, Databricks", icon: Landmark, color: "text-violet-400", bg: "bg-violet-500/10 hover:bg-violet-500/20", border: "border-violet-500/20 hover:border-violet-400/40" },
+];
+
+function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (sector?: string) => void; onSectorClick: (sector: Sector) => void; onModuleClick: (m: ModuleKey) => void }) {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [metrics, setMetrics] = useState<AgentMetricsOverview | null>(null);
@@ -1005,6 +1015,30 @@ function VisaoGeral({ onNewTask, onSectorClick }: { onNewTask: (sector?: string)
         </div>
       )}
 
+      {/* Módulos de negócio */}
+      <div>
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Módulos</p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {MODULE_CARDS.map(({ key, label, desc, icon: Icon, color, bg, border }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onModuleClick(key)}
+              className={`panel flex items-center gap-3 p-4 text-left transition-colors ${bg} ${border}`}
+            >
+              <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${bg} ${color}`}>
+                <Icon className="size-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="font-medium text-sm leading-tight">{label}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">{desc}</p>
+              </div>
+              <ChevronRight className="ml-auto size-4 shrink-0 text-muted-foreground" />
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Dialogs */}
       <SectorKnowledgeDialog
         sector={openSector}
@@ -1082,37 +1116,22 @@ function VisaoGeral({ onNewTask, onSectorClick }: { onNewTask: (sector?: string)
 // ─── Main: EmpresaView (exported as Overview for backwards compat) ────────────
 
 export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: string) => void; onOpenGerar?: (projectId?: number) => void }) {
-  const [subTab, setSubTab] = useState<"overview" | "crm" | "erp" | "controladoria" | "datalake" | "projects" | "office">("overview");
+  const [subTab, setSubTab] = useState<"overview" | "projects" | "office">("overview");
   const [newProject, setNewProject] = useState(false);
   const [importProject, setImportProject] = useState(false);
   const [selectedSector, setSelectedSector] = useState<Sector | null>(null);
+  const [selectedModule, setSelectedModule] = useState<ModuleKey | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
   return (
     <div className={subTab === "office" ? "-mx-4 md:-mx-6 -mt-4 md:-mt-6 flex flex-col" : ""}>
-      {/* Sub-tab nav — oculta no detalhe de setor */}
-      {!selectedSector && (
+      {/* Sub-tab nav — oculta no detalhe de setor ou módulo */}
+      {!selectedSector && !selectedModule && (
         <div className={`flex items-center gap-1 border-b border-border overflow-x-auto ${subTab === "office" ? "px-4 py-2 bg-background" : "pb-4 mb-2"}`}>
           <SubTabBtn active={subTab === "overview"} onClick={() => setSubTab("overview")}>
             <Building2 className="size-4" />
             Visão Geral
-          </SubTabBtn>
-          <SubTabBtn active={subTab === "crm"} onClick={() => setSubTab("crm")}>
-            <Handshake className="size-4" />
-            CRM
-          </SubTabBtn>
-          <SubTabBtn active={subTab === "erp"} onClick={() => setSubTab("erp")}>
-            <Layers className="size-4" />
-            ERP
-          </SubTabBtn>
-          <SubTabBtn active={subTab === "controladoria"} onClick={() => setSubTab("controladoria")}>
-            <ShieldCheck className="size-4" />
-            Controladoria
-          </SubTabBtn>
-          <SubTabBtn active={subTab === "datalake"} onClick={() => setSubTab("datalake")}>
-            <Landmark className="size-4" />
-            DataLake
           </SubTabBtn>
           <SubTabBtn active={subTab === "projects"} onClick={() => setSubTab("projects")}>
             <FolderTree className="size-4" />
@@ -1139,17 +1158,23 @@ export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: stri
         <SectorDetailPage sector={selectedSector} onBack={() => setSelectedSector(null)} />
       )}
 
-      {!selectedSector && subTab === "overview" && (
-        <VisaoGeral onNewTask={onNewTask} onSectorClick={setSelectedSector} />
+      {/* Módulos de negócio — página completa */}
+      {!selectedSector && selectedModule === "crm" && (
+        <CRMView onBack={() => setSelectedModule(null)} />
+      )}
+      {!selectedSector && selectedModule === "erp" && (
+        <ERPView onBack={() => setSelectedModule(null)} />
+      )}
+      {!selectedSector && selectedModule === "controladoria" && (
+        <ControladoriaView onBack={() => setSelectedModule(null)} />
+      )}
+      {!selectedSector && selectedModule === "datalake" && (
+        <DataLakeView onBack={() => setSelectedModule(null)} />
       )}
 
-      {subTab === "crm" && <CRMView />}
-
-      {subTab === "erp" && <ERPView />}
-
-      {subTab === "controladoria" && <ControladoriaView />}
-
-      {subTab === "datalake" && <DataLakeView />}
+      {!selectedSector && !selectedModule && subTab === "overview" && (
+        <VisaoGeral onNewTask={onNewTask} onSectorClick={setSelectedSector} onModuleClick={setSelectedModule} />
+      )}
 
       {subTab === "projects" && (
         <div className="space-y-4">
