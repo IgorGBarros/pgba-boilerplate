@@ -59,6 +59,9 @@ import { CRMView } from "@/components/empresa/crm";
 import { ERPView } from "@/components/empresa/erp";
 import { ControladoriaView } from "@/components/empresa/controladoria";
 import { DataLakeView } from "@/components/empresa/datalake";
+import { JuridicoView } from "@/components/empresa/juridico";
+import { DesenvolvimentoView } from "@/components/empresa/desenvolvimento";
+import { HelpdeskView } from "@/components/empresa/helpdesk";
 import SettingsModal from "@/components/builder/SettingsModal";
 import { DEFAULT_SETTINGS, type AppSettings } from "@/types/settings";
 import { aiModels } from "@/lib/pgba-data";
@@ -695,7 +698,7 @@ function SubTabBtn({
 
 // ─── Visão Geral content ──────────────────────────────────────────────────────
 
-type ModuleKey = "crm" | "erp" | "controladoria" | "datalake";
+type ModuleKey = "crm" | "erp" | "controladoria" | "datalake" | "juridico" | "desenvolvimento" | "helpdesk";
 type ModuleState = { key: ModuleKey; erpTab?: string };
 
 // Map a sector name to its business module (returns null for sectors that use SectorDetailPage)
@@ -709,7 +712,10 @@ function getSectorModule(name: string): ModuleState | null {
   if (n.includes("rh") || n.includes("recursos humanos") || n.includes("people") || n.includes("pessoal")) return { key: "erp", erpTab: "rh" };
   if (n.includes("estoque") || n.includes("operac") || n.includes("logistic")) return { key: "erp", erpTab: "estoque" };
   if (n.includes("controladoria") || n.includes("auditoria") || n.includes("compliance")) return { key: "controladoria" };
-  if (n.includes("ti") || n.includes("tecnologia") || n.includes("dados") || n.includes("data")) return { key: "datalake" };
+  if (n.includes("juridico") || n.includes("legal") || n.includes("juridica")) return { key: "juridico" };
+  if (n.includes("desenvolvimento") || n.includes("engenharia") || n.includes("software")) return { key: "desenvolvimento" };
+  if (n.includes("ti") || n.includes("tecnologia") || n.includes("helpdesk") || n.includes("suporte")) return { key: "helpdesk" };
+  if (n.includes("dados") || n.includes("data")) return { key: "datalake" };
   return null;
 }
 
@@ -718,6 +724,9 @@ const MODULE_CARDS: { state: ModuleState; label: string; desc: string; icon: Rea
   { state: { key: "erp" }, label: "ERP", desc: "Compras, estoque, financeiro, RH", icon: Layers, color: "text-emerald-400", bg: "bg-emerald-500/10 hover:bg-emerald-500/20", border: "border-emerald-500/20 hover:border-emerald-400/40" },
   { state: { key: "controladoria" }, label: "Controladoria", desc: "Budget, desvios e auditoria", icon: ShieldCheck, color: "text-amber-400", bg: "bg-amber-500/10 hover:bg-amber-500/20", border: "border-amber-500/20 hover:border-amber-400/40" },
   { state: { key: "datalake" }, label: "Data Lake", desc: "Catálogo, Obsidian, Databricks", icon: Landmark, color: "text-violet-400", bg: "bg-violet-500/10 hover:bg-violet-500/20", border: "border-violet-500/20 hover:border-violet-400/40" },
+  { state: { key: "juridico" }, label: "Jurídico", desc: "Processos, contratos e prazos", icon: FileText, color: "text-slate-400", bg: "bg-slate-500/10 hover:bg-slate-500/20", border: "border-slate-500/20 hover:border-slate-400/40" },
+  { state: { key: "desenvolvimento" }, label: "Desenvolvimento", desc: "Sprint, PRs e CI/CD", icon: Code2, color: "text-blue-400", bg: "bg-blue-500/10 hover:bg-blue-500/20", border: "border-blue-500/20 hover:border-blue-400/40" },
+  { state: { key: "helpdesk" }, label: "TI · Helpdesk", desc: "Chamados, SLA e inventário", icon: Brain, color: "text-teal-400", bg: "bg-teal-500/10 hover:bg-teal-500/20", border: "border-teal-500/20 hover:border-teal-400/40" },
 ];
 
 function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (sector?: string) => void; onSectorClick: (sector: Sector) => void; onModuleClick: (m: ModuleState) => void }) {
@@ -889,12 +898,18 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
             const MODULE_LABELS: Record<ModuleKey, string> = {
               crm: "CRM",
               erp: "ERP",
+              juridico: "Jurídico",
+              desenvolvimento: "Dev",
+              helpdesk: "Helpdesk",
               controladoria: "Controladoria",
               datalake: "Data Lake",
             };
             const MODULE_COLORS: Record<ModuleKey, string> = {
               crm: "border-indigo-500/40 text-indigo-400 bg-indigo-500/10",
               erp: "border-emerald-500/40 text-emerald-400 bg-emerald-500/10",
+              juridico: "border-slate-500/40 text-slate-400 bg-slate-500/10",
+              desenvolvimento: "border-blue-500/40 text-blue-400 bg-blue-500/10",
+              helpdesk: "border-teal-500/40 text-teal-400 bg-teal-500/10",
               controladoria: "border-amber-500/40 text-amber-400 bg-amber-500/10",
               datalake: "border-violet-500/40 text-violet-400 bg-violet-500/10",
             };
@@ -1205,6 +1220,15 @@ export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: stri
       )}
       {!selectedSector && selectedModule?.key === "datalake" && (
         <DataLakeView onBack={() => setSelectedModule(null)} />
+      )}
+      {!selectedSector && selectedModule?.key === "juridico" && (
+        <JuridicoView onBack={() => setSelectedModule(null)} />
+      )}
+      {!selectedSector && selectedModule?.key === "desenvolvimento" && (
+        <DesenvolvimentoView onBack={() => setSelectedModule(null)} />
+      )}
+      {!selectedSector && selectedModule?.key === "helpdesk" && (
+        <HelpdeskView onBack={() => setSelectedModule(null)} />
       )}
 
       {!selectedSector && !selectedModule && subTab === "overview" && (
