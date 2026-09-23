@@ -154,7 +154,7 @@ EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "ollama")  # ollama | 
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "768"))
 CHAT_PROVIDER = os.environ.get("CHAT_PROVIDER", "ollama")  # ollama | openai | anthropic | groq | openrouter
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "")  # vazio → providers.py usa DEFAULT_BASE_URLS["ollama"]="http://ollama:11434" (Docker). Fora do Docker: set OLLAMA_BASE_URL=http://localhost:11434 no .env
 OLLAMA_CHAT_MODEL = os.environ.get("OLLAMA_CHAT_MODEL", "llama3")
 # 45s (o padrão antigo, fixo no código) era curto demais pra gerar uma
 # página inteira num modelo de alguns GB em CPU sem GPU — aumente aqui

@@ -249,7 +249,12 @@ function useBinanceTicker(symbol: string | undefined): TickerData | null {
     return () => {
       cancelled = true;
       clearTimeout(timerRef.current);
-      wsRef.current?.close();
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) {
+        ws.onclose = null; // prevent reconnect timer on intentional close
+        ws.close();
+      }
     };
   }, [symbol]);
 
