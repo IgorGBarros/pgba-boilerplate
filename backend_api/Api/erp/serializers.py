@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from erp.models import Fornecedor, OrdemCompra, ItemEstoque, LancamentoFinanceiro, Funcionario
+from erp.models import Fornecedor, OrdemCompra, ItemEstoque, LancamentoFinanceiro, Funcionario, NotaFiscal, ObrigacaoFiscal
 
 
 class FornecedorSerializer(serializers.ModelSerializer):
@@ -59,4 +59,18 @@ class FuncionarioSerializer(serializers.ModelSerializer):
             "id", "nome", "cargo", "departamento", "salario", "data_admissao",
             "data_demissao", "status", "email", "cpf", "created_at",
         ]
+        read_only_fields = ["id", "created_at"]
+
+
+class NotaFiscalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotaFiscal
+        fields = ["id", "numero", "cliente", "valor", "cfop", "status", "emissao", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+
+class ObrigacaoFiscalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ObrigacaoFiscal
+        fields = ["id", "nome", "orgao", "vencimento", "competencia", "status", "created_at"]
         read_only_fields = ["id", "created_at"]

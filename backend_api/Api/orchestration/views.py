@@ -15,7 +15,9 @@ class QueryLogSerializer(serializers.ModelSerializer):
         fields = [
             "id", "question", "model_category", "model_name",
             "function_called", "function_params", "function_result",
-            "answer", "status", "error_message", "latency_ms", "created_at",
+            "answer", "status", "error_message", "latency_ms",
+            "tokens_prompt", "tokens_completion", "cost_estimated_usd",
+            "created_at",
         ]
         read_only_fields = fields
 

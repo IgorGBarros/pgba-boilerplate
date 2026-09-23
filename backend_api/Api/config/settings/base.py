@@ -41,6 +41,8 @@ INSTALLED_APPS = [
     "juridico",
     "helpdesk",
     "desenvolvimento",
+    "controladoria",
+    "datalake",
 ]
 
 # 🔄 Middleware

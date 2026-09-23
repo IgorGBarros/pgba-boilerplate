@@ -19,6 +19,8 @@ urlpatterns = [
     path('api/v1/juridico/', include('juridico.urls')),
     path('api/v1/helpdesk/', include('helpdesk.urls')),
     path('api/v1/desenvolvimento/', include('desenvolvimento.urls')),
+    path('api/v1/controladoria/', include('controladoria.urls')),
+    path('api/v1/datalake/', include('datalake.urls')),
 
     # 📌 Descomente conforme for implementando:
     # path('api/v1/payments/', include('payments.urls')),

@@ -37,6 +37,9 @@ class QueryLog(TenantMixin, models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.OK)
     error_message = models.TextField(blank=True)
     latency_ms = models.PositiveIntegerField(null=True, blank=True)
+    tokens_prompt = models.PositiveIntegerField(default=0)
+    tokens_completion = models.PositiveIntegerField(default=0)
+    cost_estimated_usd = models.DecimalField(max_digits=10, decimal_places=6, default=0)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:

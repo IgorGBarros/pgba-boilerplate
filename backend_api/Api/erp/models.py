@@ -162,3 +162,59 @@ class Funcionario(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
 
     def __str__(self):
         return self.nome
+
+
+class NotaFiscal(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
+    STATUS_CHOICES = [
+        ("autorizada", "Autorizada"),
+        ("pendente", "Pendente"),
+        ("cancelada", "Cancelada"),
+        ("denegada", "Denegada"),
+    ]
+
+    numero = models.CharField(max_length=50)
+    cliente = models.CharField(max_length=200, blank=True)
+    valor = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    cfop = models.CharField(max_length=10, blank=True)
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="pendente")
+    emissao = models.DateField(default=timezone.now)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-emissao"]
+        indexes = [
+            models.Index(fields=["tenant_id", "status"]),
+            models.Index(fields=["tenant_id", "emissao"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant_id", "numero"], name="uniq_nf_numero_per_tenant")
+        ]
+
+    def __str__(self):
+        return f"NF-{self.numero}"
+
+
+class ObrigacaoFiscal(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
+    STATUS_CHOICES = [
+        ("pendente", "Pendente"),
+        ("entregue", "Entregue"),
+        ("vencida", "Vencida"),
+        ("agendada", "Agendada"),
+    ]
+
+    nome = models.CharField(max_length=200)
+    orgao = models.CharField(max_length=100, blank=True)
+    vencimento = models.DateField()
+    competencia = models.CharField(max_length=20, blank=True)
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="pendente")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["vencimento"]
+        indexes = [
+            models.Index(fields=["tenant_id", "status"]),
+            models.Index(fields=["tenant_id", "vencimento"]),
+        ]
+
+    def __str__(self):
+        return self.nome
