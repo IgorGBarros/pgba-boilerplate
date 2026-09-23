@@ -14,6 +14,7 @@ import {
   Plus,
   Receipt,
   Save,
+  Settings,
   ShoppingCart,
   Trash2,
   TrendingUp,
@@ -49,6 +50,8 @@ import {
 } from "@/components/empresa/dialogs";
 import { SectorDetailPage } from "@/components/empresa/mercado";
 import { Projects } from "@/components/empresa/projects";
+import SettingsModal from "@/components/builder/SettingsModal";
+import { DEFAULT_SETTINGS, type AppSettings } from "@/types/settings";
 import { aiModels } from "@/lib/pgba-data";
 import {
   createAgent,
@@ -1075,6 +1078,8 @@ export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: stri
   const [newProject, setNewProject] = useState(false);
   const [importProject, setImportProject] = useState(false);
   const [selectedSector, setSelectedSector] = useState<Sector | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
   return (
     <div className={subTab === "office" ? "-mx-4 md:-mx-6 -mt-4 md:-mt-6 flex flex-col" : ""}>
@@ -1093,6 +1098,15 @@ export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: stri
             <Cuboid className="size-4" />
             Escritório 3D
           </SubTabBtn>
+          <div className="ml-auto">
+            <button
+              onClick={() => setSettingsOpen(true)}
+              title="Configurações"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+            >
+              <Settings className="size-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -1135,6 +1149,14 @@ export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: stri
 
       <NewProjectDialog open={newProject} onOpenChange={setNewProject} />
       <ImportProjectDialog open={importProject} onOpenChange={setImportProject} />
+
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        onUpdate={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
+        onReset={() => setSettings(DEFAULT_SETTINGS)}
+      />
     </div>
   );
 }
