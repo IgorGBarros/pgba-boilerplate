@@ -125,6 +125,13 @@ class Agent(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
 
     default_provider = models.CharField(max_length=20, blank=True)
     default_model = models.CharField(max_length=100, blank=True)
+    # System prompt específico do agente — injected no prompt final de
+    # answer_question quando preenchido. Permite configurar personalidade,
+    # regras e saída esperada por agente sem precisar de uma tabela separada.
+    instructions = models.TextField(
+        blank=True,
+        help_text="System prompt deste agente (persona, regras, formato de saída). Injetado em toda chamada de IA.",
+    )
 
     created_at = models.DateTimeField(default=timezone.now)
 
