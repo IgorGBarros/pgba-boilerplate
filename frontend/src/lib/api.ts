@@ -695,3 +695,42 @@ export async function patchAgentAutonomy(id: number, autonomy_level: number): Pr
     body: JSON.stringify({ autonomy_level }),
   });
 }
+
+
+// ─── Harness: Credenciais de Provedor de IA ───────────────────────────────
+export type AIProvider = "ollama" | "openai" | "anthropic" | "groq" | "openrouter";
+
+export interface AIProviderCredential {
+  id: number;
+  provider: AIProvider;
+  label: string;
+  base_url: string;
+  api_key_masked: string;
+  default_model: string;
+  is_active: boolean;
+  updated_at: string;
+}
+
+export interface AIProviderCredentialInput {
+  provider: AIProvider;
+  label?: string;
+  base_url?: string;
+  api_key?: string;
+  default_model?: string;
+  is_active?: boolean;
+}
+
+export async function listAIProviders(): Promise<AIProviderCredential[]> {
+  return request<AIProviderCredential[]>("/api/v1/harness/providers/");
+}
+
+export async function createAIProvider(data: AIProviderCredentialInput): Promise<AIProviderCredential> {
+  return request<AIProviderCredential>("/api/v1/harness/providers/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAIProvider(id: number): Promise<void> {
+  await request<void>(`/api/v1/harness/providers/${id}/`, { method: "DELETE" });
+}

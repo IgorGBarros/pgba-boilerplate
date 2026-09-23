@@ -1,6 +1,7 @@
 // frontend/src/components/builder/SettingsModal.tsx
 import { X } from "lucide-react";
 import type { AppSettings } from "@/types/settings";
+import AIProvidersPanel from "@/components/builder/AIProvidersPanel";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -26,7 +27,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onUpdate, onR
           </button>
         </div>
 
-        <div className="space-y-6 p-5">
+        <div className="max-h-[75vh] space-y-6 overflow-y-auto p-5">
           <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Aparência</h3>
 
@@ -82,15 +83,9 @@ export default function SettingsModal({ isOpen, onClose, settings, onUpdate, onR
             </label>
           </section>
 
-          <section className="space-y-2 rounded-lg border border-white/10 bg-surface p-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">IA</h3>
-            <p className="text-xs leading-relaxed text-slate-400">
-              O modelo e a credencial usados na geração são configurados no backend (<code className="rounded bg-white/5 px-1">harness</code>),
-              nunca aqui — isso mantém a chave de API fora do navegador e centralizada por tenant. Para trocar de modelo:
-            </p>
-            <pre className="overflow-x-auto rounded-md bg-black/30 p-2 text-[11px] text-slate-300">
-              docker compose exec backend python manage.py configure_ai_provider --provider ollama --model qwen2.5-coder
-            </pre>
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Provedores de IA</h3>
+            <AIProvidersPanel />
           </section>
 
           <button onClick={onReset} className="text-xs text-slate-500 underline decoration-dotted hover:text-slate-300">

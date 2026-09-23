@@ -25,7 +25,7 @@ from django.conf import settings
 from core.mixins import TenantContextMixin
 from harness.guardrails import extract_code_block
 from harness.providers import chat_completion, ProviderConfigError
-from harness.serializers import GenerateCodeSerializer
+from harness.serializers import GenerateCodeSerializer, AIProviderCredentialSerializer
 
 _PROVIDER_PRIORITY = ["openrouter", "groq", "openai", "anthropic", "ollama"]
 
@@ -141,3 +141,102 @@ class GenerateCodeView(TenantContextMixin, APIView):
             return Response({"detail": str(exc)}, status=502)
 
         return Response({"code": code, "language": data["language"]})
+
+
+class AIProviderCredentialListCreateView(TenantContextMixin, APIView):
+    """
+    GET  /api/v1/harness/providers/        — lista credenciais do tenant (chave mascarada)
+    POST /api/v1/harness/providers/        — cria ou substitui credencial ativa
+
+    Um tenant só tem 1 credencial ativa por provedor (UniqueConstraint no model).
+    POST desativa a anterior do mesmo provider antes de criar a nova para evitar
+    violar esse constraint sem precisar de upsert manual.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _qs(self, tenant_id):
+        from harness.models import AIProviderCredential
+        return AIProviderCredential.objects.filter(tenant_id=tenant_id).order_by("provider", "-updated_at")
+
+    def get(self, request):
+        if not getattr(request, "tenant_id", None):
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+        qs = self._qs(request.tenant_id)
+        data = AIProviderCredentialSerializer(qs, many=True).data
+        return Response(data)
+
+    def post(self, request):
+        if not getattr(request, "tenant_id", None):
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+
+        ser = AIProviderCredentialSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        d = ser.validated_data
+
+        from harness.models import AIProviderCredential
+
+        # Desativa a credencial anterior do mesmo provider para não violar o
+        # UniqueConstraint(is_active=True, tenant_id, provider).
+        AIProviderCredential.objects.filter(
+            tenant_id=request.tenant_id, provider=d["provider"], is_active=True
+        ).update(is_active=False)
+
+        cred = AIProviderCredential(
+            tenant_id=request.tenant_id,
+            provider=d["provider"],
+            label=d.get("label", ""),
+            base_url=d.get("base_url", ""),
+            default_model=d.get("default_model", ""),
+            is_active=d.get("is_active", True),
+        )
+        if d.get("api_key"):
+            cred.api_key = d["api_key"]
+        cred.save()
+
+        return Response(AIProviderCredentialSerializer(cred).data, status=201)
+
+
+class AIProviderCredentialDetailView(TenantContextMixin, APIView):
+    """
+    DELETE /api/v1/harness/providers/{id}/  — desativa (soft-delete) a credencial
+    PATCH  /api/v1/harness/providers/{id}/  — atualiza campos sem recriar
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_cred(self, request, pk):
+        from harness.models import AIProviderCredential
+        try:
+            return AIProviderCredential.objects.get(pk=pk, tenant_id=request.tenant_id)
+        except AIProviderCredential.DoesNotExist:
+            return None
+
+    def delete(self, request, pk):
+        if not getattr(request, "tenant_id", None):
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+        cred = self._get_cred(request, pk)
+        if not cred:
+            return Response({"detail": "Não encontrada."}, status=404)
+        cred.is_active = False
+        cred.save(update_fields=["is_active", "updated_at"])
+        return Response(status=204)
+
+    def patch(self, request, pk):
+        if not getattr(request, "tenant_id", None):
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+        cred = self._get_cred(request, pk)
+        if not cred:
+            return Response({"detail": "Não encontrada."}, status=404)
+
+        ser = AIProviderCredentialSerializer(data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        d = ser.validated_data
+
+        for field in ("label", "base_url", "default_model", "is_active"):
+            if field in d:
+                setattr(cred, field, d[field])
+        if d.get("api_key"):
+            cred.api_key = d["api_key"]
+        cred.save()
+        return Response(AIProviderCredentialSerializer(cred).data)
