@@ -36,6 +36,11 @@ INSTALLED_APPS = [
     "ingestion",
     "orchestration",
     "agency",
+    "crm",
+    "erp",
+    "juridico",
+    "helpdesk",
+    "desenvolvimento",
 ]
 
 # 🔄 Middleware

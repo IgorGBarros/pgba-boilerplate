@@ -1,5 +1,5 @@
 // frontend/src/components/empresa/crm.tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   Building2,
@@ -24,6 +24,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Metric, SectionHeader } from "@/components/empresa/shared";
+import {
+  type Lead,
+  type LeadStatus,
+  type LeadOrigem,
+  type Oportunidade,
+  type AtividadeCRM,
+  listLeads,
+  listOportunidades,
+  listAtividadesCRM,
+} from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -34,85 +44,6 @@ type PipelineStage =
   | "negociacao"
   | "ganho"
   | "perdido";
-
-type LeadOrigin = "Inbound" | "Outbound" | "Indicação" | "Social";
-type LeadStatus = "Novo" | "Contatado" | "Qualificado" | "Descartado";
-type ActivityType = "phone" | "email" | "meeting";
-
-interface Deal {
-  id: string;
-  company: string;
-  contact: string;
-  value: number;
-  stage: PipelineStage;
-  dueDate: string;
-}
-
-interface Lead {
-  id: string;
-  name: string;
-  company: string;
-  origin: LeadOrigin;
-  status: LeadStatus;
-  responsible: string;
-  date: string;
-}
-
-interface Activity {
-  id: string;
-  type: ActivityType;
-  description: string;
-  time: string;
-  responsible: string;
-}
-
-// ── Mock Data ─────────────────────────────────────────────────────────────────
-
-const DEALS: Deal[] = [
-  // Prospecção
-  { id: "d1",  company: "Construtora Horizonte",  contact: "Marcos Alves",    value: 18000,  stage: "prospeccao",  dueDate: "30/09" },
-  { id: "d2",  company: "Logística Sul",          contact: "Ana Ferreira",    value: 9500,   stage: "prospeccao",  dueDate: "02/10" },
-  { id: "d3",  company: "TechVerde Ltda",         contact: "Paulo Mendes",    value: 24000,  stage: "prospeccao",  dueDate: "05/10" },
-  // Qualificação
-  { id: "d4",  company: "Clínica Bem Estar",      contact: "Dr. Sofia Lima",  value: 31500,  stage: "qualificacao", dueDate: "28/09" },
-  { id: "d5",  company: "Atacado Progresso",      contact: "José Nunes",      value: 47200,  stage: "qualificacao", dueDate: "01/10" },
-  { id: "d6",  company: "Escola Saber",           contact: "Renata Costa",    value: 12800,  stage: "qualificacao", dueDate: "04/10" },
-  // Proposta
-  { id: "d7",  company: "Distribuidora Norte",    contact: "Felipe Souza",    value: 68000,  stage: "proposta",    dueDate: "27/09" },
-  { id: "d8",  company: "Grupo Imobiliário RJ",   contact: "Carla Ribeiro",   value: 115000, stage: "proposta",    dueDate: "29/09" },
-  { id: "d9",  company: "Farmácias União",        contact: "Hugo Bastos",     value: 52400,  stage: "proposta",    dueDate: "03/10" },
-  // Negociação
-  { id: "d10", company: "Indústria Metálica SP",  contact: "Vera Cardoso",    value: 189000, stage: "negociacao",  dueDate: "26/09" },
-  { id: "d11", company: "Seguros Capital",        contact: "André Tavares",   value: 76000,  stage: "negociacao",  dueDate: "28/09" },
-  { id: "d12", company: "Porto Seco Logística",   contact: "Bianca Melo",     value: 43500,  stage: "negociacao",  dueDate: "30/09" },
-  // Fechado Ganho
-  { id: "d13", company: "Varejo Express",         contact: "Cláudio Pinto",   value: 94000,  stage: "ganho",       dueDate: "20/09" },
-  { id: "d14", company: "Recicla Tech",           contact: "Natália Jorge",   value: 37800,  stage: "ganho",       dueDate: "18/09" },
-  { id: "d15", company: "Alimentos Bela Vista",   contact: "Rodrigo Farias",  value: 61200,  stage: "ganho",       dueDate: "15/09" },
-  // Fechado Perdido
-  { id: "d16", company: "Constru Rápida",         contact: "Leandro Reis",    value: 28000,  stage: "perdido",     dueDate: "10/09" },
-  { id: "d17", company: "Mercado Popular",        contact: "Tânia Braga",     value: 19500,  stage: "perdido",     dueDate: "08/09" },
-];
-
-const LEADS: Lead[] = [
-  { id: "l1", name: "Gustavo Henrique",   company: "AgroSmart",           origin: "Inbound",   status: "Novo",        responsible: "Marina S.",  date: "23/09" },
-  { id: "l2", name: "Patricia Moura",     company: "Saúde+ Clínicas",     origin: "Indicação", status: "Contatado",   responsible: "Lucas P.",   date: "22/09" },
-  { id: "l3", name: "Roberto Cunha",      company: "Transpac Logística",  origin: "Outbound",  status: "Qualificado", responsible: "Marina S.",  date: "21/09" },
-  { id: "l4", name: "Fernanda Leal",      company: "E-Moda Brasil",       origin: "Social",    status: "Novo",        responsible: "Diego R.",   date: "21/09" },
-  { id: "l5", name: "Carlos Eduardo",     company: "Construtora Delta",   origin: "Outbound",  status: "Contatado",   responsible: "Diego R.",   date: "20/09" },
-  { id: "l6", name: "Simone Barbosa",     company: "FarmaVida",           origin: "Inbound",   status: "Qualificado", responsible: "Lucas P.",   date: "19/09" },
-  { id: "l7", name: "Alexandre Torres",   company: "Educação Conectada",  origin: "Social",    status: "Descartado",  responsible: "Marina S.",  date: "18/09" },
-  { id: "l8", name: "Mariana Duarte",     company: "TechEdge Sistemas",   origin: "Indicação", status: "Contatado",   responsible: "Diego R.",   date: "17/09" },
-];
-
-const ACTIVITIES: Activity[] = [
-  { id: "a1", type: "phone",   description: "Follow-up — Indústria Metálica SP",    time: "09:00", responsible: "Vera C." },
-  { id: "a2", type: "email",   description: "Enviar proposta revisada — Grupo RJ",  time: "10:30", responsible: "Marina S." },
-  { id: "a3", type: "meeting", description: "Demo produto — Distribuidora Norte",   time: "14:00", responsible: "Lucas P." },
-  { id: "a4", type: "phone",   description: "Negociação final — Seguros Capital",   time: "15:30", responsible: "André T." },
-  { id: "a5", type: "email",   description: "Onboarding — Varejo Express",          time: "16:00", responsible: "Diego R." },
-  { id: "a6", type: "meeting", description: "Kick-off — Recicla Tech",              time: "17:00", responsible: "Carla R." },
-];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -142,12 +73,12 @@ interface StageConfig {
 }
 
 const STAGES: StageConfig[] = [
-  { id: "prospeccao",  label: "Prospecção",    color: "bg-blue-500/10 border-blue-500/30",    headerColor: "bg-blue-500/20 text-blue-400" },
-  { id: "qualificacao",label: "Qualificação",  color: "bg-violet-500/10 border-violet-500/30",headerColor: "bg-violet-500/20 text-violet-400" },
-  { id: "proposta",    label: "Proposta",      color: "bg-amber-500/10 border-amber-500/30",  headerColor: "bg-amber-500/20 text-amber-400" },
-  { id: "negociacao",  label: "Negociação",    color: "bg-orange-500/10 border-orange-500/30",headerColor: "bg-orange-500/20 text-orange-400" },
-  { id: "ganho",       label: "Fechado Ganho", color: "bg-success/10 border-success/30",      headerColor: "bg-success/20 text-success" },
-  { id: "perdido",     label: "Fechado Perdido",color: "bg-destructive/10 border-destructive/30", headerColor: "bg-destructive/20 text-destructive" },
+  { id: "prospeccao",   label: "Prospecção",     color: "bg-blue-500/10 border-blue-500/30",     headerColor: "bg-blue-500/20 text-blue-400" },
+  { id: "qualificacao", label: "Qualificação",   color: "bg-violet-500/10 border-violet-500/30", headerColor: "bg-violet-500/20 text-violet-400" },
+  { id: "proposta",     label: "Proposta",       color: "bg-amber-500/10 border-amber-500/30",   headerColor: "bg-amber-500/20 text-amber-400" },
+  { id: "negociacao",   label: "Negociação",     color: "bg-orange-500/10 border-orange-500/30", headerColor: "bg-orange-500/20 text-orange-400" },
+  { id: "ganho",        label: "Fechado Ganho",  color: "bg-success/10 border-success/30",       headerColor: "bg-success/20 text-success" },
+  { id: "perdido",      label: "Fechado Perdido",color: "bg-destructive/10 border-destructive/30",headerColor: "bg-destructive/20 text-destructive" },
 ];
 
 function stageBadgeVariant(stage: PipelineStage) {
@@ -165,64 +96,89 @@ function stageBadgeVariant(stage: PipelineStage) {
 // ── Lead Status & Origin Badges ───────────────────────────────────────────────
 
 function LeadStatusBadge({ status }: { status: LeadStatus }) {
+  const label: Record<LeadStatus, string> = {
+    novo:        "Novo",
+    contato:     "Contatado",
+    qualificado: "Qualificado",
+    proposta:    "Proposta",
+    negociacao:  "Negociação",
+    ganho:       "Ganho",
+    perdido:     "Perdido",
+  };
   const styles: Record<LeadStatus, string> = {
-    Novo:        "bg-blue-500/15 text-blue-400 border-blue-500/30",
-    Contatado:   "bg-amber-500/15 text-amber-400 border-amber-500/30",
-    Qualificado: "bg-success/15 text-success border-success/30",
-    Descartado:  "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+    novo:        "bg-blue-500/15 text-blue-400 border-blue-500/30",
+    contato:     "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    qualificado: "bg-success/15 text-success border-success/30",
+    proposta:    "bg-violet-500/15 text-violet-400 border-violet-500/30",
+    negociacao:  "bg-orange-500/15 text-orange-400 border-orange-500/30",
+    ganho:       "bg-success/15 text-success border-success/30",
+    perdido:     "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
   };
   return (
     <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${styles[status]}`}>
-      {status}
+      {label[status]}
     </span>
   );
 }
 
-function OriginBadge({ origin }: { origin: LeadOrigin }) {
-  const styles: Record<LeadOrigin, string> = {
-    Inbound:   "bg-primary/10 text-primary border-primary/20",
-    Outbound:  "bg-violet-500/10 text-violet-400 border-violet-500/20",
-    Indicação: "bg-success/10 text-success border-success/20",
-    Social:    "bg-pink-500/10 text-pink-400 border-pink-500/20",
+function OriginBadge({ origem }: { origem: LeadOrigem }) {
+  const label: Record<LeadOrigem, string> = {
+    site:          "Site",
+    indicacao:     "Indicação",
+    social:        "Social",
+    evento:        "Evento",
+    cold_outreach: "Cold Outreach",
+    outro:         "Outro",
+  };
+  const styles: Record<LeadOrigem, string> = {
+    site:          "bg-primary/10 text-primary border-primary/20",
+    indicacao:     "bg-success/10 text-success border-success/20",
+    social:        "bg-pink-500/10 text-pink-400 border-pink-500/20",
+    evento:        "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    cold_outreach: "bg-violet-500/10 text-violet-400 border-violet-500/20",
+    outro:         "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
   };
   return (
-    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${styles[origin]}`}>
-      {origin}
+    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${styles[origem]}`}>
+      {label[origem]}
     </span>
   );
 }
 
 // ── Activity Icon ─────────────────────────────────────────────────────────────
 
-function ActivityIcon({ type }: { type: ActivityType }) {
+function ActivityIcon({ tipo }: { tipo: AtividadeCRM["tipo"] }) {
   const base = "size-7 rounded-md flex items-center justify-center shrink-0";
-  if (type === "phone")
+  if (tipo === "ligacao")
     return <span className={`${base} bg-success/10 text-success`}><Phone className="size-3.5" /></span>;
-  if (type === "email")
+  if (tipo === "email")
     return <span className={`${base} bg-primary/10 text-primary`}><Mail className="size-3.5" /></span>;
   return <span className={`${base} bg-violet-500/10 text-violet-400`}><Video className="size-3.5" /></span>;
 }
 
 // ── Deal Card ─────────────────────────────────────────────────────────────────
 
-function DealCard({ deal }: { deal: Deal }) {
+function DealCard({ deal }: { deal: Oportunidade }) {
+  const value = parseFloat(deal.valor);
   return (
     <div className="panel rounded-md p-3 space-y-2 cursor-pointer hover:border-border/80 transition-colors">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-semibold leading-tight line-clamp-1">{deal.company}</p>
+        <p className="text-xs font-semibold leading-tight line-clamp-1">{deal.lead_empresa}</p>
         <span className="text-xs font-mono font-bold tabular-nums text-foreground whitespace-nowrap">
-          {fmtBRL(deal.value)}
+          {fmtBRL(value)}
         </span>
       </div>
-      <p className="text-[11px] text-muted-foreground leading-tight">{deal.contact}</p>
+      <p className="text-[11px] text-muted-foreground leading-tight">{deal.lead_nome}</p>
       <div className="flex items-center justify-between gap-2">
-        <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${stageBadgeVariant(deal.stage)}`}>
-          {STAGES.find((s) => s.id === deal.stage)?.label}
+        <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${stageBadgeVariant(deal.status)}`}>
+          {STAGES.find((s) => s.id === deal.status)?.label}
         </span>
-        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-          <CalendarDays className="size-3" />
-          {deal.dueDate}
-        </span>
+        {deal.data_fechamento_previsto && (
+          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <CalendarDays className="size-3" />
+            {deal.data_fechamento_previsto}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -230,18 +186,16 @@ function DealCard({ deal }: { deal: Deal }) {
 
 // ── Pipeline Column ───────────────────────────────────────────────────────────
 
-function PipelineColumn({ stage, deals }: { stage: StageConfig; deals: Deal[] }) {
-  const total = deals.reduce((s, d) => s + d.value, 0);
+function PipelineColumn({ stage, deals }: { stage: StageConfig; deals: Oportunidade[] }) {
+  const total = deals.reduce((s, d) => s + parseFloat(d.valor), 0);
   return (
     <div className="flex flex-col gap-2 min-w-[200px] w-[200px] shrink-0">
-      {/* Column header */}
       <div className={`rounded-md px-3 py-2 flex items-center justify-between gap-2 ${stage.headerColor}`}>
         <span className="text-[11px] font-semibold uppercase tracking-wide truncate">{stage.label}</span>
         <span className="text-[11px] font-mono font-bold tabular-nums shrink-0">
           {deals.length} · {fmtBRLCompact(total)}
         </span>
       </div>
-      {/* Cards */}
       <div className="flex flex-col gap-2">
         {deals.map((deal) => (
           <DealCard key={deal.id} deal={deal} />
@@ -259,42 +213,51 @@ function PipelineColumn({ stage, deals }: { stage: StageConfig; deals: Deal[] })
 // ── Main Export ───────────────────────────────────────────────────────────────
 
 export function CRMView({ onBack }: { onBack: () => void }) {
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [oportunidades, setOportunidades] = useState<Oportunidade[]>([]);
+  const [atividades, setAtividades] = useState<AtividadeCRM[]>([]);
   const [leadFilter, setLeadFilter] = useState<string>("all");
   const [leadSearch, setLeadSearch] = useState("");
 
+  useEffect(() => {
+    listLeads().then(setLeads).catch(() => {});
+    listOportunidades().then(setOportunidades).catch(() => {});
+    listAtividadesCRM().then(setAtividades).catch(() => {});
+  }, []);
+
   // ── KPI calculations ──────────────────────────────────────────────────────
 
-  const totalLeads = LEADS.length;
-  const openDeals = DEALS.filter(
-    (d) => d.stage !== "ganho" && d.stage !== "perdido"
+  const totalLeads = leads.length;
+  const openDeals = oportunidades.filter(
+    (d) => d.status !== "ganho" && d.status !== "perdido"
   ).length;
-  const wonDeals = DEALS.filter((d) => d.stage === "ganho").length;
-  const closedDeals = DEALS.filter(
-    (d) => d.stage === "ganho" || d.stage === "perdido"
+  const wonDeals = oportunidades.filter((d) => d.status === "ganho").length;
+  const closedDeals = oportunidades.filter(
+    (d) => d.status === "ganho" || d.status === "perdido"
   ).length;
   const conversionRate =
     closedDeals > 0 ? Math.round((wonDeals / closedDeals) * 100) : 0;
-  const pipeline = DEALS.filter(
-    (d) => d.stage !== "ganho" && d.stage !== "perdido"
-  ).reduce((s, d) => s + d.value, 0);
+  const pipeline = oportunidades
+    .filter((d) => d.status !== "ganho" && d.status !== "perdido")
+    .reduce((s, d) => s + parseFloat(d.valor), 0);
 
   // ── Filtered leads ────────────────────────────────────────────────────────
 
-  const filteredLeads = LEADS.filter((l) => {
+  const filteredLeads = leads.filter((l) => {
     const matchesStatus =
-      leadFilter === "all" || l.status.toLowerCase() === leadFilter;
+      leadFilter === "all" || l.status === leadFilter;
     const q = leadSearch.toLowerCase();
     const matchesSearch =
       !q ||
-      l.name.toLowerCase().includes(q) ||
-      l.company.toLowerCase().includes(q);
+      l.nome.toLowerCase().includes(q) ||
+      l.empresa.toLowerCase().includes(q);
     return matchesStatus && matchesSearch;
   });
 
   // ── Deals grouped by stage ────────────────────────────────────────────────
 
   const dealsByStage = (stage: PipelineStage) =>
-    DEALS.filter((d) => d.stage === stage);
+    oportunidades.filter((d) => d.status === stage);
 
   return (
     <div className="flex flex-col gap-6">
@@ -321,30 +284,31 @@ export function CRMView({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       </div>
+
       {/* ── KPI Row ───────────────────────────────────────────────────────── */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-          <Metric
-            label="Total de Leads"
-            value={String(totalLeads)}
-            icon={<Users className="size-4" />}
-          />
-          <Metric
-            label="Oportunidades Abertas"
-            value={String(openDeals)}
-            icon={<Building2 className="size-4" />}
-          />
-          <Metric
-            label="Taxa de Conversão"
-            value={`${conversionRate}%`}
-            icon={<TrendingUp className="size-4" />}
-            tone={conversionRate >= 40 ? "success" : conversionRate >= 20 ? "warning" : "default"}
-          />
-          <Metric
-            label="Receita no Pipeline"
-            value={fmtBRLCompact(pipeline)}
-            icon={<DollarSign className="size-4" />}
-            tone="success"
-          />
+        <Metric
+          label="Total de Leads"
+          value={String(totalLeads)}
+          icon={<Users className="size-4" />}
+        />
+        <Metric
+          label="Oportunidades Abertas"
+          value={String(openDeals)}
+          icon={<Building2 className="size-4" />}
+        />
+        <Metric
+          label="Taxa de Conversão"
+          value={`${conversionRate}%`}
+          icon={<TrendingUp className="size-4" />}
+          tone={conversionRate >= 40 ? "success" : conversionRate >= 20 ? "warning" : "default"}
+        />
+        <Metric
+          label="Receita no Pipeline"
+          value={fmtBRLCompact(pipeline)}
+          icon={<DollarSign className="size-4" />}
+          tone="success"
+        />
       </div>
 
       {/* ── Pipeline Kanban ───────────────────────────────────────────────── */}
@@ -387,9 +351,9 @@ export function CRMView({ onBack }: { onBack: () => void }) {
                   <SelectContent>
                     <SelectItem value="all">Todos</SelectItem>
                     <SelectItem value="novo">Novo</SelectItem>
-                    <SelectItem value="contatado">Contatado</SelectItem>
+                    <SelectItem value="contato">Contatado</SelectItem>
                     <SelectItem value="qualificado">Qualificado</SelectItem>
-                    <SelectItem value="descartado">Descartado</SelectItem>
+                    <SelectItem value="perdido">Descartado</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -401,59 +365,35 @@ export function CRMView({ onBack }: { onBack: () => void }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/40">
-                    <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-3 py-2.5 whitespace-nowrap">
-                      Nome
-                    </th>
-                    <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-3 py-2.5 whitespace-nowrap">
-                      Empresa
-                    </th>
-                    <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-3 py-2.5 whitespace-nowrap">
-                      Origem
-                    </th>
-                    <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-3 py-2.5 whitespace-nowrap">
-                      Status
-                    </th>
-                    <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-3 py-2.5 whitespace-nowrap">
-                      Responsável
-                    </th>
-                    <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-3 py-2.5 whitespace-nowrap">
-                      Data
-                    </th>
+                    <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-3 py-2.5 whitespace-nowrap">Nome</th>
+                    <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-3 py-2.5 whitespace-nowrap">Empresa</th>
+                    <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-3 py-2.5 whitespace-nowrap">Origem</th>
+                    <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-3 py-2.5 whitespace-nowrap">Status</th>
+                    <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-3 py-2.5 whitespace-nowrap">Responsável</th>
+                    <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground px-3 py-2.5 whitespace-nowrap">Data</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {filteredLeads.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={6}
-                        className="px-3 py-6 text-center text-sm text-muted-foreground"
-                      >
+                      <td colSpan={6} className="px-3 py-6 text-center text-sm text-muted-foreground">
                         Nenhum lead encontrado
                       </td>
                     </tr>
                   ) : (
                     filteredLeads.map((lead) => (
-                      <tr
-                        key={lead.id}
-                        className="hover:bg-secondary/20 transition-colors"
-                      >
-                        <td className="px-3 py-2.5 text-xs font-medium whitespace-nowrap">
-                          {lead.name}
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                          {lead.company}
-                        </td>
+                      <tr key={lead.id} className="hover:bg-secondary/20 transition-colors">
+                        <td className="px-3 py-2.5 text-xs font-medium whitespace-nowrap">{lead.nome}</td>
+                        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{lead.empresa}</td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
-                          <OriginBadge origin={lead.origin} />
+                          <OriginBadge origem={lead.origem} />
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           <LeadStatusBadge status={lead.status} />
                         </td>
-                        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                          {lead.responsible}
-                        </td>
+                        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{lead.responsavel}</td>
                         <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap tabular-nums">
-                          {lead.date}
+                          {lead.created_at.slice(0, 10)}
                         </td>
                       </tr>
                     ))
@@ -466,33 +406,32 @@ export function CRMView({ onBack }: { onBack: () => void }) {
 
         {/* Atividades do dia */}
         <div className="flex flex-col gap-3">
-          <SectionHeader title="Atividades do Dia" />
+          <SectionHeader title="Atividades Recentes" />
           <div className="panel rounded-md p-0 overflow-hidden divide-y divide-border">
-            {ACTIVITIES.map((act) => (
+            {atividades.slice(0, 6).map((act) => (
               <div
                 key={act.id}
                 className="flex items-start gap-3 px-3 py-3 hover:bg-secondary/20 transition-colors"
               >
-                <ActivityIcon type={act.type} />
+                <ActivityIcon tipo={act.tipo} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium leading-snug line-clamp-2">
-                    {act.description}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    {act.responsible}
-                  </p>
+                  <p className="text-xs font-medium leading-snug line-clamp-2">{act.titulo}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{act.responsavel}</p>
                 </div>
                 <span className="text-[11px] font-mono text-muted-foreground shrink-0 tabular-nums mt-0.5">
-                  {act.time}
+                  {act.data_hora.slice(11, 16)}
                 </span>
               </div>
             ))}
-
-            {/* Summary footer */}
+            {atividades.length === 0 && (
+              <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                Nenhuma atividade registrada
+              </div>
+            )}
             <div className="flex items-center gap-2 px-3 py-2.5 bg-secondary/30">
               <CheckCircle2 className="size-3.5 text-success" />
               <span className="text-[11px] text-muted-foreground">
-                {ACTIVITIES.length} atividades agendadas hoje
+                {atividades.length} atividade{atividades.length !== 1 ? "s" : ""} registrada{atividades.length !== 1 ? "s" : ""}
               </span>
             </div>
           </div>

@@ -1,71 +1,32 @@
 import { ArrowLeft, Headphones, AlertCircle, Clock, CheckCircle2, XCircle, Monitor, Server, Wifi, Smartphone, HardDrive, TrendingUp, Users, BarChart3, Search } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { type Ticket, type EquipamentoTI, listTickets, listEquipamentosTI } from "@/lib/api";
 
 interface HelpdeskViewProps {
   onBack: () => void;
 }
 
-type TicketStatus = "aberto" | "em_atendimento" | "aguardando" | "resolvido" | "fechado";
-type Prioridade = "critica" | "alta" | "media" | "baixa";
+type TicketStatus = Ticket["status"];
+type Prioridade = Ticket["prioridade"];
+type EquipmentStatus = EquipamentoTI["status"];
 
-interface Ticket {
-  id: string;
-  titulo: string;
-  solicitante: string;
-  categoria: string;
-  prioridade: Prioridade;
-  status: TicketStatus;
-  sla: number; // horas restantes (negativo = violado)
-  criado: string;
-  atendente?: string;
+function computeSlaRemaining(createdAt: string, slaHoras: number): number {
+  const elapsed = (Date.now() - new Date(createdAt).getTime()) / 3600000;
+  return Math.round(slaHoras - elapsed);
 }
-
-const tickets: Ticket[] = [
-  { id: "TI-0891", titulo: "VPN não conecta após atualização do Windows", solicitante: "Maria Silva", categoria: "Rede", prioridade: "critica", status: "em_atendimento", sla: -2, criado: "2026-09-23 08:14", atendente: "Carlos TI" },
-  { id: "TI-0890", titulo: "Impressora do financeiro não responde", solicitante: "João Costa", categoria: "Hardware", prioridade: "alta", status: "aberto", sla: 3, criado: "2026-09-23 09:02" },
-  { id: "TI-0889", titulo: "Acesso ao sistema ERP negado após troca de senha", solicitante: "Ana Rodrigues", categoria: "Acesso", prioridade: "alta", status: "em_atendimento", sla: 5, criado: "2026-09-23 07:55", atendente: "Carlos TI" },
-  { id: "TI-0888", titulo: "Computador lento — memória insuficiente", solicitante: "Pedro Lima", categoria: "Hardware", prioridade: "media", status: "aguardando", sla: 18, criado: "2026-09-22 16:30", atendente: "Fernanda TI" },
-  { id: "TI-0887", titulo: "Email corporativo não sincroniza no celular", solicitante: "Lucia Santos", categoria: "Mobile", prioridade: "media", status: "aguardando", sla: 12, criado: "2026-09-22 14:00" },
-  { id: "TI-0886", titulo: "Solicitar novo notebook para colaborador onboarding", solicitante: "RH - Onboarding", categoria: "Equipamento", prioridade: "media", status: "aberto", sla: 48, criado: "2026-09-22 11:00" },
-  { id: "TI-0885", titulo: "Software de design precisa de licença atualizada", solicitante: "Bruno Alves", categoria: "Software", prioridade: "baixa", status: "resolvido", sla: 72, criado: "2026-09-21 10:20", atendente: "Fernanda TI" },
-  { id: "TI-0884", titulo: "Backup do servidor falhou na última execução", solicitante: "Sistema", categoria: "Infraestrutura", prioridade: "alta", status: "resolvido", sla: 8, criado: "2026-09-21 03:00", atendente: "Carlos TI" },
-  { id: "TI-0883", titulo: "Monitor com linhas na tela", solicitante: "Carla Mendes", categoria: "Hardware", prioridade: "baixa", status: "fechado", sla: 72, criado: "2026-09-20 09:45", atendente: "Fernanda TI" },
-];
-
-type EquipmentStatus = "ativo" | "manutencao" | "disponivel" | "descarte";
-
-interface InventoryItem {
-  id: string;
-  nome: string;
-  tipo: string;
-  usuario?: string;
-  setor: string;
-  status: EquipmentStatus;
-  ultimaRevisao: string;
-}
-
-const inventario: InventoryItem[] = [
-  { id: "NB-042", nome: "Dell Latitude 5430", tipo: "Notebook", usuario: "Maria Silva", setor: "Comercial", status: "ativo", ultimaRevisao: "2026-07-15" },
-  { id: "NB-043", nome: "Lenovo ThinkPad X1", tipo: "Notebook", usuario: "João Costa", setor: "Financeiro", status: "ativo", ultimaRevisao: "2026-08-01" },
-  { id: "DK-011", nome: "HP ProDesk 400", tipo: "Desktop", usuario: "Pedro Lima", setor: "RH", status: "manutencao", ultimaRevisao: "2026-09-10" },
-  { id: "NB-044", nome: "Dell Latitude 5430", tipo: "Notebook", usuario: undefined, setor: "Estoque", status: "disponivel", ultimaRevisao: "2026-09-01" },
-  { id: "SV-003", nome: "Dell PowerEdge R640", tipo: "Servidor", usuario: undefined, setor: "TI", status: "ativo", ultimaRevisao: "2026-06-30" },
-  { id: "SW-007", nome: "Cisco SG350-28", tipo: "Switch", usuario: undefined, setor: "TI", status: "ativo", ultimaRevisao: "2026-05-20" },
-  { id: "NB-039", nome: "HP EliteBook 840", tipo: "Notebook", usuario: undefined, setor: "—", status: "descarte", ultimaRevisao: "2025-12-10" },
-];
 
 function PrioridadeBadge({ p }: { p: Prioridade }) {
-  const map = {
+  const map: Record<Prioridade, string> = {
     critica: "bg-red-500/20 text-red-400 border-red-500/30",
     alta: "bg-orange-500/20 text-orange-400 border-orange-500/30",
     media: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
     baixa: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
   };
-  const labels = { critica: "Crítica", alta: "Alta", media: "Média", baixa: "Baixa" };
+  const labels: Record<Prioridade, string> = { critica: "Crítica", alta: "Alta", media: "Média", baixa: "Baixa" };
   return <Badge className={`${map[p]} text-[11px]`}>{labels[p]}</Badge>;
 }
 
@@ -121,17 +82,20 @@ function CategoryIcon({ cat }: { cat: string }) {
   return <HardDrive className="w-4 h-4 text-zinc-400" />;
 }
 
-function TabTickets() {
+function TabTickets({ tickets }: { tickets: Ticket[] }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<TicketStatus | "todos">("todos");
 
   const filtered = tickets.filter(t => {
-    const matchSearch = t.titulo.toLowerCase().includes(search.toLowerCase()) || t.id.toLowerCase().includes(search.toLowerCase()) || t.solicitante.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = t.titulo.toLowerCase().includes(search.toLowerCase()) || t.solicitante.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "todos" || t.status === statusFilter;
     return matchSearch && matchStatus;
   });
 
-  const slaViolados = tickets.filter(t => t.sla < 0 && t.status !== "resolvido" && t.status !== "fechado").length;
+  const slaViolados = tickets.filter(t => {
+    const remaining = computeSlaRemaining(t.created_at, t.sla_horas);
+    return remaining < 0 && t.status !== "resolvido" && t.status !== "fechado";
+  }).length;
 
   return (
     <div className="space-y-4">
@@ -140,7 +104,7 @@ function TabTickets() {
           { label: "Abertos", value: tickets.filter(t => t.status === "aberto").length, icon: <AlertCircle className="w-4 h-4 text-blue-400" /> },
           { label: "Em atendimento", value: tickets.filter(t => t.status === "em_atendimento").length, icon: <Clock className="w-4 h-4 text-yellow-400" /> },
           { label: "SLA violados", value: slaViolados, icon: <XCircle className="w-4 h-4 text-red-400" /> },
-          { label: "Resolvidos hoje", value: tickets.filter(t => t.status === "resolvido").length, icon: <CheckCircle2 className="w-4 h-4 text-green-400" /> },
+          { label: "Resolvidos", value: tickets.filter(t => t.status === "resolvido").length, icon: <CheckCircle2 className="w-4 h-4 text-green-400" /> },
         ].map(m => (
           <div key={m.label} className="p-4 rounded-lg bg-white/5 border border-white/10 flex items-center gap-3">
             {m.icon}
@@ -167,32 +131,35 @@ function TabTickets() {
       </div>
 
       <div className="space-y-2">
-        {filtered.map(t => (
-          <div key={t.id} className={`p-4 rounded-lg bg-white/5 border transition-colors hover:border-white/20 ${t.sla < 0 && t.status !== "resolvido" && t.status !== "fechado" ? "border-red-500/30" : "border-white/10"}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3 min-w-0">
-                <CategoryIcon cat={t.categoria} />
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono text-zinc-500">{t.id}</span>
-                    <p className="text-sm font-medium text-zinc-200 truncate">{t.titulo}</p>
-                  </div>
-                  <div className="flex items-center gap-3 mt-1 flex-wrap">
-                    <span className="text-xs text-zinc-500">{t.solicitante}</span>
-                    <span className="text-xs text-zinc-500">· {t.categoria}</span>
-                    {t.atendente && <span className="text-xs text-zinc-500">· {t.atendente}</span>}
-                    <span className="text-xs text-zinc-500">· {t.criado}</span>
+        {filtered.map(t => {
+          const slaHours = computeSlaRemaining(t.created_at, t.sla_horas);
+          const slaViolated = slaHours < 0 && t.status !== "resolvido" && t.status !== "fechado";
+          return (
+            <div key={t.id} className={`p-4 rounded-lg bg-white/5 border transition-colors hover:border-white/20 ${slaViolated ? "border-red-500/30" : "border-white/10"}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <CategoryIcon cat={t.categoria} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-zinc-200 truncate">{t.titulo}</p>
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 flex-wrap">
+                      <span className="text-xs text-zinc-500">{t.solicitante}</span>
+                      <span className="text-xs text-zinc-500">· {t.categoria}</span>
+                      {t.atendente && <span className="text-xs text-zinc-500">· {t.atendente}</span>}
+                      <span className="text-xs text-zinc-500">· {t.created_at.slice(0, 16).replace("T", " ")}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <SLABadge hours={t.sla} />
-                <PrioridadeBadge p={t.prioridade} />
-                <StatusBadge s={t.status} />
+                <div className="flex items-center gap-3 shrink-0">
+                  <SLABadge hours={slaHours} />
+                  <PrioridadeBadge p={t.prioridade} />
+                  <StatusBadge s={t.status} />
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {filtered.length === 0 && (
           <div className="text-center py-12 text-zinc-500">Nenhum ticket encontrado</div>
         )}
@@ -201,15 +168,15 @@ function TabTickets() {
   );
 }
 
-function TabInventario() {
+function TabInventario({ equipamentos }: { equipamentos: EquipamentoTI[] }) {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-4 gap-4 mb-2">
         {[
-          { label: "Ativos", value: inventario.filter(i => i.status === "ativo").length },
-          { label: "Disponíveis", value: inventario.filter(i => i.status === "disponivel").length },
-          { label: "Em manutenção", value: inventario.filter(i => i.status === "manutencao").length },
-          { label: "Total", value: inventario.length },
+          { label: "Ativos", value: equipamentos.filter(i => i.status === "ativo").length },
+          { label: "Disponíveis", value: equipamentos.filter(i => i.status === "disponivel").length },
+          { label: "Em manutenção", value: equipamentos.filter(i => i.status === "manutencao").length },
+          { label: "Total", value: equipamentos.length },
         ].map(m => (
           <div key={m.label} className="p-4 rounded-lg bg-white/5 border border-white/10">
             <p className="text-2xl font-bold text-white">{m.value}</p>
@@ -228,17 +195,22 @@ function TabInventario() {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {inventario.map(item => (
+            {equipamentos.map(item => (
               <tr key={item.id} className="hover:bg-white/5 transition-colors">
-                <td className="px-4 py-3 text-xs font-mono text-zinc-400">{item.id}</td>
+                <td className="px-4 py-3 text-xs font-mono text-zinc-400">{item.codigo}</td>
                 <td className="px-4 py-3 text-zinc-200">{item.nome}</td>
                 <td className="px-4 py-3 text-zinc-400 text-xs">{item.tipo}</td>
-                <td className="px-4 py-3 text-zinc-400 text-xs">{item.usuario ?? <span className="text-zinc-600">—</span>}</td>
+                <td className="px-4 py-3 text-zinc-400 text-xs">{item.usuario || <span className="text-zinc-600">—</span>}</td>
                 <td className="px-4 py-3 text-zinc-400 text-xs">{item.setor}</td>
                 <td className="px-4 py-3"><EquipStatusBadge s={item.status} /></td>
-                <td className="px-4 py-3 text-zinc-500 text-xs">{item.ultimaRevisao}</td>
+                <td className="px-4 py-3 text-zinc-500 text-xs">{item.ultima_revisao ?? "—"}</td>
               </tr>
             ))}
+            {equipamentos.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-zinc-500 text-sm">Nenhum equipamento cadastrado</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -247,9 +219,19 @@ function TabInventario() {
 }
 
 export function HelpdeskView({ onBack }: HelpdeskViewProps) {
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [equipamentos, setEquipamentos] = useState<EquipamentoTI[]>([]);
+
+  useEffect(() => {
+    listTickets().then(setTickets).catch(() => {});
+    listEquipamentosTI().then(setEquipamentos).catch(() => {});
+  }, []);
+
   const abertos = tickets.filter(t => t.status === "aberto" || t.status === "em_atendimento").length;
-  const slaViolados = tickets.filter(t => t.sla < 0 && t.status !== "resolvido" && t.status !== "fechado").length;
-  const satisfacao = 94;
+  const slaViolados = tickets.filter(t => {
+    const rem = computeSlaRemaining(t.created_at, t.sla_horas);
+    return rem < 0 && t.status !== "resolvido" && t.status !== "fechado";
+  }).length;
 
   return (
     <div className="flex flex-col h-full">
@@ -275,8 +257,8 @@ export function HelpdeskView({ onBack }: HelpdeskViewProps) {
             {[
               { label: "Chamados ativos", value: abertos, icon: <AlertCircle className="w-4 h-4 text-teal-400 mx-auto mb-1" /> },
               { label: "SLA violados", value: slaViolados, icon: <XCircle className="w-4 h-4 text-red-400 mx-auto mb-1" /> },
-              { label: "Satisfação", value: `${satisfacao}%`, icon: <TrendingUp className="w-4 h-4 text-green-400 mx-auto mb-1" /> },
-              { label: "Equipamentos", value: inventario.length, icon: <BarChart3 className="w-4 h-4 text-cyan-400 mx-auto mb-1" /> },
+              { label: "Satisfação", value: "—", icon: <TrendingUp className="w-4 h-4 text-green-400 mx-auto mb-1" /> },
+              { label: "Equipamentos", value: equipamentos.length, icon: <BarChart3 className="w-4 h-4 text-cyan-400 mx-auto mb-1" /> },
             ].map(m => (
               <div key={m.label} className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 min-w-[90px]">
                 {m.icon}
@@ -299,14 +281,14 @@ export function HelpdeskView({ onBack }: HelpdeskViewProps) {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="tickets"><TabTickets /></TabsContent>
-        <TabsContent value="inventario"><TabInventario /></TabsContent>
+        <TabsContent value="tickets"><TabTickets tickets={tickets} /></TabsContent>
+        <TabsContent value="inventario"><TabInventario equipamentos={equipamentos} /></TabsContent>
       </Tabs>
 
       {/* Footer */}
       <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-between text-xs text-zinc-500">
         <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Carlos TI · Fernanda TI</span>
+          <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Equipe TI</span>
           <span className="flex items-center gap-1.5"><Server className="w-3.5 h-3.5" /> Infraestrutura PGBA</span>
         </div>
         <span>Setor TI</span>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowDownCircle,
@@ -46,44 +46,18 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Metric, SectionHeader } from "@/components/empresa/shared";
+import {
+  type OrdemCompra,
+  type ItemEstoque,
+  type LancamentoFinanceiro,
+  type Funcionario,
+  listOrdensCompra,
+  listEstoque,
+  listLancamentosFinanceiros,
+  listFuncionarios,
+} from "@/lib/api";
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-
-const compras = [
-  { id: "PC-0041", fornecedor: "TechSupply Ltda", itens: 12, valor: 48320.0, status: "Em Trânsito", previsto: "2026-09-28" },
-  { id: "PC-0040", fornecedor: "Global Parts S.A.", itens: 5, valor: 12750.0, status: "Aprovado", previsto: "2026-10-03" },
-  { id: "PC-0039", fornecedor: "Distribuidora Norte", itens: 30, valor: 8900.0, status: "Recebido", previsto: "2026-09-20" },
-  { id: "PC-0038", fornecedor: "Insumos Rápidos ME", itens: 8, valor: 3450.0, status: "Rascunho", previsto: "2026-10-10" },
-  { id: "PC-0037", fornecedor: "TechSupply Ltda", itens: 20, valor: 62100.0, status: "Aprovado", previsto: "2026-09-30" },
-  { id: "PC-0036", fornecedor: "Papelaria Central", itens: 45, valor: 1870.0, status: "Recebido", previsto: "2026-09-18" },
-];
-
-const estoque = [
-  { produto: "Notebook Dell Inspiron 15", sku: "NB-DEL-001", categoria: "Informática", qtd: 14, min: 5, max: 30, loc: "A1-01", valorUnit: 3499.0 },
-  { produto: "Monitor LG 24\"", sku: "MN-LG-024", categoria: "Informática", qtd: 3, min: 5, max: 20, loc: "A1-02", valorUnit: 899.0 },
-  { produto: "Cadeira Executiva Ergonômica", sku: "MV-CAD-EX", categoria: "Mobiliário", qtd: 7, min: 3, max: 15, loc: "B2-04", valorUnit: 1250.0 },
-  { produto: "Papel A4 Resma 500fls", sku: "PP-A4-500", categoria: "Escritório", qtd: 2, min: 10, max: 50, loc: "C3-01", valorUnit: 28.5 },
-  { produto: "Teclado Mecânico RGB", sku: "TEC-MEC-RG", categoria: "Informática", qtd: 9, min: 4, max: 20, loc: "A1-03", valorUnit: 320.0 },
-  { produto: "Caneta Esferográfica Cx12", sku: "PP-CAN-12", categoria: "Escritório", qtd: 1, min: 5, max: 25, loc: "C3-02", valorUnit: 12.9 },
-  { produto: "Headset USB Logitech", sku: "HS-LOG-USB", categoria: "Informática", qtd: 6, min: 3, max: 12, loc: "A2-01", valorUnit: 189.0 },
-  { produto: "Servidor HP ProLiant", sku: "SRV-HP-PRO", categoria: "Infraestrutura", qtd: 2, min: 1, max: 4, loc: "D1-01", valorUnit: 18750.0 },
-];
-
-const contasReceber = [
-  { descricao: "Contrato de Suporte Mensal", cliente: "Alfa Sistemas Ltda", vencimento: "2026-09-30", valor: 4800.0, status: "Pendente" },
-  { descricao: "Licença Anual Software", cliente: "Beta Corp S.A.", vencimento: "2026-09-15", valor: 12000.0, status: "Vencido" },
-  { descricao: "Consultoria – Fase 2", cliente: "Gamma Indústria", vencimento: "2026-10-05", valor: 9500.0, status: "Pendente" },
-  { descricao: "Implantação ERP", cliente: "Delta Varejo ME", vencimento: "2026-08-31", valor: 22000.0, status: "Pago" },
-  { descricao: "Treinamento Equipe", cliente: "Epsilon Serviços", vencimento: "2026-10-15", valor: 3200.0, status: "Pendente" },
-];
-
-const contasPagar = [
-  { descricao: "Aluguel Sede", fornecedor: "Imóveis Prime Ltda", vencimento: "2026-10-05", valor: 7500.0, status: "Pendente" },
-  { descricao: "Folha de Pagamento", fornecedor: "Colaboradores", vencimento: "2026-09-30", valor: 48200.0, status: "Pendente" },
-  { descricao: "Serviços de Cloud AWS", fornecedor: "Amazon Brasil", vencimento: "2026-09-25", valor: 2340.0, status: "Vencido" },
-  { descricao: "Internet Fibra 500Mb", fornecedor: "Claro Telecom", vencimento: "2026-09-20", valor: 890.0, status: "Pago" },
-  { descricao: "Material de Escritório", fornecedor: "Papelaria Central", vencimento: "2026-10-12", valor: 1870.0, status: "Pendente" },
-];
+// ─── Static data (no backend model) ──────────────────────────────────────────
 
 const dreLinhas = [
   { conta: "Receita Bruta de Vendas", atual: 312500, anterior: 285000, tipo: "receita" },
@@ -100,15 +74,6 @@ const dreLinhas = [
   { conta: "Lucro Antes do IR", atual: 91375, anterior: 78800, tipo: "subtotal" },
   { conta: "Imposto de Renda + CSLL", atual: -18275, anterior: -15760, tipo: "imposto" },
   { conta: "Lucro Líquido", atual: 73100, anterior: 63040, tipo: "resultado" },
-];
-
-const colaboradores = [
-  { nome: "Ana Lima", cargo: "Gerente de Projetos", depto: "Tecnologia", admissao: "2021-03-15", salario: 12500.0, status: "Ativo" },
-  { nome: "Bruno Carvalho", cargo: "Desenvolvedor Sênior", depto: "Tecnologia", admissao: "2022-07-01", salario: 9800.0, status: "Ativo" },
-  { nome: "Carla Souza", cargo: "Analista Financeira", depto: "Financeiro", admissao: "2020-11-20", salario: 8200.0, status: "Férias" },
-  { nome: "Diego Ferreira", cargo: "Vendedor Externo", depto: "Comercial", admissao: "2023-01-10", salario: 5400.0, status: "Ativo" },
-  { nome: "Eduarda Santos", cargo: "Designer UX/UI", depto: "Produto", admissao: "2022-04-05", salario: 7600.0, status: "Afastado" },
-  { nome: "Felipe Nunes", cargo: "Analista de Suporte", depto: "Operações", admissao: "2023-08-22", salario: 4900.0, status: "Ativo" },
 ];
 
 const notasFiscais = [
@@ -145,40 +110,62 @@ function variacao(atual: number, anterior: number) {
 
 // ─── Status badges ────────────────────────────────────────────────────────────
 
-function StatusBadgeCompra({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    Rascunho: "bg-secondary text-muted-foreground border border-border",
-    Aprovado: "bg-primary text-primary-foreground",
-    "Em Trânsito": "bg-warning text-foreground",
-    Recebido: "bg-success text-foreground",
+function StatusBadgeCompra({ status }: { status: OrdemCompra["status"] }) {
+  const label: Record<OrdemCompra["status"], string> = {
+    rascunho: "Rascunho",
+    aprovado:  "Aprovado",
+    enviado:   "Em Trânsito",
+    recebido:  "Recebido",
+    cancelado: "Cancelado",
   };
-  return <Badge className={map[status] ?? "bg-secondary text-muted-foreground"}>{status}</Badge>;
+  const map: Record<OrdemCompra["status"], string> = {
+    rascunho:  "bg-secondary text-muted-foreground border border-border",
+    aprovado:  "bg-primary text-primary-foreground",
+    enviado:   "bg-warning text-foreground",
+    recebido:  "bg-success text-foreground",
+    cancelado: "bg-destructive/20 text-destructive",
+  };
+  return <Badge className={map[status]}>{label[status]}</Badge>;
 }
 
-function StatusBadgeFinanceiro({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    Pendente: "bg-secondary text-muted-foreground border border-border",
-    Vencido: "bg-warning text-foreground",
-    Pago: "bg-success text-foreground",
+function StatusBadgeFinanceiro({ status }: { status: LancamentoFinanceiro["status"] }) {
+  const label: Record<LancamentoFinanceiro["status"], string> = {
+    pendente:  "Pendente",
+    pago:      "Pago",
+    vencido:   "Vencido",
+    cancelado: "Cancelado",
   };
-  return <Badge className={map[status] ?? "bg-secondary text-muted-foreground"}>{status}</Badge>;
+  const map: Record<LancamentoFinanceiro["status"], string> = {
+    pendente:  "bg-secondary text-muted-foreground border border-border",
+    pago:      "bg-success text-foreground",
+    vencido:   "bg-warning text-foreground",
+    cancelado: "bg-destructive/20 text-destructive",
+  };
+  return <Badge className={map[status]}>{label[status]}</Badge>;
 }
 
-function StatusBadgeRH({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    Ativo: "bg-success text-foreground",
-    Férias: "bg-primary text-primary-foreground",
-    Afastado: "bg-warning text-foreground",
+function StatusBadgeRH({ status }: { status: Funcionario["status"] }) {
+  const label: Record<Funcionario["status"], string> = {
+    ativo:      "Ativo",
+    ferias:     "Férias",
+    afastado:   "Afastado",
+    desligado:  "Desligado",
   };
-  return <Badge className={map[status] ?? "bg-secondary text-muted-foreground"}>{status}</Badge>;
+  const map: Record<Funcionario["status"], string> = {
+    ativo:     "bg-success text-foreground",
+    ferias:    "bg-primary text-primary-foreground",
+    afastado:  "bg-warning text-foreground",
+    desligado: "bg-secondary text-muted-foreground border border-border",
+  };
+  return <Badge className={map[status]}>{label[status]}</Badge>;
 }
 
 function StatusBadgeFiscal({ status }: { status: string }) {
   const map: Record<string, string> = {
     Autorizada: "bg-success text-foreground",
-    Cancelada: "bg-warning text-foreground",
-    Pendente: "bg-secondary text-muted-foreground border border-border",
-    Agendado: "bg-primary text-primary-foreground",
+    Cancelada:  "bg-warning text-foreground",
+    Pendente:   "bg-secondary text-muted-foreground border border-border",
+    Agendado:   "bg-primary text-primary-foreground",
   };
   return <Badge className={map[status] ?? "bg-secondary text-muted-foreground"}>{status}</Badge>;
 }
@@ -186,21 +173,27 @@ function StatusBadgeFiscal({ status }: { status: string }) {
 // ─── Tab: Compras ─────────────────────────────────────────────────────────────
 
 function TabCompras() {
+  const [ordens, setOrdens] = useState<OrdemCompra[]>([]);
   const [search, setSearch] = useState("");
-  const filtered = compras.filter(
+
+  useEffect(() => {
+    listOrdensCompra().then(setOrdens).catch(() => {});
+  }, []);
+
+  const filtered = ordens.filter(
     (c) =>
-      c.id.toLowerCase().includes(search.toLowerCase()) ||
-      c.fornecedor.toLowerCase().includes(search.toLowerCase())
+      c.numero.toLowerCase().includes(search.toLowerCase()) ||
+      c.fornecedor_nome.toLowerCase().includes(search.toLowerCase())
   );
-  const valorPendente = compras
-    .filter((c) => c.status !== "Recebido")
-    .reduce((acc, c) => acc + c.valor, 0);
-  const fornecedores = [...new Set(compras.map((c) => c.fornecedor))].length;
+  const valorPendente = ordens
+    .filter((c) => c.status !== "recebido")
+    .reduce((acc, c) => acc + parseFloat(c.valor_total), 0);
+  const fornecedores = [...new Set(ordens.map((c) => c.fornecedor_nome))].length;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Pedidos Abertos" value={String(compras.filter((c) => c.status !== "Recebido").length)} icon={<ClipboardList size={16} />} />
+        <Metric label="Pedidos Abertos" value={String(ordens.filter((c) => c.status !== "recebido").length)} icon={<ClipboardList size={16} />} />
         <Metric label="Valor Total Pendente" value={fmtBRL(valorPendente)} icon={<DollarSign size={16} />} tone="warning" />
         <Metric label="Fornecedores Ativos" value={String(fornecedores)} icon={<Truck size={16} />} />
         <Metric label="Economias do Mês" value="R$ 4.230,00" icon={<TrendingDown size={16} />} tone="success" />
@@ -234,7 +227,6 @@ function TabCompras() {
               <tr className="border-b border-border bg-secondary">
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Pedido #</th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Fornecedor</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Itens</th>
                 <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor Total</th>
                 <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Status</th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Data Prevista</th>
@@ -244,14 +236,13 @@ function TabCompras() {
             <tbody className="divide-y divide-border">
               {filtered.map((row) => (
                 <tr key={row.id} className="hover:bg-secondary/50 transition-colors">
-                  <td className="px-4 py-3 font-mono text-xs font-medium">{row.id}</td>
-                  <td className="px-4 py-3">{row.fornecedor}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{row.itens}</td>
-                  <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(row.valor)}</td>
+                  <td className="px-4 py-3 font-mono text-xs font-medium">{row.numero}</td>
+                  <td className="px-4 py-3">{row.fornecedor_nome}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(parseFloat(row.valor_total))}</td>
                   <td className="px-4 py-3 text-center">
                     <StatusBadgeCompra status={row.status} />
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{row.previsto}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{row.data_entrega_prevista ?? "—"}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-1">
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
@@ -264,6 +255,11 @@ function TabCompras() {
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum pedido encontrado</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -275,21 +271,27 @@ function TabCompras() {
 // ─── Tab: Estoque ─────────────────────────────────────────────────────────────
 
 function TabEstoque() {
+  const [itens, setItens] = useState<ItemEstoque[]>([]);
   const [search, setSearch] = useState("");
   const [categoria, setCategoria] = useState("Todas");
-  const abaixoMin = estoque.filter((e) => e.qtd < e.min).length;
-  const valorTotal = estoque.reduce((acc, e) => acc + e.qtd * e.valorUnit, 0);
-  const categorias = ["Todas", ...new Set(estoque.map((e) => e.categoria))];
-  const filtered = estoque.filter(
+
+  useEffect(() => {
+    listEstoque().then(setItens).catch(() => {});
+  }, []);
+
+  const abaixoMin = itens.filter((e) => e.abaixo_minimo).length;
+  const valorTotal = itens.reduce((acc, e) => acc + e.valor_total, 0);
+  const categorias = ["Todas", ...new Set(itens.map((e) => e.categoria))];
+  const filtered = itens.filter(
     (e) =>
       (categoria === "Todas" || e.categoria === categoria) &&
-      (e.produto.toLowerCase().includes(search.toLowerCase()) || e.sku.toLowerCase().includes(search.toLowerCase()))
+      (e.nome.toLowerCase().includes(search.toLowerCase()) || e.codigo.toLowerCase().includes(search.toLowerCase()))
   );
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Itens em Estoque" value={String(estoque.length)} icon={<Package size={16} />} />
+        <Metric label="Itens em Estoque" value={String(itens.length)} icon={<Package size={16} />} />
         <Metric label="Valor Total" value={fmtBRL(valorTotal)} icon={<DollarSign size={16} />} />
         <Metric label="Itens Abaixo do Mínimo" value={String(abaixoMin)} icon={<AlertTriangle size={16} />} tone="warning" />
         <Metric label="Giro Médio (dias)" value="18,4" icon={<RefreshCw size={16} />} tone="success" />
@@ -301,7 +303,7 @@ function TabEstoque() {
           <div className="flex flex-wrap gap-2">
             <div className="relative">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input className="pl-8 h-8 w-44 text-sm" placeholder="Produto / SKU…" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input className="pl-8 h-8 w-44 text-sm" placeholder="Produto / Código…" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <Select value={categoria} onValueChange={setCategoria}>
               <SelectTrigger className="h-8 w-36 text-xs">
@@ -324,46 +326,46 @@ function TabEstoque() {
             <thead>
               <tr className="border-b border-border bg-secondary">
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Produto</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">SKU</th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Código</th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Categoria</th>
                 <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Qtd</th>
                 <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Mín</th>
-                <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Máx</th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Localização</th>
                 <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor Unit.</th>
                 <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filtered.map((row) => {
-                const baixo = row.qtd < row.min;
-                return (
-                  <tr key={row.sku} className={`transition-colors ${baixo ? "bg-warning/10 hover:bg-warning/15" : "hover:bg-secondary/50"}`}>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        {baixo && <AlertTriangle size={13} className="text-warning shrink-0" />}
-                        <span className={baixo ? "font-medium text-warning" : ""}>{row.produto}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{row.sku}</td>
-                    <td className="px-4 py-3">
-                      <Badge className="bg-secondary text-muted-foreground border border-border text-xs">{row.categoria}</Badge>
-                    </td>
-                    <td className={`px-4 py-3 text-center tabular-nums font-bold ${baixo ? "text-warning" : ""}`}>{row.qtd}</td>
-                    <td className="px-4 py-3 text-center tabular-nums text-muted-foreground">{row.min}</td>
-                    <td className="px-4 py-3 text-center tabular-nums text-muted-foreground">{row.max}</td>
-                    <td className="px-4 py-3 font-mono text-xs">{row.loc}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{fmtBRL(row.valorUnit)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                          <Edit2 size={13} />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {filtered.map((row) => (
+                <tr key={row.id} className={`transition-colors ${row.abaixo_minimo ? "bg-warning/10 hover:bg-warning/15" : "hover:bg-secondary/50"}`}>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      {row.abaixo_minimo && <AlertTriangle size={13} className="text-warning shrink-0" />}
+                      <span className={row.abaixo_minimo ? "font-medium text-warning" : ""}>{row.nome}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{row.codigo}</td>
+                  <td className="px-4 py-3">
+                    <Badge className="bg-secondary text-muted-foreground border border-border text-xs">{row.categoria}</Badge>
+                  </td>
+                  <td className={`px-4 py-3 text-center tabular-nums font-bold ${row.abaixo_minimo ? "text-warning" : ""}`}>{row.quantidade}</td>
+                  <td className="px-4 py-3 text-center tabular-nums text-muted-foreground">{row.quantidade_minima}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{row.localizacao}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{fmtBRL(parseFloat(row.custo_unitario))}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-center gap-1">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                        <Edit2 size={13} />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum item encontrado</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -374,8 +376,7 @@ function TabEstoque() {
 
 // ─── Tab: Financeiro ──────────────────────────────────────────────────────────
 
-type FinanceiroRow = { descricao: string; vencimento: string; valor: number; status: string; cliente?: string; fornecedor?: string };
-function TabelaFinanceiro({ rows, tipo }: { rows: FinanceiroRow[]; tipo: "receber" | "pagar" }) {
+function TabelaFinanceiro({ rows, tipo }: { rows: LancamentoFinanceiro[]; tipo: "receber" | "pagar" }) {
   return (
     <div className="panel-elevated rounded-card overflow-hidden">
       <div className="flex items-center justify-between p-4 border-b border-border">
@@ -405,17 +406,24 @@ function TabelaFinanceiro({ rows, tipo }: { rows: FinanceiroRow[]; tipo: "recebe
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {rows.map((row, i) => (
-              <tr key={i} className="hover:bg-secondary/50 transition-colors">
+            {rows.map((row) => (
+              <tr key={row.id} className="hover:bg-secondary/50 transition-colors">
                 <td className="px-4 py-3 text-xs">{row.descricao}</td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">{"cliente" in row ? row.cliente : row.fornecedor}</td>
+                <td className="px-4 py-3 text-xs text-muted-foreground">
+                  {tipo === "receber" ? row.cliente : row.fornecedor_nome}
+                </td>
                 <td className="px-4 py-3 text-xs">{row.vencimento}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-sm font-medium">{fmtBRL(row.valor)}</td>
+                <td className="px-4 py-3 text-right tabular-nums text-sm font-medium">{fmtBRL(parseFloat(row.valor))}</td>
                 <td className="px-4 py-3 text-center">
                   <StatusBadgeFinanceiro status={row.status} />
                 </td>
               </tr>
             ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum lançamento</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -424,8 +432,17 @@ function TabelaFinanceiro({ rows, tipo }: { rows: FinanceiroRow[]; tipo: "recebe
 }
 
 function TabFinanceiro() {
-  const totalReceber = contasReceber.filter((c) => c.status !== "Pago").reduce((a, c) => a + c.valor, 0);
-  const totalPagar = contasPagar.filter((c) => c.status !== "Pago").reduce((a, c) => a + c.valor, 0);
+  const [lancamentos, setLancamentos] = useState<LancamentoFinanceiro[]>([]);
+
+  useEffect(() => {
+    listLancamentosFinanceiros().then(setLancamentos).catch(() => {});
+  }, []);
+
+  const contasReceber = lancamentos.filter((l) => l.tipo === "receita");
+  const contasPagar   = lancamentos.filter((l) => l.tipo === "despesa");
+
+  const totalReceber = contasReceber.filter((c) => c.status !== "pago").reduce((a, c) => a + parseFloat(c.valor), 0);
+  const totalPagar   = contasPagar.filter((c) => c.status !== "pago").reduce((a, c) => a + parseFloat(c.valor), 0);
   const saldo = 128450.0;
   const resultado = 73100.0;
 
@@ -439,7 +456,7 @@ function TabFinanceiro() {
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TabelaFinanceiro rows={contasReceber} tipo="receber" />
-        <TabelaFinanceiro rows={contasPagar} tipo="pagar" />
+        <TabelaFinanceiro rows={contasPagar}   tipo="pagar" />
       </div>
     </div>
   );
@@ -449,21 +466,20 @@ function TabFinanceiro() {
 
 function TabContabilidade() {
   const receitaBruta = dreLinhas.find((d) => d.conta === "Receita Bruta de Vendas")!;
-  const deducoes = dreLinhas.find((d) => d.conta === "Deduções (Impostos s/ Vendas)")!;
-  const receitaLiq = dreLinhas.find((d) => d.conta === "Receita Líquida")!;
-  const ebitda = dreLinhas.find((d) => d.conta === "EBITDA")!;
+  const deducoes     = dreLinhas.find((d) => d.conta === "Deduções (Impostos s/ Vendas)")!;
+  const receitaLiq   = dreLinhas.find((d) => d.conta === "Receita Líquida")!;
+  const ebitda       = dreLinhas.find((d) => d.conta === "EBITDA")!;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Receita Bruta" value={fmtBRL(receitaBruta.atual)} icon={<TrendingUp size={16} />} tone="success" />
-        <Metric label="Deduções" value={fmtBRL(Math.abs(deducoes.atual))} icon={<TrendingDown size={16} />} tone="warning" />
+        <Metric label="Receita Bruta"   value={fmtBRL(receitaBruta.atual)} icon={<TrendingUp size={16} />} tone="success" />
+        <Metric label="Deduções"        value={fmtBRL(Math.abs(deducoes.atual))} icon={<TrendingDown size={16} />} tone="warning" />
         <Metric label="Receita Líquida" value={fmtBRL(receitaLiq.atual)} icon={<BarChart2 size={16} />} />
-        <Metric label="EBITDA" value={fmtBRL(ebitda.atual)} icon={<DollarSign size={16} />} tone="success" />
+        <Metric label="EBITDA"          value={fmtBRL(ebitda.atual)} icon={<DollarSign size={16} />} tone="success" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        {/* DRE */}
         <div className="lg:col-span-2 panel-elevated rounded-card overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-border">
             <div>
@@ -494,15 +510,20 @@ function TabContabilidade() {
                     <tr
                       key={i}
                       className={`transition-colors ${
-                        isSubtotal
-                          ? "bg-elevated font-semibold"
-                          : row.tipo === "resultado"
+                        row.tipo === "resultado"
                           ? "bg-success/10 font-bold"
+                          : isSubtotal
+                          ? "bg-elevated font-semibold"
                           : "hover:bg-secondary/50"
                       }`}
                     >
                       <td className={`px-4 py-2.5 text-xs ${isSubtotal ? "font-semibold" : ""}`}>
-                        {isSubtotal ? <span className="flex items-center gap-1.5"><ChevronRight size={12} className="text-muted-foreground" />{row.conta}</span> : row.conta}
+                        {isSubtotal ? (
+                          <span className="flex items-center gap-1.5">
+                            <ChevronRight size={12} className="text-muted-foreground" />
+                            {row.conta}
+                          </span>
+                        ) : row.conta}
                       </td>
                       <td className={`px-4 py-2.5 text-right tabular-nums text-xs ${isNegative ? "text-warning" : isSubtotal ? "" : "text-success"}`}>
                         {isNegative ? `(${fmtBRL(Math.abs(row.atual))})` : fmtBRL(row.atual)}
@@ -521,15 +542,14 @@ function TabContabilidade() {
           </div>
         </div>
 
-        {/* Balancete */}
         <div className="flex flex-col gap-4">
           <div className="panel-elevated rounded-card p-4">
             <h3 className="text-sm font-semibold mb-4">Balancete Resumido</h3>
             <div className="space-y-3">
               {[
-                { label: "Ativo Total", value: 842300, tone: "success" as const },
-                { label: "Passivo Total", value: 514800, tone: "warning" as const },
-                { label: "Patrimônio Líquido", value: 327500, tone: "default" as const },
+                { label: "Ativo Total",        value: 842300, tone: "success" as const },
+                { label: "Passivo Total",       value: 514800, tone: "warning" as const },
+                { label: "Patrimônio Líquido",  value: 327500, tone: "default" as const },
               ].map((item) => (
                 <div key={item.label} className="flex items-center justify-between rounded-md bg-secondary px-3 py-2.5">
                   <span className="text-xs text-muted-foreground">{item.label}</span>
@@ -549,10 +569,10 @@ function TabContabilidade() {
             <h3 className="text-sm font-semibold mb-3">Indicadores</h3>
             <div className="space-y-2.5">
               {[
-                { label: "Margem Bruta", value: "62,9%" },
-                { label: "Margem EBITDA", value: "31,3%" },
-                { label: "Margem Líquida", value: "23,4%" },
-                { label: "ROE (mensal)", value: "22,3%" },
+                { label: "Margem Bruta",    value: "62,9%" },
+                { label: "Margem EBITDA",   value: "31,3%" },
+                { label: "Margem Líquida",  value: "23,4%" },
+                { label: "ROE (mensal)",    value: "22,3%" },
               ].map((ind) => (
                 <div key={ind.label} className="flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">{ind.label}</span>
@@ -570,22 +590,29 @@ function TabContabilidade() {
 // ─── Tab: RH ──────────────────────────────────────────────────────────────────
 
 function TabRH() {
+  const [colaboradores, setColaboradores] = useState<Funcionario[]>([]);
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    listFuncionarios().then(setColaboradores).catch(() => {});
+  }, []);
+
   const filtered = colaboradores.filter(
     (c) =>
       c.nome.toLowerCase().includes(search.toLowerCase()) ||
       c.cargo.toLowerCase().includes(search.toLowerCase()) ||
-      c.depto.toLowerCase().includes(search.toLowerCase())
+      c.departamento.toLowerCase().includes(search.toLowerCase())
   );
-  const totalFolha = colaboradores.reduce((a, c) => a + c.salario, 0);
+  const totalFolha = colaboradores.reduce((a, c) => a + parseFloat(c.salario), 0);
+  const deptos = [...new Set(colaboradores.map((c) => c.departamento))];
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Metric label="Total Colaboradores" value={String(colaboradores.length)} icon={<Users size={16} />} />
-        <Metric label="Admissões no Mês" value="2" icon={<Plus size={16} />} tone="success" />
-        <Metric label="Desligamentos" value="0" icon={<XCircle size={16} />} />
-        <Metric label="Custo Total Folha" value={fmtBRL(totalFolha)} icon={<Briefcase size={16} />} tone="warning" />
+        <Metric label="Admissões no Mês"    value="2" icon={<Plus size={16} />} tone="success" />
+        <Metric label="Desligamentos"        value="0" icon={<XCircle size={16} />} />
+        <Metric label="Custo Total Folha"    value={fmtBRL(totalFolha)} icon={<Briefcase size={16} />} tone="warning" />
       </div>
 
       <div className="panel-elevated rounded-card overflow-hidden">
@@ -617,14 +644,14 @@ function TabRH() {
             </thead>
             <tbody className="divide-y divide-border">
               {filtered.map((row) => (
-                <tr key={row.nome} className="hover:bg-secondary/50 transition-colors">
+                <tr key={row.id} className="hover:bg-secondary/50 transition-colors">
                   <td className="px-4 py-3 font-medium">{row.nome}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{row.cargo}</td>
                   <td className="px-4 py-3">
-                    <Badge className="bg-secondary text-muted-foreground border border-border text-xs">{row.depto}</Badge>
+                    <Badge className="bg-secondary text-muted-foreground border border-border text-xs">{row.departamento}</Badge>
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{row.admissao}</td>
-                  <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(row.salario)}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{row.data_admissao}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(parseFloat(row.salario))}</td>
                   <td className="px-4 py-3 text-center">
                     <StatusBadgeRH status={row.status} />
                   </td>
@@ -640,15 +667,19 @@ function TabRH() {
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum colaborador encontrado</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Distribuição por departamento */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {["Tecnologia", "Financeiro", "Comercial", "Produto", "Operações"].map((depto) => {
-          const count = colaboradores.filter((c) => c.depto === depto).length;
+        {deptos.map((depto) => {
+          const count = colaboradores.filter((c) => c.departamento === depto).length;
           return (
             <div key={depto} className="panel rounded-card flex items-center justify-between px-4 py-3">
               <div className="flex items-center gap-3">
@@ -671,9 +702,9 @@ function TabRH() {
 function TabFiscal() {
   const [search, setSearch] = useState("");
   const nfeAutorizadas = notasFiscais.filter((n) => n.status === "Autorizada").length;
-  const nfePendentes = notasFiscais.filter((n) => n.status === "Pendente").length;
-  const impostosMes = 46875 + 18275;
-  const proxObrigacao = "GFIP – 07/Out";
+  const nfePendentes   = notasFiscais.filter((n) => n.status === "Pendente").length;
+  const impostosMes    = 46875 + 18275;
+  const proxObrigacao  = "GFIP – 07/Out";
 
   const filtered = notasFiscais.filter(
     (n) =>
@@ -685,14 +716,13 @@ function TabFiscal() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="NF-e Emitidas" value={String(nfeAutorizadas)} icon={<FileText size={16} />} tone="success" />
-        <Metric label="NF-e Pendentes" value={String(nfePendentes)} icon={<Clock size={16} />} tone="warning" />
-        <Metric label="Impostos do Mês" value={fmtBRL(impostosMes)} icon={<Receipt size={16} />} />
-        <Metric label="Próxima Obrigação" value={proxObrigacao} icon={<Calendar size={16} />} tone="warning" />
+        <Metric label="NF-e Emitidas"      value={String(nfeAutorizadas)} icon={<FileText size={16} />} tone="success" />
+        <Metric label="NF-e Pendentes"     value={String(nfePendentes)} icon={<Clock size={16} />} tone="warning" />
+        <Metric label="Impostos do Mês"    value={fmtBRL(impostosMes)} icon={<Receipt size={16} />} />
+        <Metric label="Próxima Obrigação"  value={proxObrigacao} icon={<Calendar size={16} />} tone="warning" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        {/* Tabela NF-e */}
         <div className="lg:col-span-2 panel-elevated rounded-card overflow-hidden">
           <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-border">
             <SectionHeader title="Notas Fiscais Eletrônicas" description="NF-e emitidas neste período" />
@@ -726,9 +756,7 @@ function TabFiscal() {
                     <td className="px-4 py-3 text-xs">{row.cliente}</td>
                     <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(row.valor)}</td>
                     <td className="px-4 py-3 text-center font-mono text-xs">{row.cfop}</td>
-                    <td className="px-4 py-3 text-center">
-                      <StatusBadgeFiscal status={row.status} />
-                    </td>
+                    <td className="px-4 py-3 text-center"><StatusBadgeFiscal status={row.status} /></td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{row.emissao}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
@@ -747,7 +775,6 @@ function TabFiscal() {
           </div>
         </div>
 
-        {/* Obrigações Fiscais */}
         <div className="panel-elevated rounded-card overflow-hidden">
           <div className="p-4 border-b border-border">
             <h3 className="text-sm font-semibold">Obrigações Acessórias</h3>
@@ -784,7 +811,6 @@ function TabFiscal() {
 export function ERPView({ onBack, defaultTab = "compras" }: { onBack: () => void; defaultTab?: string }) {
   return (
     <div className="space-y-6">
-      {/* ── Page Header ─────────────────────────────────────────────────────── */}
       <div className="rounded-xl bg-gradient-to-r from-emerald-600/20 via-green-600/10 to-transparent border border-emerald-500/20 px-5 py-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0 text-emerald-300 hover:text-emerald-100 hover:bg-emerald-500/20">
@@ -812,44 +838,20 @@ export function ERPView({ onBack, defaultTab = "compras" }: { onBack: () => void
 
       <Tabs defaultValue={defaultTab} className="space-y-6">
         <TabsList className="h-9 gap-1 bg-secondary p-1 rounded-md flex-wrap">
-          <TabsTrigger value="compras" className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-            <ShoppingCart size={13} /> Compras
-          </TabsTrigger>
-          <TabsTrigger value="estoque" className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-            <Box size={13} /> Estoque
-          </TabsTrigger>
-          <TabsTrigger value="financeiro" className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-            <Wallet size={13} /> Financeiro
-          </TabsTrigger>
-          <TabsTrigger value="contabilidade" className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-            <BookOpen size={13} /> Contabilidade
-          </TabsTrigger>
-          <TabsTrigger value="rh" className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-            <Users size={13} /> RH
-          </TabsTrigger>
-          <TabsTrigger value="fiscal" className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm">
-            <Receipt size={13} /> Fiscal
-          </TabsTrigger>
+          <TabsTrigger value="compras"       className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><ShoppingCart size={13} /> Compras</TabsTrigger>
+          <TabsTrigger value="estoque"       className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><Box size={13} /> Estoque</TabsTrigger>
+          <TabsTrigger value="financeiro"    className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><Wallet size={13} /> Financeiro</TabsTrigger>
+          <TabsTrigger value="contabilidade" className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><BookOpen size={13} /> Contabilidade</TabsTrigger>
+          <TabsTrigger value="rh"            className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><Users size={13} /> RH</TabsTrigger>
+          <TabsTrigger value="fiscal"        className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><Receipt size={13} /> Fiscal</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="compras">
-          <TabCompras />
-        </TabsContent>
-        <TabsContent value="estoque">
-          <TabEstoque />
-        </TabsContent>
-        <TabsContent value="financeiro">
-          <TabFinanceiro />
-        </TabsContent>
-        <TabsContent value="contabilidade">
-          <TabContabilidade />
-        </TabsContent>
-        <TabsContent value="rh">
-          <TabRH />
-        </TabsContent>
-        <TabsContent value="fiscal">
-          <TabFiscal />
-        </TabsContent>
+        <TabsContent value="compras">       <TabCompras /> </TabsContent>
+        <TabsContent value="estoque">       <TabEstoque /> </TabsContent>
+        <TabsContent value="financeiro">    <TabFinanceiro /> </TabsContent>
+        <TabsContent value="contabilidade"> <TabContabilidade /> </TabsContent>
+        <TabsContent value="rh">            <TabRH /> </TabsContent>
+        <TabsContent value="fiscal">        <TabFiscal /> </TabsContent>
       </Tabs>
     </div>
   );
