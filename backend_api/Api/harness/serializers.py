@@ -51,3 +51,23 @@ class GenerateCodeSerializer(serializers.Serializer):
 
     def validate_validation_error(self, value):
         return strip_control_chars(value)
+
+
+class AIProviderCredentialSerializer(serializers.Serializer):
+    """Leitura/escrita de credencial de provedor de IA pelo painel de configuração."""
+
+    PROVIDERS = ["ollama", "openai", "anthropic", "groq", "openrouter"]
+
+    id = serializers.IntegerField(read_only=True)
+    provider = serializers.ChoiceField(choices=PROVIDERS)
+    label = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    base_url = serializers.URLField(required=False, allow_blank=True, default="")
+    # Ao ler: sempre mascarado. Ao escrever: texto puro (armazenado criptografado).
+    api_key = serializers.CharField(required=False, allow_blank=True, default="", write_only=True)
+    api_key_masked = serializers.SerializerMethodField(read_only=True)
+    default_model = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    is_active = serializers.BooleanField(default=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+
+    def get_api_key_masked(self, obj) -> str:
+        return obj.masked_api_key
