@@ -190,7 +190,7 @@ function TabCompras() {
         <Metric label="Pedidos Abertos" value={String(ordens.filter((c) => c.status !== "recebido").length)} icon={<ClipboardList size={16} />} />
         <Metric label="Valor Total Pendente" value={fmtBRL(valorPendente)} icon={<DollarSign size={16} />} tone="warning" />
         <Metric label="Fornecedores Ativos" value={String(fornecedores)} icon={<Truck size={16} />} />
-        <Metric label="Economias do Mês" value="R$ 4.230,00" icon={<TrendingDown size={16} />} tone="success" />
+        <Metric label="Pedidos Recebidos" value={String(ordens.filter((c) => c.status === "recebido").length)} icon={<TrendingDown size={16} />} tone="success" />
       </div>
 
       <div className="panel-elevated rounded-card overflow-hidden">
@@ -288,7 +288,7 @@ function TabEstoque() {
         <Metric label="Itens em Estoque" value={String(itens.length)} icon={<Package size={16} />} />
         <Metric label="Valor Total" value={fmtBRL(valorTotal)} icon={<DollarSign size={16} />} />
         <Metric label="Itens Abaixo do Mínimo" value={String(abaixoMin)} icon={<AlertTriangle size={16} />} tone="warning" />
-        <Metric label="Giro Médio (dias)" value="18,4" icon={<RefreshCw size={16} />} tone="success" />
+        <Metric label="Categorias" value={String(new Set(itens.map((e) => e.categoria)).size)} icon={<RefreshCw size={16} />} tone="success" />
       </div>
 
       <div className="panel-elevated rounded-card overflow-hidden">
@@ -437,8 +437,10 @@ function TabFinanceiro() {
 
   const totalReceber = contasReceber.filter((c) => c.status !== "pago").reduce((a, c) => a + parseFloat(c.valor), 0);
   const totalPagar   = contasPagar.filter((c) => c.status !== "pago").reduce((a, c) => a + parseFloat(c.valor), 0);
-  const saldo = 128450.0;
-  const resultado = 73100.0;
+  const saldo = contasReceber.filter((c) => c.status === "pago").reduce((a, c) => a + parseFloat(c.valor), 0)
+              - contasPagar.filter((c) => c.status === "pago").reduce((a, c) => a + parseFloat(c.valor), 0);
+  const resultado = contasReceber.reduce((a, c) => a + parseFloat(c.valor), 0)
+                  - contasPagar.reduce((a, c) => a + parseFloat(c.valor), 0);
 
   return (
     <div className="space-y-6">
@@ -600,12 +602,16 @@ function TabRH() {
   const totalFolha = colaboradores.reduce((a, c) => a + parseFloat(c.salario), 0);
   const deptos = [...new Set(colaboradores.map((c) => c.departamento))];
 
+  const mesAtual = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+  const admissoesMes = colaboradores.filter((c) => c.data_admissao?.startsWith(mesAtual)).length;
+  const desligamentos = colaboradores.filter((c) => c.status === "desligado").length;
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Metric label="Total Colaboradores" value={String(colaboradores.length)} icon={<Users size={16} />} />
-        <Metric label="Admissões no Mês"    value="2" icon={<Plus size={16} />} tone="success" />
-        <Metric label="Desligamentos"        value="0" icon={<XCircle size={16} />} />
+        <Metric label="Admissões no Mês"    value={String(admissoesMes)} icon={<Plus size={16} />} tone="success" />
+        <Metric label="Desligados"           value={String(desligamentos)} icon={<XCircle size={16} />} />
         <Metric label="Custo Total Folha"    value={fmtBRL(totalFolha)} icon={<Briefcase size={16} />} tone="warning" />
       </div>
 
