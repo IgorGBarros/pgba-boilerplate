@@ -63,6 +63,7 @@ function getRoomFloor(type: string): string {
     case "control": return "#c4d4e8"; // azul aço — Sala de Controle
     case "ceo":     return "#e0eedc"; // verde suave — CEO
     case "meeting": return "#f0e4d4"; // pêssego — Sala de Reunião
+    case "mercado": return "#c8e8d4"; // verde trading — Inteligência de Mercado
     default:        return "#ece8e0"; // neutro quente — genérico
   }
 }
@@ -157,11 +158,12 @@ function buildPath(
   ];
 }
 
-function inferRoomType(name: string): "tech" | "design" | "ceo" | "meeting" | "control" | "payment" | "generic" {
+function inferRoomType(name: string): "tech" | "design" | "ceo" | "meeting" | "control" | "payment" | "mercado" | "generic" {
   const n = name.toLowerCase();
   if (n.includes("ceo") || n.includes("diretor") || n.includes("executiv") || n.includes("president")) return "ceo";
   if (n.includes("reuni") || n.includes("meeting")) return "meeting";
   if (n.includes("controle") || n.includes("control") || n.includes("monit")) return "control";
+  if (n.includes("mercado") || n.includes("inteligência") || n.includes("trading") || n.includes("bolsa")) return "mercado";
   if (n.includes("pagamento") || n.includes("payment") || n.includes("finan")) return "payment";
   if (n.includes("dev") || n.includes("back") || n.includes("front") || n.includes("infra") || n.includes("devops")) return "tech";
   if (n.includes("design") || n.includes("ux") || n.includes("market") || n.includes("criat")) return "design";
@@ -550,6 +552,214 @@ function Whiteboard({ x, z, rotation = 0 }: { x: number; z: number; rotation?: n
           <meshStandardMaterial color={["#ef4444", "#3b82f6", "#22c55e"][i]} />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+// ─── Trading desk com gráfico de candles 3D ──────────────────────────────────
+
+function TradingDesk({ x, z, accent = "#22c55e" }: { x: number; z: number; accent?: string }) {
+  const candleRef = useRef<THREE.Group>(null!);
+
+  // Candles simulados: [open, high, low, close] normalizado 0-1
+  const candles: [number, number, number, number][] = [
+    [0.3, 0.5, 0.25, 0.45], [0.45, 0.6, 0.42, 0.55], [0.55, 0.62, 0.48, 0.5],
+    [0.5, 0.55, 0.38, 0.4], [0.4, 0.52, 0.36, 0.5], [0.5, 0.7, 0.48, 0.68],
+    [0.68, 0.75, 0.65, 0.72], [0.72, 0.78, 0.68, 0.74],
+  ];
+
+  useFrame(({ clock }) => {
+    if (!candleRef.current) return;
+    const t = clock.getElapsedTime();
+    candleRef.current.children.forEach((child, i) => {
+      if (child instanceof THREE.Mesh) {
+        const mat = child.material as THREE.MeshStandardMaterial;
+        mat.emissiveIntensity = 0.25 + 0.15 * Math.sin(t * 1.2 + i * 0.5);
+      }
+    });
+  });
+
+  const SCREEN_W = 1.1;
+  const SCREEN_H = 0.65;
+  const candleW = SCREEN_W / (candles.length + 1);
+
+  return (
+    <group position={[x, 0, z]}>
+      {/* Tampo da mesa */}
+      <mesh position={[0, 0.76, 0]} castShadow>
+        <boxGeometry args={[2.0, 0.07, 1.0]} />
+        <meshStandardMaterial color="#1a2a1a" roughness={0.5} metalness={0.1} />
+      </mesh>
+      {/* Pernas */}
+      {([[-0.88, -0.42], [0.88, -0.42], [-0.88, 0.42], [0.88, 0.42]] as [number,number][]).map(([px, pz], i) => (
+        <mesh key={i} position={[px, 0.37, pz]}>
+          <boxGeometry args={[0.06, 0.74, 0.06]} />
+          <meshStandardMaterial color="#0d1a0d" metalness={0.6} />
+        </mesh>
+      ))}
+
+      {/* Monitor principal — tela com gráfico */}
+      <group position={[0, 1.55, -0.35]}>
+        {/* Carcaça */}
+        <mesh>
+          <boxGeometry args={[1.18, 0.72, 0.07]} />
+          <meshStandardMaterial color="#111" />
+        </mesh>
+        {/* Tela de fundo escuro */}
+        <mesh position={[0, 0, 0.042]}>
+          <boxGeometry args={[1.12, 0.66, 0.02]} />
+          <meshStandardMaterial color="#030e05" emissive="#001a05" emissiveIntensity={0.5} />
+        </mesh>
+
+        {/* Grid lines na tela */}
+        {[0.12, 0, -0.12].map((dy, i) => (
+          <mesh key={i} position={[0, dy, 0.055]}>
+            <boxGeometry args={[1.0, 0.004, 0.003]} />
+            <meshStandardMaterial color="#1a3a1a" emissive="#1a3a1a" emissiveIntensity={0.4} />
+          </mesh>
+        ))}
+
+        {/* Candles 3D na tela */}
+        <group ref={candleRef} position={[-SCREEN_W / 2 + candleW, 0, 0.058]}>
+          {candles.map(([o, h, l, c], i) => {
+            const bull = c >= o;
+            const color = bull ? "#22c55e" : "#ef4444";
+            const bodyBot = Math.min(o, c);
+            const bodyTop = Math.max(o, c);
+            const bodyH = Math.max(0.008, (bodyTop - bodyBot) * SCREEN_H * 0.85);
+            const bodyY = (bodyBot + (bodyTop - bodyBot) / 2 - 0.5) * SCREEN_H * 0.85;
+            const wickH = (h - l) * SCREEN_H * 0.85;
+            const wickY = (l + (h - l) / 2 - 0.5) * SCREEN_H * 0.85;
+            return (
+              <group key={i} position={[i * candleW, 0, 0]}>
+                {/* Pavio */}
+                <mesh position={[0, wickY, 0]}>
+                  <boxGeometry args={[0.003, wickH, 0.003]} />
+                  <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.25} />
+                </mesh>
+                {/* Corpo */}
+                <mesh position={[0, bodyY, 0]}>
+                  <boxGeometry args={[candleW * 0.55, bodyH, 0.003]} />
+                  <meshStandardMaterial
+                    color={bull ? color : "#0a0a0a"}
+                    emissive={color}
+                    emissiveIntensity={0.25}
+                  />
+                </mesh>
+              </group>
+            );
+          })}
+        </group>
+
+        {/* Linha de preço em destaque (verde) */}
+        <mesh position={[0.08, 0.14, 0.056]}>
+          <boxGeometry args={[0.9, 0.003, 0.003]} />
+          <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={0.8} />
+        </mesh>
+
+        {/* Haste + base do monitor */}
+        <mesh position={[0, -0.42, -0.06]}>
+          <cylinderGeometry args={[0.03, 0.03, 0.28, 6]} />
+          <meshStandardMaterial color="#444" metalness={0.8} />
+        </mesh>
+        <mesh position={[0, -0.58, -0.06]}>
+          <boxGeometry args={[0.32, 0.04, 0.24]} />
+          <meshStandardMaterial color="#333" metalness={0.7} />
+        </mesh>
+      </group>
+
+      {/* Monitor secundário — métricas */}
+      <group position={[0.82, 1.52, -0.32]} rotation={[0, -0.3, 0]}>
+        <mesh>
+          <boxGeometry args={[0.72, 0.46, 0.05]} />
+          <meshStandardMaterial color="#111" />
+        </mesh>
+        <mesh position={[0, 0, 0.03]}>
+          <boxGeometry args={[0.68, 0.42, 0.02]} />
+          <meshStandardMaterial color="#030e05" emissive="#003a10" emissiveIntensity={0.4} />
+        </mesh>
+        {/* Linhas de texto simuladas */}
+        {[0.12, 0.04, -0.04, -0.12].map((dy, i) => (
+          <mesh key={i} position={[i % 2 === 0 ? 0.05 : 0, dy, 0.04]}>
+            <boxGeometry args={[0.45 + (i % 3) * 0.06, 0.018, 0.003]} />
+            <meshStandardMaterial
+              color={i === 0 ? "#22c55e" : i === 1 ? "#ef4444" : "#60a5fa"}
+              emissive={i === 0 ? "#22c55e" : i === 1 ? "#ef4444" : "#60a5fa"}
+              emissiveIntensity={0.5}
+            />
+          </mesh>
+        ))}
+        <mesh position={[0, -0.28, -0.04]}>
+          <cylinderGeometry args={[0.022, 0.022, 0.2, 5]} />
+          <meshStandardMaterial color="#444" metalness={0.8} />
+        </mesh>
+      </group>
+
+      {/* Monitor esquerdo — order book */}
+      <group position={[-0.82, 1.52, -0.32]} rotation={[0, 0.3, 0]}>
+        <mesh>
+          <boxGeometry args={[0.72, 0.46, 0.05]} />
+          <meshStandardMaterial color="#111" />
+        </mesh>
+        <mesh position={[0, 0, 0.03]}>
+          <boxGeometry args={[0.68, 0.42, 0.02]} />
+          <meshStandardMaterial color="#030810" emissive="#00103a" emissiveIntensity={0.4} />
+        </mesh>
+        {[0.12, 0.04, -0.04, -0.12].map((dy, i) => (
+          <mesh key={i} position={[0, dy, 0.04]}>
+            <boxGeometry args={[0.5, 0.016, 0.003]} />
+            <meshStandardMaterial
+              color={i < 2 ? "#22c55e" : "#ef4444"}
+              emissive={i < 2 ? "#22c55e" : "#ef4444"}
+              emissiveIntensity={0.4}
+            />
+          </mesh>
+        ))}
+        <mesh position={[0, -0.28, -0.04]}>
+          <cylinderGeometry args={[0.022, 0.022, 0.2, 5]} />
+          <meshStandardMaterial color="#444" metalness={0.8} />
+        </mesh>
+      </group>
+
+      {/* Teclado */}
+      <mesh position={[0, 0.79, 0.18]}>
+        <boxGeometry args={[0.72, 0.025, 0.24]} />
+        <meshStandardMaterial color="#1a1a1a" />
+      </mesh>
+      {Array.from({ length: 30 }, (_, i) => (
+        <mesh key={i} position={[-0.3 + (i % 10) * 0.067, 0.806, 0.1 + Math.floor(i / 10) * 0.076]}>
+          <boxGeometry args={[0.055, 0.007, 0.06]} />
+          <meshStandardMaterial color="#222" />
+        </mesh>
+      ))}
+
+      {/* Mousepad verde */}
+      <mesh position={[0.6, 0.782, 0.22]}>
+        <boxGeometry args={[0.28, 0.004, 0.22]} />
+        <meshStandardMaterial color="#0a2010" />
+      </mesh>
+      <mesh position={[0.6, 0.79, 0.22]}>
+        <boxGeometry args={[0.09, 0.012, 0.14]} />
+        <meshStandardMaterial color={accent} roughness={0.7} />
+      </mesh>
+
+      {/* Xícara de café */}
+      <group position={[-0.72, 0.83, 0.24]}>
+        <mesh>
+          <cylinderGeometry args={[0.038, 0.03, 0.055, 8]} />
+          <meshStandardMaterial color="#f0f0f0" />
+        </mesh>
+        <mesh position={[0.048, 0.005, 0]} rotation={[0, 0, Math.PI / 2]}>
+          <torusGeometry args={[0.022, 0.007, 4, 8]} />
+          <meshStandardMaterial color="#f0f0f0" />
+        </mesh>
+      </group>
+
+      {/* LED strip na borda da mesa */}
+      <mesh position={[0, 0.792, 0.49]}>
+        <boxGeometry args={[1.94, 0.008, 0.01]} />
+        <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.9} />
+      </mesh>
     </group>
   );
 }
@@ -1440,6 +1650,54 @@ function Room({
           <PixelChair x={2.8} z={-1.1} color={palette.accent} rotation={Math.PI} />
           <Plant x={3.4} z={3.0} />
           <CoffeeMachine x={-2.5} z={2.8} />
+        </>
+      )}
+
+      {type === "mercado" && (
+        <>
+          {/* 3 trading desks com gráfico de candles */}
+          <TradingDesk x={-2.5} z={-2.0} accent="#22c55e" />
+          <PixelChair x={-2.5} z={-0.7} color="#0d2a0d" rotation={Math.PI} />
+          <TradingDesk x={0.5} z={-2.0} accent="#22c55e" />
+          <PixelChair x={0.5} z={-0.7} color="#0d2a0d" rotation={Math.PI} />
+          <TradingDesk x={3.0} z={-2.0} accent="#ef4444" />
+          <PixelChair x={3.0} z={-0.7} color="#2a0d0d" rotation={Math.PI} />
+          {/* Tela de telão de mercado na parede traseira */}
+          <mesh position={[0, 1.4, -halfD + WALL_T + 0.04]}>
+            <boxGeometry args={[5.5, 1.0, 0.04]} />
+            <meshStandardMaterial color="#050e05" emissive="#003a10" emissiveIntensity={0.3} />
+          </mesh>
+          {/* Linhas de preço no telão */}
+          {[-0.25, 0, 0.25].map((dy, i) => (
+            <mesh key={i} position={[0, 1.4 + dy, -halfD + WALL_T + 0.07]}>
+              <boxGeometry args={[5.0, 0.025, 0.003]} />
+              <meshStandardMaterial
+                color={["#22c55e","#60a5fa","#ef4444"][i]!}
+                emissive={["#22c55e","#60a5fa","#ef4444"][i]!}
+                emissiveIntensity={0.6}
+              />
+            </mesh>
+          ))}
+          {/* Ticker tickers simulados */}
+          {[-2.0, -0.5, 1.0, 2.5].map((tx, i) => (
+            <mesh key={i} position={[tx, 0.95, -halfD + WALL_T + 0.06]}>
+              <boxGeometry args={[0.9, 0.14, 0.01]} />
+              <meshStandardMaterial
+                color={i % 2 === 0 ? "#22c55e" : "#ef4444"}
+                emissive={i % 2 === 0 ? "#22c55e" : "#ef4444"}
+                emissiveIntensity={0.55}
+              />
+            </mesh>
+          ))}
+          {/* Mesa de briefing pequena + cadeiras */}
+          <mesh position={[-2.5, 0.6, 2.2]} castShadow>
+            <boxGeometry args={[1.6, 0.05, 0.8]} />
+            <meshStandardMaterial color="#162216" roughness={0.5} />
+          </mesh>
+          <PixelChair x={-2.5} z={1.5} color="#0d2a0d" />
+          <PixelChair x={-2.5} z={2.9} color="#0d2a0d" rotation={Math.PI} />
+          <Plant x={3.4} z={2.8} tall />
+          <CoffeeMachine x={2.5} z={2.8} />
         </>
       )}
 
