@@ -88,6 +88,7 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
         use_rag_context=use_rag_context,
         rag_source_ids=_rag_scope_for(agent),
         policy_check=make_policy_check(agent),
+        agent_instructions=agent.instructions or "",
     )
 
     if result.get("status") == "pending_approval" and result.get("function_called"):

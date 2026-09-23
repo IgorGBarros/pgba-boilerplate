@@ -85,7 +85,8 @@ def extract_code_block(raw: str, language: str | None = None) -> str:
     if not raw:
         raise ValueError("Resposta do modelo vazia — nada para extrair.")
 
-    fence = rf"```{language or '\\w*'}\n([\s\S]*?)\n```"
+    _lang = language or r'\w*'
+    fence = rf"```{_lang}\n([\s\S]*?)\n```"
     match = re.search(fence, raw)
     if match:
         return match.group(1).strip()
