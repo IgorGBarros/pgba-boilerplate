@@ -16,6 +16,7 @@ import {
   Save,
   ShoppingCart,
   Trash2,
+  TrendingUp,
   Users,
   Wallet,
   Wrench,
@@ -46,6 +47,7 @@ import {
   ImportProjectDialog,
   NewProjectDialog,
 } from "@/components/empresa/dialogs";
+import { SectorDetailPage } from "@/components/empresa/mercado";
 import { Projects } from "@/components/empresa/projects";
 import { aiModels } from "@/lib/pgba-data";
 import {
@@ -70,7 +72,7 @@ import {
 
 const CompanyOffice3D = lazy(() => import("@/components/builder/CompanyOffice3D"));
 
-type SectorIconKey = "commercial" | "purchasing" | "finance" | "dev" | "ops";
+type SectorIconKey = "commercial" | "purchasing" | "finance" | "dev" | "ops" | "mercado";
 
 const sectorIcons: Record<SectorIconKey, React.ElementType> = {
   commercial: Users,
@@ -78,10 +80,12 @@ const sectorIcons: Record<SectorIconKey, React.ElementType> = {
   finance: Receipt,
   dev: Code2,
   ops: Wrench,
+  mercado: TrendingUp,
 };
 
 function inferIcon(name: string): SectorIconKey {
   const n = name.toLowerCase();
+  if (n.includes("mercado") || n.includes("trading") || n.includes("bolsa")) return "mercado";
   if (n.includes("comercial") || n.includes("vend")) return "commercial";
   if (n.includes("compra") || n.includes("purch")) return "purchasing";
   if (n.includes("financ") || n.includes("contabil") || n.includes("control")) return "finance";
@@ -679,7 +683,7 @@ function SubTabBtn({
 
 // ─── Visão Geral content ──────────────────────────────────────────────────────
 
-function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
+function VisaoGeral({ onNewTask, onSectorClick }: { onNewTask: (sector?: string) => void; onSectorClick: (sector: Sector) => void }) {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [metrics, setMetrics] = useState<AgentMetricsOverview | null>(null);
@@ -848,10 +852,14 @@ function VisaoGeral({ onNewTask }: { onNewTask: (sector?: string) => void }) {
               <div key={sector.id} className="panel flex h-72 flex-col">
                 {/* Header */}
                 <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border p-4">
-                  <div className="flex items-center gap-2 font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => onSectorClick(sector)}
+                    className="flex items-center gap-2 font-semibold hover:text-primary transition-colors"
+                  >
                     <Icon className="size-5 text-primary" />
                     {sector.name}
-                  </div>
+                  </button>
                   <div className="flex items-center gap-1.5">
                     {/* RAG badge + add-agent button */}
                     <button
@@ -1066,26 +1074,36 @@ export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: stri
   const [subTab, setSubTab] = useState<"overview" | "projects" | "office">("overview");
   const [newProject, setNewProject] = useState(false);
   const [importProject, setImportProject] = useState(false);
+  const [selectedSector, setSelectedSector] = useState<Sector | null>(null);
 
   return (
     <div className={subTab === "office" ? "-mx-4 md:-mx-6 -mt-4 md:-mt-6 flex flex-col" : ""}>
-      {/* Sub-tab nav */}
-      <div className={`flex items-center gap-1 border-b border-border ${subTab === "office" ? "px-4 py-2 bg-background" : "pb-4 mb-2"}`}>
-        <SubTabBtn active={subTab === "overview"} onClick={() => setSubTab("overview")}>
-          <Building2 className="size-4" />
-          Visão Geral
-        </SubTabBtn>
-        <SubTabBtn active={subTab === "projects"} onClick={() => setSubTab("projects")}>
-          <FolderTree className="size-4" />
-          Projetos
-        </SubTabBtn>
-        <SubTabBtn active={subTab === "office"} onClick={() => setSubTab("office")}>
-          <Cuboid className="size-4" />
-          Escritório 3D
-        </SubTabBtn>
-      </div>
+      {/* Sub-tab nav — oculta no detalhe de setor */}
+      {!selectedSector && (
+        <div className={`flex items-center gap-1 border-b border-border ${subTab === "office" ? "px-4 py-2 bg-background" : "pb-4 mb-2"}`}>
+          <SubTabBtn active={subTab === "overview"} onClick={() => setSubTab("overview")}>
+            <Building2 className="size-4" />
+            Visão Geral
+          </SubTabBtn>
+          <SubTabBtn active={subTab === "projects"} onClick={() => setSubTab("projects")}>
+            <FolderTree className="size-4" />
+            Projetos
+          </SubTabBtn>
+          <SubTabBtn active={subTab === "office"} onClick={() => setSubTab("office")}>
+            <Cuboid className="size-4" />
+            Escritório 3D
+          </SubTabBtn>
+        </div>
+      )}
 
-      {subTab === "overview" && <VisaoGeral onNewTask={onNewTask} />}
+      {/* Detalhe de setor */}
+      {selectedSector && (
+        <SectorDetailPage sector={selectedSector} onBack={() => setSelectedSector(null)} />
+      )}
+
+      {!selectedSector && subTab === "overview" && (
+        <VisaoGeral onNewTask={onNewTask} onSectorClick={setSelectedSector} />
+      )}
 
       {subTab === "projects" && (
         <div className="space-y-4">
