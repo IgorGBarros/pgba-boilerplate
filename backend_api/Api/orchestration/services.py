@@ -34,7 +34,7 @@ from django.conf import settings
 
 from harness.guardrails import extract_json, validate_schema, require_grounded_context, GroundingError, NoAnswer
 from harness.injection_guard import sanitize_user_input, wrap_rag_context
-from harness.providers import chat_completion, ProviderConfigError
+from harness.providers import chat_completion, get_active_provider, ProviderConfigError
 from orchestration import registry, router
 from orchestration.models import QueryLog
 
@@ -108,8 +108,11 @@ def answer_question(
     start = time.monotonic()
     question = sanitize_user_input(question, source="orchestration")
     category, model_config = router.route(question)
-    provider = getattr(settings, "CHAT_PROVIDER", "ollama")
-    model = model_config.get("model", "")
+    provider = get_active_provider(tenant_id)
+    # AI_MODEL_CATALOG usa nomes de modelos Ollama — só repassar se o
+    # provider ativo for Ollama; caso contrário, deixar vazio para que
+    # chat_completion use cred.default_model (configurado no banco).
+    model = model_config.get("model", "") if provider == "ollama" else ""
 
     log = QueryLog(
         tenant_id=tenant_id, user=user, question=question,
