@@ -1100,7 +1100,6 @@ function DealDetailModal({
   onDeleted: (id: number) => void;
   onConverted: (project: CRMProject) => void;
 }) {
-  const [tab, setTab] = useState<"info" | "campos">("info");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [local, setLocal] = useState(deal);
@@ -1201,61 +1200,33 @@ function DealDetailModal({
         </div>
       }
     >
-      <div className="flex border-b border-border shrink-0">
-        {([
-          { key: "info" as const, label: "Informações", icon: <Briefcase className="size-3.5" /> },
-          { key: "campos" as const, label: "Campos extra", icon: <Settings className="size-3.5" /> },
-        ]).map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${tab === t.key ? "text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            {t.icon}{t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "info" && (
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-5 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { icon: <User className="size-4" />, label: "Responsável", value: local.responsavel },
-                { icon: <DollarSign className="size-4" />, label: "Valor", value: local.valor ? fmtCurrency(local.valor, local.moeda) : null },
-                { icon: <Calendar className="size-4" />, label: "Previsão de fechamento", value: local.data_fechamento_previsto ? fmtDate(local.data_fechamento_previsto) : null },
-                { icon: <MessageSquare className="size-4" />, label: "Lead de origem", value: local.lead_nome },
-              ].filter(r => r.value).map(r => (
-                <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
-                  <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
-                    <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
-                  </div>
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-5 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { icon: <User className="size-4" />, label: "Responsável", value: local.responsavel },
+              { icon: <DollarSign className="size-4" />, label: "Valor", value: local.valor ? fmtCurrency(local.valor, local.moeda) : null },
+              { icon: <Calendar className="size-4" />, label: "Previsão de fechamento", value: local.data_fechamento_previsto ? fmtDate(local.data_fechamento_previsto) : null },
+              { icon: <MessageSquare className="size-4" />, label: "Lead de origem", value: local.lead_nome },
+            ].filter(r => r.value).map(r => (
+              <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
+                <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
+                  <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
                 </div>
-              ))}
-            </div>
-            {local.observacoes && (
-              <div className="p-3 rounded-lg bg-muted/30">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
-                <p className="text-sm text-foreground/80 leading-relaxed">{local.observacoes}</p>
               </div>
-            )}
-            <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
+            ))}
           </div>
+          {local.observacoes && (
+            <div className="p-3 rounded-lg bg-muted/30">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
+              <p className="text-sm text-foreground/80 leading-relaxed">{local.observacoes}</p>
+            </div>
+          )}
+          <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
         </div>
-      )}
-
-      {tab === "campos" && (
-        <div className="flex-1 overflow-y-auto">
-          <CustomFieldsManager
-            entityType="deal"
-            entityId={local.id}
-            values={local.custom_fields}
-            onUpdated={updated => { setLocal(prev => ({ ...prev, custom_fields: updated })); onUpdated({ ...local, custom_fields: updated }); }}
-          />
-        </div>
-      )}
+      </div>
 
       {editing && (
         <DealFormDialog
@@ -1278,7 +1249,6 @@ function ProjectDetailModal({
   onUpdated: (project: CRMProject) => void;
   onDeleted: (id: number) => void;
 }) {
-  const [tab, setTab] = useState<"info" | "campos">("info");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [local, setLocal] = useState(project);
@@ -1350,63 +1320,35 @@ function ProjectDetailModal({
         </div>
       }
     >
-      <div className="flex border-b border-border shrink-0">
-        {([
-          { key: "info" as const, label: "Informações", icon: <Package2 className="size-3.5" /> },
-          { key: "campos" as const, label: "Campos extra", icon: <Settings className="size-3.5" /> },
-        ]).map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${tab === t.key ? "text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            {t.icon}{t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "info" && (
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-5 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { icon: <User className="size-4" />, label: "Responsável", value: local.responsavel },
-                { icon: <Calendar className="size-4" />, label: "Início", value: local.data_inicio ? fmtDate(local.data_inicio) : null },
-                { icon: <Calendar className="size-4" />, label: "Previsão de entrega", value: local.data_fim_previsto ? fmtDate(local.data_fim_previsto) : null },
-                { icon: <CheckCircle2 className="size-4" />, label: "Entregue em", value: local.data_fim_realizado ? fmtDate(local.data_fim_realizado) : null },
-                { icon: <DollarSign className="size-4" />, label: "Deal de origem", value: local.deal_titulo },
-                { icon: <MessageSquare className="size-4" />, label: "Lead de origem", value: local.lead_nome },
-              ].filter(r => r.value).map(r => (
-                <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
-                  <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
-                    <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
-                  </div>
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-5 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { icon: <User className="size-4" />, label: "Responsável", value: local.responsavel },
+              { icon: <Calendar className="size-4" />, label: "Início", value: local.data_inicio ? fmtDate(local.data_inicio) : null },
+              { icon: <Calendar className="size-4" />, label: "Previsão de entrega", value: local.data_fim_previsto ? fmtDate(local.data_fim_previsto) : null },
+              { icon: <CheckCircle2 className="size-4" />, label: "Entregue em", value: local.data_fim_realizado ? fmtDate(local.data_fim_realizado) : null },
+              { icon: <DollarSign className="size-4" />, label: "Deal de origem", value: local.deal_titulo },
+              { icon: <MessageSquare className="size-4" />, label: "Lead de origem", value: local.lead_nome },
+            ].filter(r => r.value).map(r => (
+              <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
+                <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
+                  <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
                 </div>
-              ))}
-            </div>
-            {local.observacoes && (
-              <div className="p-3 rounded-lg bg-muted/30">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
-                <p className="text-sm text-foreground/80 leading-relaxed">{local.observacoes}</p>
               </div>
-            )}
-            <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
+            ))}
           </div>
+          {local.observacoes && (
+            <div className="p-3 rounded-lg bg-muted/30">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
+              <p className="text-sm text-foreground/80 leading-relaxed">{local.observacoes}</p>
+            </div>
+          )}
+          <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
         </div>
-      )}
-
-      {tab === "campos" && (
-        <div className="flex-1 overflow-y-auto">
-          <CustomFieldsManager
-            entityType="project"
-            entityId={local.id}
-            values={local.custom_fields}
-            onUpdated={updated => { setLocal(prev => ({ ...prev, custom_fields: updated })); onUpdated({ ...local, custom_fields: updated }); }}
-          />
-        </div>
-      )}
+      </div>
 
       {editing && (
         <ProjectFormDialog
