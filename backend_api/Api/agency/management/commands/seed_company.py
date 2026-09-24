@@ -27,8 +27,12 @@ SECTORS = [
     ("Operacoes", "Planejamento de producao/capacidade, MRP, cronograma."),
     ("Compras", "Sourcing de fornecedores, RFQ, cotacoes, pedidos de compra."),
     ("Financeiro", "Contas a pagar/receber, fluxo de caixa, margem."),
-    ("Controladoria", "Governanca, politicas, auditoria, compliance."),
-    # Diferente dos 5 acima (que modelam a EMPRESA CLIENTE, ver "Primeiro
+    ("Controladoria", "Controle interno, orcamento, custeio e analise de desvios."),
+    ("RH", "Gestao de pessoas: admissoes, desligamentos, folha, beneficios, desenvolvimento."),
+    ("TI", "Suporte tecnico interno, ativos de TI, seguranca da informacao e incidentes."),
+    ("Juridico", "Contratos, processos, compliance regulatorio e prazos juridicos."),
+    ("Inteligencia de Mercado", "Analise competitiva, tendencias de setor e benchmarking."),
+    # Diferente dos setores acima (que modelam a EMPRESA CLIENTE, ver "Primeiro
     # Vertical" secao 45), este modela o desenvolvimento do proprio PGBA
     # Boilerplate — o unico setor que o usuario humano fala diretamente
     # (ver CLAUDE.md, "Hierarquia de comunicacao de desenvolvimento").
@@ -42,13 +46,16 @@ AGENTS = [
     ("AI Planejador", "Planejamento", "Operacoes", Agent.AccessLevel.OPERATIONAL),
     ("AI Comprador", "Compras", "Compras", Agent.AccessLevel.OPERATIONAL),
     ("AI Financeiro", "CFO", "Financeiro", Agent.AccessLevel.OPERATIONAL),
-    # Controller e transversal por natureza (secao 14 do documento) — por
-    # isso sector=None aqui, igual o CEO: a constraint do banco
-    # (agent_sector_matches_access_level) EXIGE sector nulo para
-    # general_orchestrator/ceo, nunca permite os dois ao mesmo tempo.
-    # O setor "Controladoria" continua existindo — so nao e a "casa" fixa
-    # deste agente especifico.
+    # Controller e transversal por natureza — sector=None, igual o CEO.
+    # A constraint do banco (agent_sector_matches_access_level) EXIGE sector
+    # nulo para general_orchestrator/ceo. O setor "Controladoria" existe e
+    # tem seu proprio agente operacional (AI Controladoria) abaixo.
     ("AI Controller", "Controller", None, Agent.AccessLevel.GENERAL_ORCHESTRATOR),
+    ("AI Controladoria", "Analista de Controladoria", "Controladoria", Agent.AccessLevel.OPERATIONAL),
+    ("AI RH", "Analista de RH", "RH", Agent.AccessLevel.OPERATIONAL),
+    ("AI TI", "Analista de TI", "TI", Agent.AccessLevel.OPERATIONAL),
+    ("AI Juridico", "Analista Juridico", "Juridico", Agent.AccessLevel.OPERATIONAL),
+    ("AI Inteligencia de Mercado", "Analista de Mercado", "Inteligencia de Mercado", Agent.AccessLevel.OPERATIONAL),
     # Unico ponto de contato do usuario humano para trabalho de
     # desenvolvimento — sector_orchestrator porque ele PRECISA poder
     # relayar (SectorMessage.relay, ver agency/services.py) pedidos que

@@ -7,17 +7,22 @@ no prompt do `orchestration`.
 
 ## Agentes e seus arquivos
 
-| Agente                        | Arquivo                              | Setor          | Access Level         |
-|-------------------------------|--------------------------------------|----------------|----------------------|
-| CEO Virtual                   | `ceo-virtual.md`                     | —              | ceo                  |
-| AI Controller                 | `ai-controller.md`                   | —              | general_orchestrator |
-| Orquestrador de Desenvolvimento | `orquestrador-desenvolvimento.md`  | Desenvolvimento | sector_orchestrator  |
-| AI Backend                    | `ai-backend.md`                      | Desenvolvimento | operational          |
-| AI Frontend                   | `ai-frontend.md`                     | Desenvolvimento | operational          |
-| AI Vendedor                   | `ai-vendedor.md`                     | Comercial      | operational          |
-| AI Planejador                 | `ai-planejador.md`                   | Operações      | operational          |
-| AI Comprador                  | `ai-comprador.md`                    | Compras        | operational          |
-| AI Financeiro                 | `ai-financeiro.md`                   | Financeiro     | operational          |
+| Agente                          | Arquivo                              | Setor                   | Access Level         |
+|---------------------------------|--------------------------------------|-------------------------|----------------------|
+| CEO Virtual                     | `ceo-virtual.md`                     | —                       | ceo                  |
+| AI Controller                   | `ai-controller.md`                   | —                       | general_orchestrator |
+| Orquestrador de Desenvolvimento | `orquestrador-desenvolvimento.md`    | Desenvolvimento         | sector_orchestrator  |
+| AI Backend                      | `ai-backend.md`                      | Desenvolvimento         | operational          |
+| AI Frontend                     | `ai-frontend.md`                     | Desenvolvimento         | operational          |
+| AI Vendedor                     | `ai-vendedor.md`                     | Comercial               | operational          |
+| AI Planejador                   | `ai-planejador.md`                   | Operações               | operational          |
+| AI Comprador                    | `ai-comprador.md`                    | Compras                 | operational          |
+| AI Financeiro                   | `ai-financeiro.md`                   | Financeiro              | operational          |
+| AI Controladoria                | `ai-controladoria.md`                | Controladoria           | operational          |
+| AI RH                           | `ai-rh.md`                           | RH                      | operational          |
+| AI TI                           | `ai-ti.md`                           | TI                      | operational          |
+| AI Jurídico                     | `ai-juridico.md`                     | Jurídico                | operational          |
+| AI Inteligência de Mercado      | `ai-inteligencia-mercado.md`         | Inteligência de Mercado | operational          |
 
 ## Como carregar no banco
 
@@ -32,15 +37,20 @@ import pathlib
 SKILLS_DIR = pathlib.Path("agency/skills")
 
 AGENT_SKILL_MAP = {
-    "CEO Virtual":                   "ceo-virtual.md",
-    "AI Controller":                 "ai-controller.md",
-    "Orquestrador de Desenvolvimento": "orquestrador-desenvolvimento.md",
-    "AI Backend":                    "ai-backend.md",
-    "AI Frontend":                   "ai-frontend.md",
-    "AI Vendedor":                   "ai-vendedor.md",
-    "AI Planejador":                 "ai-planejador.md",
-    "AI Comprador":                  "ai-comprador.md",
-    "AI Financeiro":                 "ai-financeiro.md",
+    "CEO Virtual":                      "ceo-virtual.md",
+    "AI Controller":                    "ai-controller.md",
+    "Orquestrador de Desenvolvimento":  "orquestrador-desenvolvimento.md",
+    "AI Backend":                       "ai-backend.md",
+    "AI Frontend":                      "ai-frontend.md",
+    "AI Vendedor":                      "ai-vendedor.md",
+    "AI Planejador":                    "ai-planejador.md",
+    "AI Comprador":                     "ai-comprador.md",
+    "AI Financeiro":                    "ai-financeiro.md",
+    "AI Controladoria":                 "ai-controladoria.md",
+    "AI RH":                            "ai-rh.md",
+    "AI TI":                            "ai-ti.md",
+    "AI Jurídico":                      "ai-juridico.md",
+    "AI Inteligência de Mercado":       "ai-inteligencia-mercado.md",
 }
 
 for name, fname in AGENT_SKILL_MAP.items():
