@@ -252,6 +252,14 @@ export async function listKnowledgeSources(): Promise<KnowledgeSource[]> {
   return requestList<KnowledgeSource>("/api/v1/ingestion/sources/");
 }
 
+export async function createKnowledgeSource(data: { name: string; source_type: string }): Promise<KnowledgeSource> {
+  return request<KnowledgeSource>("/api/v1/ingestion/sources/", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateSector(id: number, data: Partial<{ knowledge_source: number | null }>): Promise<Sector> {
+  return request<Sector>(`/api/v1/agency/sectors/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
 export type DocumentStatus = "pending" | "processing" | "indexed" | "error";
 
 export interface KnowledgeDocument {
