@@ -387,6 +387,9 @@ class ChannelConfig(TenantMixin, models.Model):
     webhook_secret = models.CharField(max_length=255, blank=True)
     welcome_message = models.TextField(blank=True)
     quick_replies = models.JSONField(default=list, blank=True)
+    # Frases que precisam estar na PRIMEIRA mensagem para o contato virar lead.
+    # Lista vazia = qualquer mensagem cria lead (comportamento padrão).
+    trigger_phrases = models.JSONField(default=list, blank=True)
     target_pipeline = models.ForeignKey(
         Pipeline, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="channel_configs",

@@ -103,18 +103,26 @@ function ChannelCard({
   const [quickRepliesText, setQuickRepliesText] = useState(
     (existing?.quick_replies ?? []).join("\n")
   );
+  const [triggerPhrasesText, setTriggerPhrasesText] = useState(
+    (existing?.trigger_phrases ?? []).join("\n")
+  );
 
   useEffect(() => {
     setWebhookSecret(existing?.webhook_secret ?? "");
     setConfigVals(existing?.config ?? {});
     setWelcomeMessage(existing?.welcome_message ?? "");
     setQuickRepliesText((existing?.quick_replies ?? []).join("\n"));
+    setTriggerPhrasesText((existing?.trigger_phrases ?? []).join("\n"));
   }, [existing]);
 
   const handleSave = async () => {
     setSaving(true);
     try {
       const quickReplies = quickRepliesText
+        .split("\n")
+        .map(s => s.trim())
+        .filter(Boolean);
+      const triggerPhrases = triggerPhrasesText
         .split("\n")
         .map(s => s.trim())
         .filter(Boolean);
@@ -125,6 +133,7 @@ function ChannelCard({
         webhook_secret: webhookSecret,
         welcome_message: welcomeMessage,
         quick_replies: quickReplies,
+        trigger_phrases: triggerPhrases,
       };
       if (apiKey) payload.api_key = apiKey;
 
@@ -280,6 +289,23 @@ function ChannelCard({
               placeholder={"Ver preços\nFalar com atendente\nSaber mais sobre os serviços"}
               value={quickRepliesText}
               onChange={e => setQuickRepliesText(e.target.value)}
+              rows={3}
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+            />
+          </div>
+
+          {/* Frases de gatilho */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground font-medium">
+              Frases de gatilho para cadastro{" "}
+              <span className="text-muted-foreground/60">
+                (uma por linha — só cria lead se a 1ª mensagem contiver alguma dessas frases; deixe vazio para cadastrar qualquer contato)
+              </span>
+            </label>
+            <textarea
+              placeholder={"Estou interessado\nQuero saber mais\nGostaria de um orçamento"}
+              value={triggerPhrasesText}
+              onChange={e => setTriggerPhrasesText(e.target.value)}
               rows={3}
               className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
             />

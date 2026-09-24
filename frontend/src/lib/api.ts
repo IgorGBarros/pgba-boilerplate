@@ -1043,6 +1043,7 @@ export interface ChannelConfig {
   webhook_secret: string;
   welcome_message: string;
   quick_replies: string[];
+  trigger_phrases: string[];
   target_pipeline: number | null;
   api_key?: string;
   api_key_masked: string;

@@ -304,7 +304,7 @@ class ChannelConfigSerializer(serializers.ModelSerializer):
         model = ChannelConfig
         fields = [
             "id", "channel", "is_active", "config", "webhook_secret",
-            "welcome_message", "quick_replies",
+            "welcome_message", "quick_replies", "trigger_phrases",
             "target_pipeline", "api_key", "api_key_masked", "webhook_url",
             "created_at", "updated_at",
         ]

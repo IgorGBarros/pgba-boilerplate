@@ -272,6 +272,12 @@ def parse_meta_ads_lead(payload: dict) -> list[dict]:
 
 # ─── Handler central ──────────────────────────────────────────────────────────
 
+def _matches_trigger_phrases(texto: str, phrases: list) -> bool:
+    """Retorna True se o texto contém ao menos uma das frases (case-insensitive)."""
+    texto_lower = texto.lower()
+    return any(phrase.lower() in texto_lower for phrase in phrases if phrase.strip())
+
+
 def handle_incoming_message(
     tenant_id,
     channel: str,
@@ -281,13 +287,30 @@ def handle_incoming_message(
     config: Optional[ChannelConfig] = None,
     telefone: str = "",
     auto_reply: bool = True,
-) -> Lead:
+) -> Optional[Lead]:
     """
     Processa mensagem recebida de qualquer canal:
-    1. Cria/atualiza lead
+    1. Se trigger_phrases configuradas e contato não existe ainda, só cria lead
+       se a mensagem contiver alguma dessas frases.
     2. Qualifica via agente
     3. Envia resposta de volta (se auto_reply e canal suportar)
+
+    Retorna None quando a mensagem foi ignorada por não bater com nenhuma
+    trigger phrase (contato ainda não é lead).
     """
+    # Verifica se o contato já é lead antes de aplicar o filtro
+    trigger_phrases = (config.trigger_phrases or []) if config else []
+    if trigger_phrases:
+        already_exists = Lead.objects.filter(
+            tenant_id=tenant_id, channel_ref=channel_ref
+        ).exists()
+        if not already_exists and not _matches_trigger_phrases(texto, trigger_phrases):
+            logger.info(
+                "handle_incoming_message: mensagem de %s ignorada (trigger_phrases não bateram).",
+                channel_ref,
+            )
+            return None
+
     lead, created = _get_or_create_lead(tenant_id, channel, channel_ref, nome, telefone, config)
 
     # Primeiro contato: envia boas-vindas + sugestões antes de qualificar
