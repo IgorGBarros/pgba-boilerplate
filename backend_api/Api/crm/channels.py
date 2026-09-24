@@ -288,7 +288,19 @@ def handle_incoming_message(
     2. Qualifica via agente
     3. Envia resposta de volta (se auto_reply e canal suportar)
     """
-    lead, _ = _get_or_create_lead(tenant_id, channel, channel_ref, nome, telefone, config)
+    lead, created = _get_or_create_lead(tenant_id, channel, channel_ref, nome, telefone, config)
+
+    # Primeiro contato: envia boas-vindas + sugestões antes de qualificar
+    if created and auto_reply and config and config.welcome_message:
+        welcome = config.welcome_message
+        quick_replies = config.quick_replies or []
+        if quick_replies:
+            options = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(quick_replies))
+            welcome = f"{welcome}\n\n{options}"
+        if channel == "whatsapp":
+            send_whatsapp_reply(config, channel_ref, welcome)
+        elif channel == "telegram":
+            send_telegram_reply(config, channel_ref, welcome)
 
     result = qualify_lead(lead.id, texto, tenant_id)
 

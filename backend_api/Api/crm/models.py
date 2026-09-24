@@ -240,6 +240,18 @@ class ChannelConfig(TenantMixin, models.Model):
     # Webhook secret para validação de assinatura (HMAC-SHA256)
     webhook_secret = models.CharField(max_length=255, blank=True)
 
+    # Mensagem de boas-vindas enviada automaticamente no primeiro contato
+    welcome_message = models.TextField(
+        blank=True,
+        help_text="Mensagem enviada automaticamente quando o lead entra em contato pela primeira vez.",
+    )
+
+    # Sugestões de perguntas exibidas após a mensagem de boas-vindas
+    quick_replies = models.JSONField(
+        default=list, blank=True,
+        help_text='Lista de sugestões de perguntas. Ex: ["Ver preços", "Falar com atendente", "Saber mais"]',
+    )
+
     # Pipeline de destino para leads capturados por este canal
     target_pipeline = models.ForeignKey(
         Pipeline, on_delete=models.SET_NULL, null=True, blank=True,
