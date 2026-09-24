@@ -81,7 +81,7 @@ export interface RagQueryResult {
 
 export async function queryKnowledge(
   query: string,
-  opts: { topK?: number; generateAnswer?: boolean } = {},
+  opts: { topK?: number; generateAnswer?: boolean; sourceId?: number } = {},
 ): Promise<RagQueryResult> {
   return request<RagQueryResult>("/api/v1/ingestion/query/", {
     method: "POST",
@@ -89,6 +89,7 @@ export async function queryKnowledge(
       query,
       top_k: opts.topK ?? 5,
       generate_answer: opts.generateAnswer ?? true,
+      ...(opts.sourceId !== undefined ? { source_ids: [opts.sourceId] } : {}),
     }),
   });
 }
@@ -146,6 +147,7 @@ export interface Agent {
   name: string;
   role: string;
   instructions: string;
+  default_model: string;
   access_level: AgentAccessLevel;
   autonomy_level: AgentAutonomyLevel;
   work_status: AgentWorkStatus;
@@ -687,13 +689,14 @@ export async function deleteProject(id: number): Promise<void> {
 // Atualização de agente (role + skills_md)
 export async function updateAgent(
   id: number,
-  params: { role?: string; skillsMd?: string },
+  params: { role?: string; skillsMd?: string; defaultModel?: string },
 ): Promise<Agent> {
   return request<Agent>(`/api/v1/agency/agents/${id}/`, {
     method: "PATCH",
     body: JSON.stringify({
       ...(params.role !== undefined ? { role: params.role } : {}),
       ...(params.skillsMd !== undefined ? { skills_md: params.skillsMd } : {}),
+      ...(params.defaultModel !== undefined ? { default_model: params.defaultModel } : {}),
     }),
   });
 }

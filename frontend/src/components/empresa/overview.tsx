@@ -70,6 +70,7 @@ import { aiModels } from "@/lib/pgba-data";
 import {
   askAsAgent,
   createAgent,
+  createKnowledgeSource,
   createSector,
   deleteAgent,
   deleteSector,
@@ -80,6 +81,7 @@ import {
   listDocuments,
   uploadDocumentFile,
   updateAgent,
+  updateSector,
   type AgentAskResult,
   type Sector,
   type Agent,
@@ -130,13 +132,16 @@ function SectorKnowledgeDialog({
   sector,
   open,
   onClose,
+  onUpdated,
 }: {
   sector: Sector | null;
   open: boolean;
   onClose: () => void;
+  onUpdated?: (updated: Sector) => void;
 }) {
   const [docs, setDocs] = useState<KnowledgeDocument[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [creatingKb, setCreatingKb] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -167,6 +172,22 @@ function SectorKnowledgeDialog({
     if (fileRef.current) fileRef.current.value = "";
   };
 
+  const handleCreateKb = async () => {
+    if (!sector) return;
+    setCreatingKb(true);
+    try {
+      const ks = await createKnowledgeSource({ name: `Base de ${sector.name}`, source_type: "manual" });
+      const updated = await updateSector(sector.id, { knowledge_source: ks.id });
+      toast.success(`Base de conhecimento criada e vinculada ao setor ${sector.name}`);
+      onUpdated?.(updated);
+      listDocuments(ks.id).then(setDocs).catch(console.error);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao criar base de conhecimento");
+    } finally {
+      setCreatingKb(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-2xl">
@@ -192,9 +213,15 @@ function SectorKnowledgeDialog({
             <p className="mb-2 text-sm font-medium">Documentos de conhecimento</p>
             <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-md border border-border p-2">
               {!sector?.knowledge_source ? (
-                <p className="p-4 text-center text-sm text-muted-foreground">
-                  Configure uma base de conhecimento para este setor para indexar documentos.
-                </p>
+                <div className="flex flex-col items-center gap-3 p-4 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Este setor ainda não tem base de conhecimento (RAG).
+                  </p>
+                  <Button size="sm" onClick={handleCreateKb} disabled={creatingKb}>
+                    <Plus className="mr-1.5 size-3.5" />
+                    {creatingKb ? "Criando..." : "Criar base de conhecimento"}
+                  </Button>
+                </div>
               ) : docs.length === 0 ? (
                 <p className="p-4 text-center text-sm text-muted-foreground">
                   Nenhum documento ainda — envie um arquivo abaixo.
@@ -479,7 +506,7 @@ function AgentEditDialog({
   useEffect(() => {
     if (agent) {
       setRole(agent.role);
-      setModel(aiModels[0]!);
+      setModel(agent.default_model || aiModels[0]!);
       setSkillsMd(agent.instructions ?? "");
     }
   }, [agent]);
@@ -488,7 +515,7 @@ function AgentEditDialog({
     if (!agent) return;
     setSaving(true);
     try {
-      const updated = await updateAgent(agent.id, { role, skillsMd });
+      const updated = await updateAgent(agent.id, { role, skillsMd, defaultModel: model });
       toast.success("Agente atualizado");
       onUpdated(updated);
       onClose();
@@ -1205,6 +1232,7 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
         sector={openSector}
         open={sectorKnowledgeOpen}
         onClose={() => setSectorKnowledgeOpen(false)}
+        onUpdated={(updated) => setSectors((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))}
       />
       <AgentEditDialog
         agent={openAgent}

@@ -73,6 +73,9 @@ class RAGQuerySerializer(serializers.Serializer):
     query = serializers.CharField(max_length=2000)
     top_k = serializers.IntegerField(required=False, min_value=1, max_value=20, default=5)
     generate_answer = serializers.BooleanField(required=False, default=False)
+    source_ids = serializers.ListField(
+        child=serializers.IntegerField(), required=False, default=list
+    )
 
     def validate_query(self, value):
         return (value or "").strip()

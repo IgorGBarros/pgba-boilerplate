@@ -216,9 +216,11 @@ class RAGQueryView(TenantContextMixin, APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        source_ids = data.get("source_ids") or None
         try:
             chunks = semantic_search(
-                data["query"], tenant_id=request.tenant_id, top_k=data["top_k"]
+                data["query"], tenant_id=request.tenant_id, top_k=data["top_k"],
+                source_ids=source_ids,
             )
         except EmbeddingError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
