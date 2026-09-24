@@ -198,6 +198,9 @@ AI_MODEL_CATALOG = {
 # 🔐 Salt usado por core.models.ConsentRecord.hash_ip (nunca armazenar IP cru)
 LGPD_IP_SALT = os.environ.get("LGPD_IP_SALT", "")
 
+# 📈 Mercado
+BRAPI_TOKEN = os.environ.get("BRAPI_TOKEN", "")
+
 # 📝 Audit
 SIMPLE_HISTORY_MIDDLEWARE = True
 
