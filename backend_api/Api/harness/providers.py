@@ -226,6 +226,14 @@ def _chat_anthropic(cred, model, messages, temperature, timeout):
         raise ProviderConfigError("Credencial sem api_key para 'anthropic'.")
     system = "\n".join(m["content"] for m in messages if m["role"] == "system")
     user_messages = [m for m in messages if m["role"] != "system"]
+    body: dict = {
+        "model": model,
+        "messages": user_messages,
+        "max_tokens": 4096,
+        "temperature": temperature,
+    }
+    if system:
+        body["system"] = system
     try:
         resp = httpx.post(
             f"{cred.base_url}/messages",
@@ -234,18 +242,20 @@ def _chat_anthropic(cred, model, messages, temperature, timeout):
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
-            json={
-                "model": model,
-                "system": system,
-                "messages": user_messages,
-                "max_tokens": 1024,
-                "temperature": temperature,
-            },
+            json=body,
             timeout=timeout,
         )
-        resp.raise_for_status()
+        if not resp.is_success:
+            try:
+                detail = resp.json()
+            except Exception:
+                detail = resp.text
+            logger.error("Erro Anthropic chat (%s): %s", resp.status_code, detail)
+            resp.raise_for_status()
         blocks = resp.json().get("content", [])
         return "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+    except httpx.HTTPStatusError as exc:
+        raise ProviderConfigError(str(exc)) from exc
     except (httpx.HTTPError, KeyError, IndexError) as exc:
         logger.error("Erro Anthropic chat: %s", exc)
         raise ProviderConfigError(str(exc)) from exc
