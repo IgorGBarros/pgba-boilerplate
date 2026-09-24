@@ -5,7 +5,7 @@ Segue o padrão do boilerplate: harness/providers.py para o LLM, nunca HTTP dire
 import logging
 from django.db import transaction
 
-from harness.providers import chat_completion, get_active_provider
+from harness.providers import chat_completion, get_active_provider, get_credential
 from crm.models import Lead, Deal, Project, LeadMessage, Pipeline, Stage
 
 logger = logging.getLogger(__name__)
@@ -211,22 +211,36 @@ def qualify_lead(lead_id: int, user_message: str, tenant_id) -> dict:
         role = "assistant" if m.role == LeadMessage.Role.AGENT else "user"
         history.append({"role": role, "content": m.content})
 
+    knowledge_section = (
+        f"BASE DE CONHECIMENTO DA EMPRESA:\n{rag_context}\n\n"
+        if rag_context
+        else (
+            "Não há base de conhecimento cadastrada no momento. "
+            "Responda de forma cordial, colete informações do lead e diga que "
+            "um especialista entrará em contato com mais detalhes.\n\n"
+        )
+    )
     system_prompt = (
-        "Você é o agente comercial da empresa. Seja direto, profissional e amigável.\n\n"
-        "OBJETIVO:\n"
-        "1. Responder dúvidas sobre produtos/serviços usando APENAS as informações fornecidas.\n"
-        "2. Qualificar o lead: entender necessidade, orçamento, prazo e autoridade de decisão.\n"
-        "3. Quando o lead demonstrar interesse claro, perguntar: \"Posso avançar para a etapa de proposta?\"\n\n"
+        f"Você é o agente comercial responsável por atender e qualificar leads via mensagem.\n"
+        f"Atendendo: {lead.nome}" + (f" da empresa {lead.empresa}" if lead.empresa else "") + ".\n\n"
+        "OBJETIVOS (nesta ordem):\n"
+        "1. Cumprimentar o contato e entender o que ele precisa.\n"
+        "2. Responder dúvidas usando a base de conhecimento abaixo quando disponível.\n"
+        "3. Qualificar: descobrir necessidade, orçamento aproximado, prazo e quem decide.\n"
+        "4. Quando o interesse for claro, perguntar: \"Posso avançar para a etapa de proposta?\"\n\n"
         "REGRAS:\n"
-        "- Nunca invente preços, prazos ou funcionalidades não documentadas.\n"
-        "- Se não souber, diga: \"Vou verificar e retorno em breve.\"\n"
-        "- Máximo 3 parágrafos por resposta.\n"
-        f"- Lead: {lead.nome}" + (f" ({lead.empresa})" if lead.empresa else "") + "\n\n"
-        + (f"BASE DE CONHECIMENTO DA EMPRESA:\n{rag_context}\n" if rag_context else "")
+        "- Responda sempre em português do Brasil, de forma natural e amigável.\n"
+        "- Nunca invente preços, prazos ou funcionalidades que não estejam documentadas.\n"
+        "- Se não souber algo específico, diga: \"Vou verificar isso e retorno em breve.\"\n"
+        "- Respostas curtas: no máximo 3 parágrafos.\n"
+        "- Nunca mencione que você é uma IA, a menos que o lead pergunte diretamente.\n\n"
+        + knowledge_section
     )
 
     try:
-        provider, model, _ = get_active_provider(tenant_id)
+        provider = get_active_provider(tenant_id)
+        cred = get_credential(tenant_id, provider)
+        model = cred.default_model or None
         response_text = chat_completion(
             tenant_id, provider, model,
             messages=[{"role": "system", "content": system_prompt}] + history,
