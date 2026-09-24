@@ -930,7 +930,7 @@ function LeadDetailModal({
   onDeleted: (id: number) => void;
   onConverted: (deal: CRMDeal) => void;
 }) {
-  const [tab, setTab] = useState<"conversa" | "info" | "campos">("conversa");
+  const [tab, setTab] = useState<"conversa" | "info">("conversa");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [local, setLocal] = useState(lead);
@@ -1033,7 +1033,6 @@ function LeadDetailModal({
         {([
           { key: "conversa" as const, label: "Conversa", icon: <MessageCircle className="size-3.5" /> },
           { key: "info" as const, label: "Informações", icon: <User className="size-3.5" /> },
-          { key: "campos" as const, label: "Campos extra", icon: <Settings className="size-3.5" /> },
         ]).map(t => (
           <button
             key={t.key}
@@ -1076,17 +1075,6 @@ function LeadDetailModal({
             )}
             <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
           </div>
-        </div>
-      )}
-
-      {tab === "campos" && (
-        <div className="flex-1 overflow-y-auto">
-          <CustomFieldsManager
-            entityType="lead"
-            entityId={local.id}
-            values={local.custom_fields}
-            onUpdated={updated => { setLocal(prev => ({ ...prev, custom_fields: updated })); onUpdated({ ...local, custom_fields: updated }); }}
-          />
         </div>
       )}
 
