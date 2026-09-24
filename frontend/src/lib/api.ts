@@ -812,6 +812,8 @@ export interface ChannelConfig {
   is_active: boolean;
   config: Record<string, string>;
   webhook_secret: string;
+  welcome_message: string;
+  quick_replies: string[];
   target_pipeline: number | null;
   api_key?: string;
   api_key_masked: string;

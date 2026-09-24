@@ -99,20 +99,32 @@ function ChannelCard({
   const [apiKey, setApiKey] = useState("");
   const [webhookSecret, setWebhookSecret] = useState(existing?.webhook_secret ?? "");
   const [configVals, setConfigVals] = useState<Record<string, string>>(existing?.config ?? {});
+  const [welcomeMessage, setWelcomeMessage] = useState(existing?.welcome_message ?? "");
+  const [quickRepliesText, setQuickRepliesText] = useState(
+    (existing?.quick_replies ?? []).join("\n")
+  );
 
   useEffect(() => {
     setWebhookSecret(existing?.webhook_secret ?? "");
     setConfigVals(existing?.config ?? {});
+    setWelcomeMessage(existing?.welcome_message ?? "");
+    setQuickRepliesText((existing?.quick_replies ?? []).join("\n"));
   }, [existing]);
 
   const handleSave = async () => {
     setSaving(true);
     try {
+      const quickReplies = quickRepliesText
+        .split("\n")
+        .map(s => s.trim())
+        .filter(Boolean);
       const payload: Partial<ChannelConfig> = {
         channel,
         is_active: true,
         config: configVals,
         webhook_secret: webhookSecret,
+        welcome_message: welcomeMessage,
+        quick_replies: quickReplies,
       };
       if (apiKey) payload.api_key = apiKey;
 
@@ -244,6 +256,34 @@ function ChannelCard({
               />
             </div>
           ))}
+
+          {/* Mensagem de boas-vindas */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground font-medium">
+              Mensagem de boas-vindas <span className="text-muted-foreground/60">(enviada no primeiro contato)</span>
+            </label>
+            <textarea
+              placeholder={"Olá! Seja bem-vindo(a). Como posso te ajudar hoje?"}
+              value={welcomeMessage}
+              onChange={e => setWelcomeMessage(e.target.value)}
+              rows={3}
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+            />
+          </div>
+
+          {/* Sugestões de perguntas */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground font-medium">
+              Sugestões de perguntas <span className="text-muted-foreground/60">(uma por linha — exibidas após a boas-vindas)</span>
+            </label>
+            <textarea
+              placeholder={"Ver preços\nFalar com atendente\nSaber mais sobre os serviços"}
+              value={quickRepliesText}
+              onChange={e => setQuickRepliesText(e.target.value)}
+              rows={3}
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+            />
+          </div>
 
           {/* Webhook secret */}
           <div className="flex flex-col gap-1">
