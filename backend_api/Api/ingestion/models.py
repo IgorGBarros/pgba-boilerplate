@@ -36,8 +36,18 @@ class KnowledgeSource(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     class SourceType(models.TextChoices):
         OBSIDIAN = "obsidian", "Vault do Obsidian"
         UPLOAD = "upload", "Upload manual"
+        MANUAL = "manual", "Base manual"
         URL = "url", "URL / Web"
         API = "api", "API externa"
+        REST_API = "rest_api", "REST API"
+        SQL = "sql", "Banco SQL"
+        GOOGLE_SHEETS = "google_sheets", "Google Sheets"
+        SLACK = "slack", "Slack"
+        WEBHOOK = "webhook", "Webhook"
+        EMAIL = "email", "E-mail (IMAP)"
+        NOTION = "notion", "Notion"
+        HUBSPOT = "hubspot", "HubSpot"
+        SALESFORCE = "salesforce", "Salesforce"
 
     name = models.CharField(max_length=150)
     source_type = models.CharField(max_length=20, choices=SourceType.choices)

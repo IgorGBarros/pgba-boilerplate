@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SectionHeader, Metric } from "@/components/empresa/shared";
+import { ConnectorsTab } from "@/components/empresa/connectors";
 import {
   SchemaApp,
   ObsidianNote,
@@ -501,8 +502,12 @@ export function DataLakeView({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <Tabs defaultValue="catalog">
+      <Tabs defaultValue="connectors">
         <TabsList>
+          <TabsTrigger value="connectors" className="gap-1.5">
+            <Link2 className="w-3.5 h-3.5" />
+            Conectores
+          </TabsTrigger>
           <TabsTrigger value="catalog" className="gap-1.5">
             <Database className="w-3.5 h-3.5" />
             Catálogo de Tabelas
@@ -517,6 +522,9 @@ export function DataLakeView({ onBack }: { onBack: () => void }) {
           </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="connectors" className="mt-5">
+          <ConnectorsTab />
+        </TabsContent>
         <TabsContent value="catalog" className="mt-5">
           <CatalogTab />
         </TabsContent>

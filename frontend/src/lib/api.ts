@@ -246,6 +246,7 @@ export interface KnowledgeSource {
   id: number;
   name: string;
   source_type: string;
+  config: Record<string, unknown>;
   is_active: boolean;
   last_synced_at: string | null;
 }
@@ -254,8 +255,42 @@ export async function listKnowledgeSources(): Promise<KnowledgeSource[]> {
   return requestList<KnowledgeSource>("/api/v1/ingestion/sources/");
 }
 
-export async function createKnowledgeSource(data: { name: string; source_type: string }): Promise<KnowledgeSource> {
-  return request<KnowledgeSource>("/api/v1/ingestion/sources/", { method: "POST", body: JSON.stringify(data) });
+export async function createKnowledgeSource(data: {
+  name: string;
+  source_type: string;
+  config?: Record<string, unknown>;
+}): Promise<KnowledgeSource> {
+  return request<KnowledgeSource>("/api/v1/ingestion/sources/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateKnowledgeSource(
+  id: number,
+  data: Partial<{ name: string; config: Record<string, unknown>; is_active: boolean }>,
+): Promise<KnowledgeSource> {
+  return request<KnowledgeSource>(`/api/v1/ingestion/sources/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteKnowledgeSource(id: number): Promise<void> {
+  await request<unknown>(`/api/v1/ingestion/sources/${id}/`, { method: "DELETE" });
+}
+
+export async function testKnowledgeSourceConnection(
+  id: number,
+): Promise<{ ok: boolean; message: string }> {
+  return request<{ ok: boolean; message: string }>(
+    `/api/v1/ingestion/sources/${id}/test-connection/`,
+    { method: "POST" },
+  );
+}
+
+export async function syncKnowledgeSource(id: number): Promise<void> {
+  await request<unknown>(`/api/v1/ingestion/sources/${id}/sync/`, { method: "POST" });
 }
 
 export async function updateSector(id: number, data: Partial<{ knowledge_source: number | null }>): Promise<Sector> {
@@ -647,10 +682,6 @@ export async function listQueryLogs(params?: { status?: string; page?: number; p
   const data = await request<QueryLog[] | { results: QueryLog[]; count: number }>(`/api/v1/orchestration/query-logs/${query}`);
   if (Array.isArray(data)) return { results: data, count: data.length };
   return { results: data.results ?? [], count: (data as { count: number }).count ?? 0 };
-}
-
-export async function syncKnowledgeSource(id: number): Promise<void> {
-  await request<{ detail: string }>(`/api/v1/ingestion/sources/${id}/sync/`, { method: "POST" });
 }
 
 // --- agency: agent metrics overview -------------------------------------
