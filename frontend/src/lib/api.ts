@@ -821,7 +821,8 @@ export interface ChannelConfig {
 }
 
 export async function listChannels(): Promise<ChannelConfig[]> {
-  return request<ChannelConfig[]>("/api/v1/crm/channels/");
+  const res = await request<ChannelConfig[] | { results: ChannelConfig[] }>("/api/v1/crm/channels/");
+  return Array.isArray(res) ? res : (res as { results: ChannelConfig[] }).results ?? [];
 }
 
 export async function createChannel(data: Partial<ChannelConfig>): Promise<ChannelConfig> {

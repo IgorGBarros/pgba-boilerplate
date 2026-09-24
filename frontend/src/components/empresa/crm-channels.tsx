@@ -340,7 +340,7 @@ export function CRMChannels() {
 
   useEffect(() => {
     listChannels()
-      .then(setChannels)
+      .then(data => setChannels(Array.isArray(data) ? data : []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
