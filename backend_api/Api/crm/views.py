@@ -239,6 +239,7 @@ class ContatoViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSe
     ordering_fields = ["nome", "created_at"]
 
 
+
 class AtividadeCRMViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
     queryset = AtividadeCRM.objects.select_related("lead").filter(is_active=True)
     serializer_class = AtividadeCRMSerializer

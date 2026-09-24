@@ -326,6 +326,16 @@ function LeadFormDialog({
   onClose: () => void;
   onSaved: (lead: CRMLead) => void;
 }) {
+  const contextLabel = defaultStage?.main_stage === "deal"
+    ? "Deal"
+    : defaultStage?.main_stage === "project"
+    ? "Project"
+    : initial?.stage_main === "deal"
+    ? "Deal"
+    : initial?.stage_main === "project"
+    ? "Project"
+    : "Lead";
+
   const [form, setForm] = useState({
     nome: initial?.nome ?? "",
     empresa: initial?.empresa ?? "",
@@ -352,10 +362,10 @@ function LeadFormDialog({
       };
       const saved = initial ? await updateLead(initial.id, payload) : await createLead(payload);
       onSaved(saved);
-      toast.success(`Lead "${saved.nome}" ${initial ? "atualizado" : "criado"}.`);
+      toast.success(`${contextLabel} "${saved.nome}" ${initial ? "atualizado" : "criado"}.`);
       onClose();
     } catch {
-      toast.error("Erro ao salvar lead.");
+      toast.error(`Erro ao salvar ${contextLabel.toLowerCase()}.`);
     } finally {
       setSaving(false);
     }
@@ -365,7 +375,7 @@ function LeadFormDialog({
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-card border border-border rounded-xl w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="font-semibold text-foreground">{initial ? "Editar Lead" : "Novo Lead"}</h3>
+          <h3 className="font-semibold text-foreground">{initial ? `Editar ${contextLabel}` : `Novo ${contextLabel}`}</h3>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
         </div>
         <div className="px-5 py-4 space-y-3 max-h-[70vh] overflow-y-auto">
@@ -398,7 +408,7 @@ function LeadFormDialog({
           <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
           <Button size="sm" onClick={handleSave} disabled={saving} className="gap-2">
             {saving && <Loader2 className="size-3.5 animate-spin" />}
-            {initial ? "Salvar" : "Criar lead"}
+            {initial ? "Salvar" : `Criar ${contextLabel.toLowerCase()}`}
           </Button>
         </div>
       </div>
