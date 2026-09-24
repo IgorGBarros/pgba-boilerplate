@@ -239,7 +239,7 @@ def build_context_prompt(chunks: Iterable[RetrievedChunk]) -> str:
             f"[Fonte {i}: {chunk.source_name} / {chunk.document_title}]\n{chunk.content}"
         )
     raw = "\n\n---\n\n".join(parts)
-    return wrap_rag_context(raw) if raw else ""
+    return raw
 
 
 # ---------------------------------------------------------------------------

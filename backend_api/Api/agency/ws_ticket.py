@@ -35,11 +35,14 @@ def issue_ticket(user_id) -> str:
 def consume_ticket(ticket: str) -> str | None:
     """
     Troca o ticket pelo user_id e o invalida. Retorna None se inválido/expirado.
-    Operação atômica via get_or_set não existe no Django cache, mas o TTL
-    curto (15s) + invalidação imediata tornam a janela de replay desprezível.
+    Usa o valor de retorno de cache.delete (True = chave existia e foi deletada)
+    para garantir que apenas um consumidor vença a corrida — no Redis, delete
+    é atômico.
     """
     key = _cache_key(ticket)
     user_id = cache.get(key)
-    if user_id is not None:
-        cache.delete(key)
+    if user_id is None:
+        return None
+    if not cache.delete(key):
+        return None
     return user_id
