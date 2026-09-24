@@ -49,6 +49,36 @@ class ProviderConfigError(Exception):
     pass
 
 
+# Ordem de prioridade: quem está no topo substitui quem está abaixo.
+_PROVIDER_PRIORITY = ["openrouter", "groq", "openai", "anthropic", "ollama"]
+
+
+def get_active_provider(tenant_id) -> str:
+    """
+    Retorna o nome do provedor de chat a usar, em ordem de prioridade:
+      openrouter → groq → openai → anthropic → ollama
+
+    Leva em conta AIProviderCredential no banco (tenant ou global) antes
+    de cair no CHAT_PROVIDER do .env.
+    """
+    from harness.models import AIProviderCredential
+
+    qs = AIProviderCredential.objects.filter(is_active=True)
+    if tenant_id:
+        db_providers = set(
+            qs.filter(tenant_id=tenant_id).values_list("provider", flat=True)
+        ) | set(qs.filter(tenant_id__isnull=True).values_list("provider", flat=True))
+    else:
+        db_providers = set(qs.filter(tenant_id__isnull=True).values_list("provider", flat=True))
+
+    for p in _PROVIDER_PRIORITY:
+        if p in db_providers:
+            return p
+
+    # Nenhuma credencial no banco — cai no .env
+    return getattr(settings, "CHAT_PROVIDER", "ollama")
+
+
 def get_credential(tenant_id, provider: str) -> ResolvedCredential:
     """
     Resolve a credencial a usar, nesta ordem:
