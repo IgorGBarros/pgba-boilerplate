@@ -7,8 +7,70 @@
  * All colors are oklch semantic tokens. Never hardcode colors in components.
  */
 
+/* Light theme — default */
 :root {
+  color-scheme: light;
   --radius: 0.75rem;
+
+  --background: oklch(0.97 0.005 250);
+  --foreground: oklch(0.15 0.015 265);
+  --surface: oklch(0.95 0.007 260);
+  --surface-foreground: oklch(0.15 0.015 265);
+  --elevated: oklch(0.92 0.01 260);
+
+  --card: oklch(0.97 0.005 250);
+  --card-foreground: oklch(0.15 0.015 265);
+  --popover: oklch(0.99 0.003 250);
+  --popover-foreground: oklch(0.15 0.015 265);
+
+  --primary: oklch(0.55 0.2 266);
+  --primary-foreground: oklch(0.98 0.005 250);
+
+  --secondary: oklch(0.9 0.012 260);
+  --secondary-foreground: oklch(0.2 0.015 265);
+
+  --muted: oklch(0.93 0.009 260);
+  --muted-foreground: oklch(0.45 0.02 258);
+
+  --accent: oklch(0.88 0.018 266);
+  --accent-foreground: oklch(0.2 0.015 265);
+
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.98 0.005 250);
+
+  --success: oklch(0.55 0.18 152);
+  --success-foreground: oklch(0.98 0.005 250);
+
+  --warning: oklch(0.65 0.17 82);
+  --warning-foreground: oklch(0.15 0.03 82);
+
+  --border: oklch(0.85 0.014 265);
+  --input: oklch(0.88 0.014 265);
+  --ring: oklch(0.55 0.2 266);
+
+  --chart-1: oklch(0.55 0.2 266);
+  --chart-2: oklch(0.55 0.18 152);
+  --chart-3: oklch(0.65 0.17 82);
+  --chart-4: oklch(0.6 0.18 20);
+  --chart-5: oklch(0.58 0.14 210);
+
+  --sidebar: oklch(0.93 0.01 260);
+  --sidebar-foreground: oklch(0.2 0.015 265);
+  --sidebar-primary: oklch(0.55 0.2 266);
+  --sidebar-primary-foreground: oklch(0.98 0.005 250);
+  --sidebar-accent: oklch(0.88 0.014 265);
+  --sidebar-accent-foreground: oklch(0.2 0.015 265);
+  --sidebar-border: oklch(0.82 0.014 265);
+  --sidebar-ring: oklch(0.55 0.2 266);
+
+  --gradient-primary: linear-gradient(135deg, oklch(0.55 0.2 266), oklch(0.48 0.18 290));
+  --shadow-panel: 0 18px 40px -24px oklch(0.2 0.02 265 / 0.15);
+  --shadow-glow: 0 0 0 1px oklch(0.55 0.2 266 / 0.25), 0 12px 32px -18px oklch(0.55 0.2 266 / 0.35);
+}
+
+/* Dark theme */
+.dark {
+  color-scheme: dark;
 
   --background: oklch(0.16 0.012 265);
   --foreground: oklch(0.96 0.005 250);
@@ -64,10 +126,6 @@
   --gradient-primary: linear-gradient(135deg, oklch(0.62 0.19 266), oklch(0.55 0.16 290));
   --shadow-panel: 0 18px 40px -24px oklch(0.05 0.02 265 / 0.9);
   --shadow-glow: 0 0 0 1px oklch(0.62 0.19 266 / 0.35), 0 12px 32px -18px oklch(0.62 0.19 266 / 0.7);
-}
-
-.dark {
-  color-scheme: dark;
 }
 
 @layer base {
