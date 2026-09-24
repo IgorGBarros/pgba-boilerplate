@@ -29,7 +29,7 @@ const PROVIDER_META: Record<
     label: "Groq",
     needsKey: true,
     placeholder: "gsk_...",
-    models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+    models: ["qwen/qwen3.8-27b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "moonshotai/kimi-k2"],
   },
   openrouter: {
     label: "OpenRouter",
