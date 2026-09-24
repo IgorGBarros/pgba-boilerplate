@@ -32,6 +32,8 @@ import {
   fetchSchemaCatalog,
   listObsidianNotes,
   listSyncEvents,
+  listKnowledgeSources,
+  syncKnowledgeSource,
 } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -195,11 +197,34 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
 function ObsidianTab() {
   const [notes, setNotes] = useState<ObsidianNote[]>([]);
   const [syncEvents, setSyncEvents] = useState<SyncEvent[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const refresh = () => {
     listObsidianNotes().then(setNotes).catch(() => {});
     listSyncEvents().then(setSyncEvents).catch(() => {});
-  }, []);
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      const sources = await listKnowledgeSources();
+      const obsidianSources = sources.filter((s) => s.source_type === "obsidian");
+      if (obsidianSources.length === 0) {
+        setSyncError("Nenhuma KnowledgeSource do tipo Obsidian configurada. Crie uma no painel de Conhecimento.");
+        return;
+      }
+      await Promise.all(obsidianSources.map((s) => syncKnowledgeSource(s.id)));
+      refresh();
+    } catch {
+      setSyncError("Falha ao iniciar sincronização.");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const indexedCount = notes.filter((n) => n.status === "indexed").length;
   const totalChunks = notes.reduce((s, n) => s + n.chunks, 0);
@@ -231,13 +256,16 @@ function ObsidianTab() {
 
       <div className="flex items-center justify-between">
         <SectionHeader title="Notas do Vault" />
-        <div title="Configure KnowledgeSource no backend">
-          <Button size="sm" disabled className="gap-1.5">
-            <RefreshCw className="w-3.5 h-3.5" />
-            Sincronizar Agora
-          </Button>
-        </div>
+        <Button size="sm" onClick={handleSync} disabled={syncing} className="gap-1.5">
+          <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
+          {syncing ? "Sincronizando..." : "Sincronizar Agora"}
+        </Button>
       </div>
+      {syncError && (
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {syncError}
+        </p>
+      )}
 
       {notes.length === 0 ? (
         <p className="text-xs text-muted-foreground py-6 text-center">

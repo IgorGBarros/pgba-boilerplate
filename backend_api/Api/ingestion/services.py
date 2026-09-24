@@ -364,9 +364,9 @@ def generate_answer(query: str, context: str, tenant_id=None) -> str:
     except GroundingError:
         return NoAnswer.TEXT
 
-    from harness.views import _resolve_chat_provider
+    from harness.providers import get_active_provider
     from harness.injection_guard import build_safe_rag_prompt
-    provider = _resolve_chat_provider(tenant_id)
+    provider = get_active_provider(tenant_id)
     model = None  # resolve via get_credential().default_model
 
     system_instruction = (

@@ -466,6 +466,20 @@ function AskAgentModal({ agent, onClose }: AskAgentModalProps) {
             {result.function_called && (
               <p className="mt-1.5 text-[10px] text-slate-500">função usada: {result.function_called}</p>
             )}
+            {result.sources && result.sources.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5 border-t border-white/10 pt-2">
+                {result.sources.map((src, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1 rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-400"
+                    title={src.source}
+                  >
+                    <span className="text-slate-500">▸</span>
+                    {src.document.length > 35 ? src.document.slice(0, 35) + "…" : src.document}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
