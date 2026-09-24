@@ -335,6 +335,7 @@ export function Knowledge() {
       const result: RagQueryResult = await queryKnowledge(text, {
         topK: 5,
         generateAnswer: true,
+        sourceId: selectedSource ? Number(selectedSource) : undefined,
       });
 
       const sources = result.sources.map((s) => ({
