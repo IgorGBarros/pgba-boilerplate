@@ -511,6 +511,17 @@ function LeadFormDialog({
             <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Observações</label>
             <textarea value={form.observacoes} onChange={e => set("observacoes", e.target.value)} rows={3} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring" />
           </div>
+          {initial && (
+            <div className="border-t border-border pt-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Campos extra</p>
+              <CustomFieldsManager
+                entityType="lead"
+                entityId={initial.id}
+                values={initial.custom_fields}
+                onUpdated={() => {}}
+              />
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-border">
           <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
@@ -596,6 +607,17 @@ function DealFormDialog({
             <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Observações</label>
             <textarea value={form.observacoes} onChange={e => set("observacoes", e.target.value)} rows={3} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring" />
           </div>
+          {initial && (
+            <div className="border-t border-border pt-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Campos extra</p>
+              <CustomFieldsManager
+                entityType="deal"
+                entityId={initial.id}
+                values={initial.custom_fields}
+                onUpdated={() => {}}
+              />
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-border">
           <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
@@ -685,6 +707,17 @@ function ProjectFormDialog({
             <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Observações</label>
             <textarea value={form.observacoes} onChange={e => set("observacoes", e.target.value)} rows={3} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring" />
           </div>
+          {initial && (
+            <div className="border-t border-border pt-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Campos extra</p>
+              <CustomFieldsManager
+                entityType="project"
+                entityId={initial.id}
+                values={initial.custom_fields}
+                onUpdated={() => {}}
+              />
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-border">
           <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
