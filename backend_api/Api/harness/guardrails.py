@@ -53,9 +53,12 @@ def extract_json(raw: str) -> dict:
     Guardrail 2 — saída estruturada, nunca texto livre interpretado "na
     confiança". Extrai o primeiro objeto JSON válido de `raw` (mesmo que o
     modelo tenha cercado com ```json ou adicionado texto antes/depois,
-    comum mesmo em "modo JSON").
+    comum mesmo em "modo JSON"). Suporta modelos de raciocínio que emitem
+    <think>...</think> antes do JSON (ex: qwen/qwen3.8-27b via Groq).
     """
     raw = (raw or "").strip()
+    # Remove blocos <think>...</think> de modelos de raciocínio antes de extrair JSON.
+    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
     raw = re.sub(r"^```(json)?|```$", "", raw, flags=re.MULTILINE).strip()
 
     try:
