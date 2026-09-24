@@ -62,7 +62,8 @@ class Command(BaseCommand):
                 continue
 
             try:
-                agent = Agent.objects.get(tenant_id=tenant_id, name=agent_name)
+                # iexact tolera variações de acento/maiúscula no name
+                agent = Agent.objects.get(tenant_id=tenant_id, name__iexact=agent_name)
             except Agent.DoesNotExist:
                 self.stdout.write(self.style.WARNING(f"  [AGENTE NAO ENCONTRADO] {agent_name}"))
                 missing_agent += 1

@@ -23,6 +23,7 @@ arquivo existir e o campo estiver vazio.
 import pathlib
 
 from django.core.management.base import BaseCommand, CommandError
+from django.utils.text import slugify
 
 from agency.models import Agent, Sector
 from ingestion.models import KnowledgeSource
@@ -104,12 +105,20 @@ class Command(BaseCommand):
 
         sectors_by_name = {}
         for name, description in SECTORS:
-            sector, created = Sector.objects.get_or_create(
-                tenant_id=tenant_id, name=name, defaults={"description": description},
-            )
+            # Lookup por slug para tolerar variações de acento no name
+            # (ex: "Juridico" e "Jurídico" geram o mesmo slug "juridico").
+            slug = slugify(name)
+            try:
+                sector = Sector.objects.get(tenant_id=tenant_id, slug=slug)
+                created = False
+            except Sector.DoesNotExist:
+                sector = Sector.objects.create(
+                    tenant_id=tenant_id, name=name, description=description,
+                )
+                created = True
             sectors_by_name[name] = sector
             label = "Criado" if created else "Ja existia"
-            self.stdout.write(f"  [Setor] {label}: {name}")
+            self.stdout.write(f"  [Setor] {label}: {sector.name}")
 
         self.stdout.write("")
 
