@@ -78,11 +78,14 @@ class AgentViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet)
             question=data["question"],
             use_rag_context=data["use_rag_context"],
         )
-        # "pending_approval" é um resultado NORMAL (o Policy Engine
-        # funcionou como deveria — bloqueou e criou a PendingApproval),
-        # não uma falha técnica. Só function_error/llm_error/rejected são
-        # de fato erro (o modelo/execução falhou).
-        is_success = result["status"] in ("ok", "pending_approval")
+        # Resultados que são respostas válidas (não falhas técnicas):
+        #   "ok"               — respondeu normalmente
+        #   "pending_approval" — Policy Engine bloqueou e criou PendingApproval
+        #   "rejected"         — guardrail de grounding recusou (sem dados suficientes);
+        #                        é uma resposta correta do sistema, não uma falha técnica
+        # Falhas técnicas (upstream indisponível, parse error) → 502:
+        #   "llm_error", "function_error"
+        is_success = result["status"] in ("ok", "pending_approval", "rejected")
         http_status = status.HTTP_200_OK if is_success else status.HTTP_502_BAD_GATEWAY
         return Response(result, status=http_status)
 
