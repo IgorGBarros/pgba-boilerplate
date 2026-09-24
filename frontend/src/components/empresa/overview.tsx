@@ -57,7 +57,7 @@ import {
 } from "@/components/empresa/dialogs";
 import { SectorDetailPage } from "@/components/empresa/mercado";
 import { Projects } from "@/components/empresa/projects";
-import { CRMView } from "@/components/empresa/crm";
+import { CRMKanban } from "@/components/empresa/crm-kanban";
 import { ERPView } from "@/components/empresa/erp";
 import { ControladoriaView } from "@/components/empresa/controladoria";
 import { DataLakeView } from "@/components/empresa/datalake";
@@ -1354,7 +1354,16 @@ export function Overview({ onNewTask, onOpenGerar }: { onNewTask: (sector?: stri
 
       {/* Módulos de negócio — página completa */}
       {!selectedSector && selectedModule?.key === "crm" && (
-        <CRMView onBack={() => setSelectedModule(null)} />
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelectedModule(null)} className="gap-1">
+              <ChevronRight className="size-4 rotate-180" />
+              Voltar
+            </Button>
+            <span className="text-lg font-semibold">CRM &amp; Comercial</span>
+          </div>
+          <CRMKanban />
+        </div>
       )}
       {!selectedSector && selectedModule?.key === "erp" && (
         <ERPView onBack={() => setSelectedModule(null)} defaultTab={selectedModule.erpTab} />
