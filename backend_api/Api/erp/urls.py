@@ -5,6 +5,7 @@ from erp.views import (
     LancamentoFinanceiroViewSet, FuncionarioViewSet,
     NotaFiscalViewSet, ObrigacaoFiscalViewSet,
     LinhaDREViewSet, BalancetePeriodoViewSet,
+    brapi_quote_proxy,
 )
 
 router = DefaultRouter()
@@ -18,4 +19,7 @@ router.register("obrigacoes-fiscais", ObrigacaoFiscalViewSet, basename="obrigaca
 router.register("linhas-dre", LinhaDREViewSet, basename="linha-dre")
 router.register("balancete", BalancetePeriodoViewSet, basename="balancete-periodo")
 
-urlpatterns = [path("", include(router.urls))]
+urlpatterns = [
+    path("", include(router.urls)),
+    path("market/quote/<str:ticker>/", brapi_quote_proxy, name="brapi-quote-proxy"),
+]

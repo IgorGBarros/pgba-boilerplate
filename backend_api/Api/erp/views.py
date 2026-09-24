@@ -1,5 +1,11 @@
+import os
+
+import httpx
+from django.conf import settings
 from rest_framework import viewsets, filters
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from core.mixins import TenantContextMixin
 from agency.views import TenantScopedMixin
@@ -10,6 +16,25 @@ from erp.serializers import (
     NotaFiscalSerializer, ObrigacaoFiscalSerializer,
     LinhaDRESerializer, BalancetePeriodoSerializer,
 )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def brapi_quote_proxy(request, ticker: str):
+    """Proxy para brapi.dev/api/quote/<ticker> — mantém o BRAPI_TOKEN server-side."""
+    token = getattr(settings, "BRAPI_TOKEN", None) or os.environ.get("BRAPI_TOKEN", "")
+    params = {k: v for k, v in request.GET.items()}
+    if token:
+        params["token"] = token
+    try:
+        r = httpx.get(
+            f"https://brapi.dev/api/quote/{ticker}",
+            params=params,
+            timeout=10,
+        )
+        return Response(r.json(), status=r.status_code)
+    except httpx.RequestError:
+        return Response({"error": "upstream_unavailable"}, status=502)
 
 
 class FornecedorViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):

@@ -270,7 +270,11 @@ function useBrapiTicker(ticker: string | undefined): TickerData | null {
 
     async function poll() {
       try {
-        const r = await fetch(`https://brapi.dev/api/quote/${encodeURIComponent(ticker!)}?range=1d&interval=1d`);
+        // Proxy pelo backend — token fica server-side, fora do browser
+        const r = await fetch(
+          `/api/v1/erp/market/quote/${encodeURIComponent(ticker!)}/?range=1d&interval=1d`,
+          { credentials: "include" },
+        );
         if (!r.ok || !active) return;
         const json = (await r.json()) as BrapiResponse;
         const res = json?.results?.[0];
