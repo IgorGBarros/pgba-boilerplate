@@ -37,7 +37,7 @@ class LeadSerializer(serializers.ModelSerializer):
         model = Lead
         fields = [
             "id", "nome", "empresa", "email", "telefone", "cargo",
-            "valor_estimado", "responsavel", "origem", "observacoes",
+            "valor_estimado", "responsavel", "origem", "observacoes", "outcome",
             "pipeline", "stage", "position",
             "stage_name", "stage_main", "stage_color", "stage_is_won", "stage_is_lost",
             "oportunidades_count", "atividades_count", "messages_count",
