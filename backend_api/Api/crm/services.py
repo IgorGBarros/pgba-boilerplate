@@ -1,19 +1,16 @@
 """
-Regras de negócio do CRM — qualificação de leads via agente de IA,
-seed do pipeline padrão, movimentação de cards.
-
-Segue o padrão do boilerplate: harness/providers.py para o LLM,
-ingestion.services para RAG, nunca HTTP direto a um provedor.
+Regras de negócio do CRM — Lead, Deal, Project.
+Segue o padrão do boilerplate: harness/providers.py para o LLM, nunca HTTP direto.
 """
 import logging
 from django.db import transaction
 
 from harness.providers import chat_completion, get_active_provider
-from crm.models import Lead, LeadMessage, Pipeline, Stage
+from crm.models import Lead, Deal, Project, LeadMessage, Pipeline, Stage
 
 logger = logging.getLogger(__name__)
 
-# ─── Etapas padrão sugeridas (genéricas — customizar por ramo) ────────────────
+# ─── Etapas padrão sugeridas ──────────────────────────────────────────────────
 
 DEFAULT_STAGES = {
     "lead": [
@@ -26,24 +23,21 @@ DEFAULT_STAGES = {
         {"name": "Proposta Enviada",   "color": "amber",  "position": 0},
         {"name": "Em Negociação",      "color": "orange", "position": 1},
         {"name": "Aguardando Decisão", "color": "yellow", "position": 2},
-        {"name": "Ganho",             "color": "green",  "position": 3, "is_won": True},
-        {"name": "Perdido",           "color": "red",    "position": 4, "is_lost": True},
+        {"name": "Ganho",              "color": "green",  "position": 3, "is_won": True},
+        {"name": "Perdido",            "color": "red",    "position": 4, "is_lost": True},
     ],
     "project": [
-        {"name": "Kickoff",           "color": "cyan",   "position": 0},
-        {"name": "Em Desenvolvimento","color": "teal",   "position": 1},
-        {"name": "Em Revisão",        "color": "sky",    "position": 2},
-        {"name": "Entregue",          "color": "emerald","position": 3},
-        {"name": "Concluído",         "color": "green",  "position": 4, "is_won": True},
+        {"name": "Kickoff",            "color": "cyan",    "position": 0},
+        {"name": "Em Desenvolvimento", "color": "teal",    "position": 1},
+        {"name": "Em Revisão",         "color": "sky",     "position": 2},
+        {"name": "Entregue",           "color": "emerald", "position": 3},
+        {"name": "Concluído",          "color": "green",   "position": 4, "is_won": True},
     ],
 }
 
 
 def seed_default_pipeline(tenant_id) -> Pipeline:
-    """
-    Cria o pipeline padrão com todas as etapas sugeridas para um tenant.
-    Idempotente: se já existe um pipeline default, retorna ele sem criar novo.
-    """
+    """Cria o pipeline padrão com todas as etapas para um tenant. Idempotente."""
     pipeline, created = Pipeline.objects.get_or_create(
         tenant_id=tenant_id,
         is_default=True,
@@ -70,50 +64,136 @@ def seed_default_pipeline(tenant_id) -> Pipeline:
     return pipeline
 
 
+# ─── Lead ─────────────────────────────────────────────────────────────────────
+
 def move_lead_to_stage(lead_id: int, stage_id: int, tenant_id) -> Lead:
-    """Move um lead para uma nova etapa do kanban."""
     lead = Lead.objects.get(id=lead_id, tenant_id=tenant_id)
     stage = Stage.objects.get(id=stage_id, tenant_id=tenant_id)
-
     lead.stage = stage
     lead.pipeline = stage.pipeline
     lead.save(update_fields=["stage", "pipeline"])
-
     LeadMessage.objects.create(
-        tenant_id=tenant_id,
-        lead=lead,
+        tenant_id=tenant_id, lead=lead,
         role=LeadMessage.Role.SYSTEM,
-        content=f"Lead movido para etapa: {stage.get_main_stage_display()} → {stage.name}",
+        content=f"Lead movido para etapa: {stage.name}",
     )
-
     return lead
 
 
+def convert_lead_to_deal(lead_id: int, tenant_id, titulo: str = "", responsavel: str = "", valor=None) -> Deal:
+    """
+    Converte um Lead em Deal:
+    - Cria um registro Deal referenciando o Lead
+    - Atualiza lead.outcome = 'convertido'
+    - Coloca o Deal no primeiro stage de 'deal' do pipeline do lead
+    """
+    lead = Lead.objects.get(id=lead_id, tenant_id=tenant_id)
+
+    first_deal_stage = Stage.objects.filter(
+        tenant_id=tenant_id,
+        pipeline=lead.pipeline,
+        main_stage="deal",
+    ).order_by("position").first()
+
+    with transaction.atomic():
+        deal = Deal.objects.create(
+            tenant_id=tenant_id,
+            lead=lead,
+            pipeline=lead.pipeline,
+            stage=first_deal_stage,
+            titulo=titulo or lead.nome,
+            empresa=lead.empresa,
+            responsavel=responsavel or lead.responsavel,
+            valor=valor or lead.valor_estimado,
+        )
+        lead.outcome = "convertido"
+        lead.save(update_fields=["outcome"])
+        LeadMessage.objects.create(
+            tenant_id=tenant_id, lead=lead,
+            role=LeadMessage.Role.SYSTEM,
+            content=f"Lead convertido em Deal: #{deal.id} — {deal.titulo}",
+        )
+
+    return deal
+
+
+# ─── Deal ─────────────────────────────────────────────────────────────────────
+
+def move_deal_to_stage(deal_id: int, stage_id: int, tenant_id) -> Deal:
+    deal = Deal.objects.get(id=deal_id, tenant_id=tenant_id)
+    stage = Stage.objects.get(id=stage_id, tenant_id=tenant_id)
+    deal.stage = stage
+    deal.pipeline = stage.pipeline
+    deal.save(update_fields=["stage", "pipeline"])
+    return deal
+
+
+def set_deal_outcome(deal_id: int, outcome: str, tenant_id) -> Deal:
+    """
+    Define o desfecho de um Deal.
+    Se 'ganho' ou 'contrato_assinado', cria automaticamente um Project.
+    """
+    VALID = {"ganho", "contrato_assinado", "perdido", "cancelado", ""}
+    if outcome not in VALID:
+        raise ValueError(f"outcome inválido: {outcome}")
+
+    deal = Deal.objects.select_related("stage", "lead").get(id=deal_id, tenant_id=tenant_id)
+    deal.outcome = outcome
+    deal.save(update_fields=["outcome"])
+
+    if outcome in {"ganho", "contrato_assinado"}:
+        first_project_stage = Stage.objects.filter(
+            tenant_id=tenant_id,
+            pipeline=deal.pipeline,
+            main_stage="project",
+        ).order_by("position").first()
+
+        if first_project_stage and not deal.projects.filter(tenant_id=tenant_id).exists():
+            Project.objects.create(
+                tenant_id=tenant_id,
+                deal=deal,
+                lead=deal.lead,
+                pipeline=deal.pipeline,
+                stage=first_project_stage,
+                titulo=deal.titulo,
+                empresa=deal.empresa,
+                responsavel=deal.responsavel,
+            )
+
+    return deal
+
+
+# ─── Project ──────────────────────────────────────────────────────────────────
+
+def move_project_to_stage(project_id: int, stage_id: int, tenant_id) -> Project:
+    project = Project.objects.get(id=project_id, tenant_id=tenant_id)
+    stage = Stage.objects.get(id=stage_id, tenant_id=tenant_id)
+    project.stage = stage
+    project.pipeline = stage.pipeline
+    project.save(update_fields=["stage", "pipeline"])
+    return project
+
+
+def set_project_outcome(project_id: int, outcome: str, tenant_id) -> Project:
+    VALID = {"concluido", "pausado", "cancelado", ""}
+    if outcome not in VALID:
+        raise ValueError(f"outcome inválido: {outcome}")
+    project = Project.objects.get(id=project_id, tenant_id=tenant_id)
+    project.outcome = outcome
+    project.save(update_fields=["outcome"])
+    return project
+
+
+# ─── Qualificação de lead via agente ──────────────────────────────────────────
+
 def qualify_lead(lead_id: int, user_message: str, tenant_id) -> dict:
-    """
-    Agente comercial responde uma mensagem do lead.
-
-    Fluxo:
-    1. Salva mensagem do usuário
-    2. Busca contexto RAG do setor (base de conhecimento da empresa)
-    3. Constrói histórico de conversa
-    4. Chama o LLM via harness
-    5. Detecta se o agente sugeriu fechamento
-    6. Retorna resposta + flag closing_suggested
-
-    Segue o "Princípio Akita": nunca aceita resposta sem tratamento de erro;
-    falha do provedor não derruba a operação, loga e devolve mensagem de erro.
-    """
     lead = Lead.objects.prefetch_related("messages").get(id=lead_id, tenant_id=tenant_id)
 
     LeadMessage.objects.create(
-        tenant_id=tenant_id,
-        lead=lead,
-        role=LeadMessage.Role.USER,
-        content=user_message,
+        tenant_id=tenant_id, lead=lead,
+        role=LeadMessage.Role.USER, content=user_message,
     )
 
-    # RAG: contexto da base de conhecimento do tenant
     rag_context = ""
     try:
         from ingestion.services import semantic_search
@@ -123,7 +203,6 @@ def qualify_lead(lead_id: int, user_message: str, tenant_id) -> dict:
     except Exception as exc:
         logger.warning("CRM qualify_lead: RAG falhou (%s) — seguindo sem contexto.", exc)
 
-    # Histórico (sem a última mensagem que acabamos de salvar)
     history_qs = lead.messages.all().order_by("created_at")
     history = []
     for m in history_qs:
@@ -137,15 +216,12 @@ def qualify_lead(lead_id: int, user_message: str, tenant_id) -> dict:
         "OBJETIVO:\n"
         "1. Responder dúvidas sobre produtos/serviços usando APENAS as informações fornecidas.\n"
         "2. Qualificar o lead: entender necessidade, orçamento, prazo e autoridade de decisão.\n"
-        "3. Quando o lead demonstrar interesse claro, perguntar diretamente:\n"
-        "   \"Posso avançar para a etapa de proposta?\"\n\n"
+        "3. Quando o lead demonstrar interesse claro, perguntar: \"Posso avançar para a etapa de proposta?\"\n\n"
         "REGRAS:\n"
         "- Nunca invente preços, prazos ou funcionalidades não documentadas.\n"
         "- Se não souber, diga: \"Vou verificar e retorno em breve.\"\n"
         "- Máximo 3 parágrafos por resposta.\n"
-        f"- Lead: {lead.nome}"
-        + (f" ({lead.empresa})" if lead.empresa else "")
-        + "\n\n"
+        f"- Lead: {lead.nome}" + (f" ({lead.empresa})" if lead.empresa else "") + "\n\n"
         + (f"BASE DE CONHECIMENTO DA EMPRESA:\n{rag_context}\n" if rag_context else "")
     )
 
@@ -161,10 +237,8 @@ def qualify_lead(lead_id: int, user_message: str, tenant_id) -> dict:
         response_text = "Desculpe, houve um problema técnico. Tente novamente em instantes."
 
     LeadMessage.objects.create(
-        tenant_id=tenant_id,
-        lead=lead,
-        role=LeadMessage.Role.AGENT,
-        content=response_text,
+        tenant_id=tenant_id, lead=lead,
+        role=LeadMessage.Role.AGENT, content=response_text,
     )
 
     closing_suggested = any(
@@ -172,8 +246,4 @@ def qualify_lead(lead_id: int, user_message: str, tenant_id) -> dict:
         for phrase in ["etapa de proposta", "avançar para", "fechar negócio", "posso avançar"]
     )
 
-    return {
-        "response": response_text,
-        "closing_suggested": closing_suggested,
-        "lead_id": lead_id,
-    }
+    return {"response": response_text, "closing_suggested": closing_suggested, "lead_id": lead_id}

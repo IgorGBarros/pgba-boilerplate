@@ -6,7 +6,7 @@ from core.mixins import TenantMixin, AuditMixin, SoftDeleteMixin
 # ─── Pipeline & Stage (kanban configurável) ───────────────────────────────────
 
 class Pipeline(TenantMixin, AuditMixin, models.Model):
-    """Pipeline de vendas — um tenant pode ter múltiplos (ex: vendas, pós-venda)."""
+    """Pipeline de vendas — um tenant pode ter múltiplos."""
     name = models.CharField(max_length=150, default="Pipeline Comercial")
     is_default = models.BooleanField(default=False)
 
@@ -20,19 +20,18 @@ class Pipeline(TenantMixin, AuditMixin, models.Model):
 
 class Stage(TenantMixin, models.Model):
     """
-    Sub-etapa configurável dentro de um Pipeline.
+    Etapa configurável dentro de um Pipeline.
 
-    Cada stage pertence a uma das 3 colunas principais:
+    entity_type define a qual entidade esta etapa pertence:
     LEAD → DEAL → PROJECT
-    A ordem dentro de cada coluna é definida por `position`.
     """
-    class MainStage(models.TextChoices):
+    class EntityType(models.TextChoices):
         LEAD = "lead", "Lead"
         DEAL = "deal", "Deal"
         PROJECT = "project", "Projeto"
 
     pipeline = models.ForeignKey(Pipeline, on_delete=models.CASCADE, related_name="stages")
-    main_stage = models.CharField(max_length=20, choices=MainStage.choices)
+    main_stage = models.CharField(max_length=20, choices=EntityType.choices)  # alias: entity_type
     name = models.CharField(max_length=100)
     position = models.PositiveIntegerField(default=0)
     color = models.CharField(max_length=30, default="blue")
@@ -47,7 +46,86 @@ class Stage(TenantMixin, models.Model):
         return f"{self.get_main_stage_display()} → {self.name}"
 
 
-# ─── Lead (card do kanban) ─────────────────────────────────────────────────────
+# ─── Campos customizáveis por entidade ────────────────────────────────────────
+
+class CustomFieldDefinition(TenantMixin, models.Model):
+    """
+    Define um campo customizado para Lead, Deal ou Project.
+    Cada tenant pode adicionar quantos campos quiser por entidade,
+    sem alterar o schema do banco — os valores são armazenados em
+    CustomFieldValue como JSON.
+    """
+    class EntityType(models.TextChoices):
+        LEAD = "lead", "Lead"
+        DEAL = "deal", "Deal"
+        PROJECT = "project", "Projeto"
+
+    class FieldType(models.TextChoices):
+        TEXT = "text", "Texto"
+        TEXTAREA = "textarea", "Texto longo"
+        NUMBER = "number", "Número"
+        CURRENCY = "currency", "Moeda"
+        DATE = "date", "Data"
+        SELECT = "select", "Seleção"
+        MULTISELECT = "multiselect", "Multi-seleção"
+        CHECKBOX = "checkbox", "Checkbox"
+        EMAIL = "email", "E-mail"
+        PHONE = "phone", "Telefone"
+        URL = "url", "URL"
+
+    entity_type = models.CharField(max_length=20, choices=EntityType.choices)
+    name = models.CharField(max_length=100)
+    key = models.SlugField(max_length=100, help_text="Identificador único do campo (snake_case).")
+    field_type = models.CharField(max_length=20, choices=FieldType.choices, default=FieldType.TEXT)
+    options = models.JSONField(
+        default=list, blank=True,
+        help_text='Para select/multiselect: lista de strings. Ex: ["Opção A", "Opção B"]',
+    )
+    required = models.BooleanField(default=False)
+    position = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["entity_type", "position"]
+        indexes = [models.Index(fields=["tenant_id", "entity_type", "is_active"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "entity_type", "key"],
+                name="uniq_custom_field_key_per_entity_tenant",
+            )
+        ]
+
+    def __str__(self):
+        return f"[{self.entity_type}] {self.name}"
+
+
+class CustomFieldValue(TenantMixin, models.Model):
+    """Valor de um campo customizado para uma instância específica de Lead/Deal/Project."""
+    field_def = models.ForeignKey(
+        CustomFieldDefinition, on_delete=models.CASCADE, related_name="values"
+    )
+    entity_type = models.CharField(max_length=20)
+    entity_id = models.PositiveIntegerField()
+    value = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant_id", "entity_type", "entity_id"]),
+            models.Index(fields=["tenant_id", "field_def"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "field_def", "entity_type", "entity_id"],
+                name="uniq_custom_field_value_per_entity",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.field_def.name}: {self.value}"
+
+
+# ─── Lead ─────────────────────────────────────────────────────────────────────
 
 class Lead(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     ORIGEM_CHOICES = [
@@ -62,6 +140,12 @@ class Lead(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         ("meta_ads", "Meta Ads (Facebook/Instagram)"),
         ("outro", "Outro"),
     ]
+    OUTCOME_CHOICES = [
+        ("", "—"),
+        ("convertido", "Convertido em Deal"),
+        ("perdido", "Perdido"),
+        ("cancelado", "Cancelado"),
+    ]
 
     # Kanban
     pipeline = models.ForeignKey(
@@ -72,7 +156,7 @@ class Lead(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     )
     position = models.PositiveIntegerField(default=0)
 
-    # Dados do contato
+    # Dados de contato
     nome = models.CharField(max_length=200)
     empresa = models.CharField(max_length=200, blank=True)
     email = models.EmailField(blank=True)
@@ -85,25 +169,13 @@ class Lead(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     origem = models.CharField(max_length=20, choices=ORIGEM_CHOICES, default="outro")
     observacoes = models.TextField(blank=True)
 
-    # Identificador externo do canal (ex: número WhatsApp, chat_id Telegram)
+    # Canal de origem (WhatsApp, Telegram, etc.)
     channel_ref = models.CharField(
         max_length=200, blank=True,
-        help_text="Identificador único do lead no canal de origem (ex: número WhatsApp, Telegram chat_id).",
+        help_text="Identificador único do lead no canal de origem.",
     )
 
-    # Desfecho — define a automação de transição entre colunas do kanban:
-    # Lead → Deal: "vendido" ou "concluido"
-    # Deal → Project: "contrato_assinado" ou "concluido"
-    OUTCOME_CHOICES = [
-        ("", "—"),
-        ("vendido", "Vendido"),
-        ("concluido", "Concluído"),
-        ("perdido", "Perdido"),
-        ("contrato_assinado", "Contrato Assinado"),
-        ("cancelado", "Cancelado"),
-    ]
     outcome = models.CharField(max_length=30, choices=OUTCOME_CHOICES, blank=True, default="")
-
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -119,7 +191,116 @@ class Lead(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         return f"{self.nome} ({self.empresa})"
 
 
-# ─── Contato e Oportunidade (mantidos do modelo anterior) ─────────────────────
+# ─── Deal ─────────────────────────────────────────────────────────────────────
+
+class Deal(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
+    """
+    Oportunidade comercial qualificada, gerada a partir de um Lead ou diretamente.
+    Referencia o Lead de origem via FK (rastreabilidade completa).
+    """
+    OUTCOME_CHOICES = [
+        ("", "—"),
+        ("ganho", "Ganho"),
+        ("contrato_assinado", "Contrato Assinado"),
+        ("perdido", "Perdido"),
+        ("cancelado", "Cancelado"),
+    ]
+
+    # Referência ao lead de origem (opcional — pode ser criado sem lead)
+    lead = models.ForeignKey(
+        Lead, on_delete=models.SET_NULL, null=True, blank=True, related_name="deals"
+    )
+
+    # Kanban
+    pipeline = models.ForeignKey(
+        Pipeline, on_delete=models.SET_NULL, null=True, blank=True, related_name="deals"
+    )
+    stage = models.ForeignKey(
+        Stage, on_delete=models.SET_NULL, null=True, blank=True, related_name="deals"
+    )
+    position = models.PositiveIntegerField(default=0)
+
+    # Dados do deal
+    titulo = models.CharField(max_length=255)
+    empresa = models.CharField(max_length=200, blank=True)
+    responsavel = models.CharField(max_length=200, blank=True)
+    valor = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    moeda = models.CharField(max_length=10, default="BRL", blank=True)
+    data_fechamento_previsto = models.DateField(null=True, blank=True)
+    observacoes = models.TextField(blank=True)
+
+    outcome = models.CharField(max_length=30, choices=OUTCOME_CHOICES, blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["position", "-created_at"]
+        indexes = [
+            models.Index(fields=["tenant_id", "stage"]),
+            models.Index(fields=["tenant_id", "pipeline"]),
+            models.Index(fields=["tenant_id", "lead"]),
+            models.Index(fields=["tenant_id", "responsavel"]),
+        ]
+
+    def __str__(self):
+        return self.titulo
+
+
+# ─── Project ──────────────────────────────────────────────────────────────────
+
+class Project(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
+    """
+    Projeto gerado a partir de um Deal ganho.
+    Mantém referência ao Deal (e indiretamente ao Lead original).
+    """
+    OUTCOME_CHOICES = [
+        ("", "—"),
+        ("concluido", "Concluído"),
+        ("pausado", "Pausado"),
+        ("cancelado", "Cancelado"),
+    ]
+
+    # Referências de rastreabilidade
+    deal = models.ForeignKey(
+        Deal, on_delete=models.SET_NULL, null=True, blank=True, related_name="projects"
+    )
+    lead = models.ForeignKey(
+        Lead, on_delete=models.SET_NULL, null=True, blank=True, related_name="projects"
+    )
+
+    # Kanban
+    pipeline = models.ForeignKey(
+        Pipeline, on_delete=models.SET_NULL, null=True, blank=True, related_name="projects"
+    )
+    stage = models.ForeignKey(
+        Stage, on_delete=models.SET_NULL, null=True, blank=True, related_name="projects"
+    )
+    position = models.PositiveIntegerField(default=0)
+
+    # Dados do projeto
+    titulo = models.CharField(max_length=255)
+    empresa = models.CharField(max_length=200, blank=True)
+    responsavel = models.CharField(max_length=200, blank=True)
+    data_inicio = models.DateField(null=True, blank=True)
+    data_fim_previsto = models.DateField(null=True, blank=True)
+    data_fim_realizado = models.DateField(null=True, blank=True)
+    observacoes = models.TextField(blank=True)
+
+    outcome = models.CharField(max_length=30, choices=OUTCOME_CHOICES, blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["position", "-created_at"]
+        indexes = [
+            models.Index(fields=["tenant_id", "stage"]),
+            models.Index(fields=["tenant_id", "pipeline"]),
+            models.Index(fields=["tenant_id", "deal"]),
+        ]
+
+    def __str__(self):
+        return self.titulo
+
+
+# ─── Contato e Atividade ──────────────────────────────────────────────────────
 
 class Contato(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     nome = models.CharField(max_length=200)
@@ -138,32 +319,6 @@ class Contato(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
 
     def __str__(self):
         return self.nome
-
-
-class Oportunidade(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
-    STATUS_CHOICES = [
-        ("prospeccao", "Prospecção"),
-        ("qualificacao", "Qualificação"),
-        ("proposta", "Proposta"),
-        ("negociacao", "Negociação"),
-        ("ganho", "Ganho"),
-        ("perdido", "Perdido"),
-    ]
-
-    titulo = models.CharField(max_length=255)
-    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name="oportunidades")
-    valor = models.DecimalField(max_digits=14, decimal_places=2, default=0)
-    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="prospeccao")
-    data_fechamento_previsto = models.DateField(null=True, blank=True)
-    observacoes = models.TextField(blank=True)
-    created_at = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        ordering = ["-created_at"]
-        indexes = [models.Index(fields=["tenant_id", "status"])]
-
-    def __str__(self):
-        return self.titulo
 
 
 class AtividadeCRM(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
@@ -195,11 +350,9 @@ class AtividadeCRM(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         return self.titulo
 
 
-# ─── Conversa do agente com o lead ────────────────────────────────────────────
+# ─── Mensagens do agente com o lead ───────────────────────────────────────────
 
 class LeadMessage(TenantMixin, models.Model):
-    """Histórico de conversa entre o agente comercial e o lead."""
-
     class Role(models.TextChoices):
         USER = "user", "Usuário / Lead"
         AGENT = "agent", "Agente"
@@ -218,16 +371,9 @@ class LeadMessage(TenantMixin, models.Model):
         return f"[{self.role}] {self.content[:60]}"
 
 
-# ─── Configuração de canais de entrada de leads ────────────────────────────────
+# ─── Configuração de canais de entrada ────────────────────────────────────────
 
 class ChannelConfig(TenantMixin, models.Model):
-    """
-    Configuração de um canal de entrada de leads (WhatsApp, Telegram, Landing Page, Meta Ads).
-
-    O webhook_secret é usado para validar a autenticidade das requisições
-    recebidas (HMAC no caso do Meta, token no caso do Telegram).
-    """
-
     class Channel(models.TextChoices):
         WHATSAPP = "whatsapp", "WhatsApp (Evolution API)"
         TELEGRAM = "telegram", "Telegram Bot"
@@ -236,41 +382,15 @@ class ChannelConfig(TenantMixin, models.Model):
 
     channel = models.CharField(max_length=20, choices=Channel.choices)
     is_active = models.BooleanField(default=True)
-
-    # Credenciais do canal (criptografadas via harness.crypto)
     _api_key = models.TextField(db_column="api_key_encrypted", blank=True)
-
-    # Configurações específicas por canal (armazenadas como JSON)
-    config = models.JSONField(
-        default=dict, blank=True,
-        help_text=(
-            "WhatsApp: {\"instance\": \"...\", \"server_url\": \"http://...\"}. "
-            "Telegram: {\"bot_username\": \"...\"}. "
-            "Meta Ads: {\"page_id\": \"...\", \"verify_token\": \"...\"}."
-        ),
-    )
-
-    # Webhook secret para validação de assinatura (HMAC-SHA256)
+    config = models.JSONField(default=dict, blank=True)
     webhook_secret = models.CharField(max_length=255, blank=True)
-
-    # Mensagem de boas-vindas enviada automaticamente no primeiro contato
-    welcome_message = models.TextField(
-        blank=True,
-        help_text="Mensagem enviada automaticamente quando o lead entra em contato pela primeira vez.",
-    )
-
-    # Sugestões de perguntas exibidas após a mensagem de boas-vindas
-    quick_replies = models.JSONField(
-        default=list, blank=True,
-        help_text='Lista de sugestões de perguntas. Ex: ["Ver preços", "Falar com atendente", "Saber mais"]',
-    )
-
-    # Pipeline de destino para leads capturados por este canal
+    welcome_message = models.TextField(blank=True)
+    quick_replies = models.JSONField(default=list, blank=True)
     target_pipeline = models.ForeignKey(
         Pipeline, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="channel_configs",
     )
-
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -298,3 +418,4 @@ class ChannelConfig(TenantMixin, models.Model):
     def api_key(self, plaintext: str) -> None:
         from harness.crypto import encrypt_secret
         self._api_key = encrypt_secret(plaintext) if plaintext else ""
+
