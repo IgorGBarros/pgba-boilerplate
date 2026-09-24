@@ -707,6 +707,8 @@ export interface CRMPipeline {
   stages: CRMStage[];
 }
 
+export type LeadOutcome = "" | "vendido" | "concluido" | "perdido" | "contrato_assinado" | "cancelado";
+
 export interface CRMLead {
   id: number;
   nome: string;
@@ -718,6 +720,7 @@ export interface CRMLead {
   responsavel: string;
   origem: string;
   observacoes: string;
+  outcome: LeadOutcome;
   pipeline: number | null;
   stage: number | null;
   position: number;
@@ -799,6 +802,13 @@ export async function qualifyLead(leadId: number, message: string): Promise<{
   return request(`/api/v1/crm/leads/${leadId}/qualify/`, {
     method: "POST",
     body: JSON.stringify({ message }),
+  });
+}
+
+export async function setLeadOutcome(leadId: number, outcome: LeadOutcome): Promise<CRMLead> {
+  return request<CRMLead>(`/api/v1/crm/leads/${leadId}/set-outcome/`, {
+    method: "POST",
+    body: JSON.stringify({ outcome }),
   });
 }
 

@@ -76,6 +76,48 @@ class LeadViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
         result = qualify_lead(lead.id, serializer.validated_data["message"], request.tenant_id)
         return Response(result, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["post"], url_path="set-outcome")
+    def set_outcome(self, request, pk=None):
+        """
+        Define o desfecho do lead e executa automação de transição de coluna:
+          - Lead com outcome "vendido" ou "concluido" → move para o primeiro stage de Deal
+          - Deal com outcome "contrato_assinado" ou "concluido" → move para o primeiro stage de Project
+          - outcome "perdido" ou "cancelado" → apenas registra, sem mover
+        """
+        lead = self.get_object()
+        outcome = request.data.get("outcome", "")
+
+        VALID_OUTCOMES = {"vendido", "concluido", "perdido", "contrato_assinado", "cancelado"}
+        if outcome and outcome not in VALID_OUTCOMES:
+            return Response({"detail": "outcome inválido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        lead.outcome = outcome
+        lead.save(update_fields=["outcome"])
+
+        ADVANCE_MAP = {
+            "lead": {
+                "outcomes": {"vendido", "concluido"},
+                "target": "deal",
+            },
+            "deal": {
+                "outcomes": {"contrato_assinado", "concluido"},
+                "target": "project",
+            },
+        }
+
+        current_main = lead.stage.main_stage if lead.stage else None
+        rule = ADVANCE_MAP.get(current_main)
+        if rule and outcome in rule["outcomes"]:
+            next_stage = Stage.objects.filter(
+                tenant_id=request.tenant_id,
+                pipeline=lead.pipeline,
+                main_stage=rule["target"],
+            ).order_by("position").first()
+            if next_stage:
+                lead = move_lead_to_stage(lead.id, next_stage.id, request.tenant_id)
+
+        return Response(LeadSerializer(lead).data)
+
 
 class ContatoViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
     queryset = Contato.objects.select_related("lead").all()

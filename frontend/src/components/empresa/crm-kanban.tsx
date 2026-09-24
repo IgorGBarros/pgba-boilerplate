@@ -3,16 +3,16 @@ import {
   Plus, X, Send, User,
   Mail, Phone, DollarSign, Briefcase, MessageSquare,
   CheckCircle2, XCircle, Settings, Pencil, Trash2, Bot,
-  ArrowRight, Loader2, Radio,
+  ArrowRight, Loader2, Radio, MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  CRMPipeline, CRMStage, CRMLead, LeadMessage, MainStage,
+  CRMPipeline, CRMStage, CRMLead, LeadMessage, MainStage, LeadOutcome,
   listCRMPipelines, seedDefaultPipeline, listLeads, createLead,
   updateLead, deleteLead, moveLead, getLeadMessages, qualifyLead,
-  createStage, deleteStage,
+  createStage, deleteStage, setLeadOutcome,
 } from "@/lib/api";
 import { CRMChannels } from "@/components/empresa/crm-channels";
 import { toast } from "sonner";
@@ -42,6 +42,20 @@ function fmtValue(v: string | null) {
 
 function initials(name: string) {
   return name.split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase();
+}
+
+function fmtTime(iso: string) {
+  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtDate(iso: string) {
+  const d = new Date(iso);
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return "Hoje";
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return "Ontem";
+  return d.toLocaleDateString("pt-BR");
 }
 
 // ─── Lead Card ────────────────────────────────────────────────────────────────
@@ -86,6 +100,14 @@ function LeadCard({
               <MessageSquare className="size-3" />{lead.messages_count}
             </span>
           )}
+          {lead.outcome && (
+            <Badge className="text-[9px] h-4 px-1.5" variant="outline">
+              {lead.outcome === "vendido" ? "Vendido" :
+               lead.outcome === "concluido" ? "Concluído" :
+               lead.outcome === "perdido" ? "Perdido" :
+               lead.outcome === "contrato_assinado" ? "Contrato" : "Cancelado"}
+            </Badge>
+          )}
         </div>
       </div>
     </div>
@@ -114,7 +136,6 @@ function KanbanColumn({
       onDragLeave={() => setOver(false)}
       onDrop={(e) => { setOver(false); onDrop(e, stage.id); }}
     >
-      {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
         <div className="flex items-center gap-2 min-w-0">
           {colorDot(stage.color)}
@@ -129,14 +150,12 @@ function KanbanColumn({
         </button>
       </div>
 
-      {/* Value */}
       {totalValue > 0 && (
         <div className="px-3 py-1 border-b border-border/50">
           <span className="text-[10px] font-semibold text-emerald-400">{fmtValue(String(totalValue))}</span>
         </div>
       )}
 
-      {/* Cards */}
       <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-[120px]">
         {leads.map(lead => (
           <LeadCard
@@ -247,9 +266,240 @@ function LeadFormDialog({
   );
 }
 
-// ─── Lead Detail Sidebar ──────────────────────────────────────────────────────
+// ─── WhatsApp Conversation Tab ────────────────────────────────────────────────
 
-function LeadDetailSidebar({
+function ConversationTab({ lead }: { lead: CRMLead }) {
+  const [messages, setMessages] = useState<LeadMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setMessages(await getLeadMessages(lead.id)); }
+    catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [lead.id]);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  const handleSend = async () => {
+    if (!input.trim() || sending) return;
+    const msg = input.trim();
+    setInput("");
+    setSending(true);
+    try {
+      const result = await qualifyLead(lead.id, msg);
+      setMessages(prev => [
+        ...prev,
+        { id: Date.now(), role: "user", content: msg, created_at: new Date().toISOString() },
+        { id: Date.now() + 1, role: "agent", content: result.response, created_at: new Date().toISOString() },
+      ]);
+    } catch {
+      toast.error("Erro ao enviar mensagem.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const visibleMessages = messages.filter(m => m.role !== "system");
+
+  // Group messages by date
+  const grouped: { date: string; msgs: LeadMessage[] }[] = [];
+  for (const m of visibleMessages) {
+    const d = fmtDate(m.created_at);
+    const last = grouped[grouped.length - 1];
+    if (last?.date === d) last.msgs.push(m);
+    else grouped.push({ date: d, msgs: [m] });
+  }
+
+  if (loading) return <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">Carregando...</div>;
+
+  return (
+    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "hsl(var(--background))" }}>
+      {/* Messages area */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-1">
+        {visibleMessages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 py-12">
+            <MessageCircle className="size-10 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground text-center">Nenhuma mensagem ainda.</p>
+            <p className="text-xs text-muted-foreground/60 text-center">
+              Mensagens do WhatsApp/Telegram aparecem aqui automaticamente.
+            </p>
+          </div>
+        ) : (
+          grouped.map(group => (
+            <div key={group.date}>
+              <div className="flex justify-center my-3">
+                <span className="text-[10px] bg-muted/60 text-muted-foreground px-2 py-0.5 rounded-full">{group.date}</span>
+              </div>
+              <div className="space-y-1.5">
+                {group.msgs.map(m => (
+                  <div key={m.id} className={`flex ${m.role === "user" ? "justify-start" : "justify-end"}`}>
+                    <div className={`max-w-[75%] rounded-2xl px-3 py-2 ${
+                      m.role === "user"
+                        ? "bg-muted text-foreground rounded-tl-sm"
+                        : "bg-primary text-primary-foreground rounded-tr-sm"
+                    }`}>
+                      {m.role === "agent" && (
+                        <div className="flex items-center gap-1 mb-1">
+                          <Bot className="size-3 opacity-70" />
+                          <span className="text-[9px] opacity-70 font-medium">Agente</span>
+                        </div>
+                      )}
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{m.content}</p>
+                      <p className={`text-[10px] mt-1 text-right ${m.role === "user" ? "text-muted-foreground" : "text-primary-foreground/70"}`}>
+                        {fmtTime(m.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))
+        )}
+        <div ref={endRef} />
+      </div>
+
+      {/* Input */}
+      <div className="p-3 border-t border-border bg-card/50 shrink-0">
+        <div className="flex gap-2">
+          <Input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && !e.shiftKey && void handleSend()}
+            placeholder="Simular mensagem do lead..."
+            className="bg-background text-sm"
+            disabled={sending}
+          />
+          <Button size="sm" onClick={handleSend} disabled={sending || !input.trim()} className="shrink-0">
+            {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+          </Button>
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-1.5">
+          Simule uma mensagem do lead para o agente qualificar e responder.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Outcome Buttons ──────────────────────────────────────────────────────────
+
+function OutcomeSection({
+  lead, stages, onUpdated,
+}: {
+  lead: CRMLead;
+  stages: CRMStage[];
+  onUpdated: (lead: CRMLead) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const main = lead.stage_main;
+
+  const apply = async (outcome: LeadOutcome) => {
+    setBusy(true);
+    try {
+      const updated = await setLeadOutcome(lead.id, outcome);
+      onUpdated(updated);
+      const moved = updated.stage_main !== main;
+      if (moved) {
+        toast.success(`Lead avançado para ${updated.stage_main === "deal" ? "Deals" : "Project"}!`);
+      } else if (outcome === "perdido" || outcome === "cancelado") {
+        toast.success("Desfecho registrado.");
+      } else {
+        toast.success("Desfecho salvo.");
+      }
+    } catch {
+      toast.error("Erro ao definir desfecho.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (main === "lead") {
+    return (
+      <div className="px-5 py-4 border-t border-border">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Desfecho</p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm" variant="outline"
+            className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+            onClick={() => void apply("vendido")} disabled={busy || lead.outcome === "vendido"}
+          >
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+            Vendido → Deals
+          </Button>
+          <Button
+            size="sm" variant="outline"
+            className="gap-1.5 h-8 text-xs border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
+            onClick={() => void apply("concluido")} disabled={busy || lead.outcome === "concluido"}
+          >
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
+            Concluído → Deals
+          </Button>
+          <Button
+            size="sm" variant="outline"
+            className="gap-1.5 h-8 text-xs border-red-500/40 text-red-400 hover:bg-red-500/10"
+            onClick={() => void apply("perdido")} disabled={busy || lead.outcome === "perdido"}
+          >
+            <XCircle className="size-3.5" /> Perdido
+          </Button>
+        </div>
+        {lead.outcome && (
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Desfecho atual: <span className="font-medium text-foreground capitalize">{lead.outcome.replace("_", " ")}</span>
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (main === "deal") {
+    return (
+      <div className="px-5 py-4 border-t border-border">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Desfecho</p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm" variant="outline"
+            className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+            onClick={() => void apply("contrato_assinado")} disabled={busy || lead.outcome === "contrato_assinado"}
+          >
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+            Contrato Assinado → Project
+          </Button>
+          <Button
+            size="sm" variant="outline"
+            className="gap-1.5 h-8 text-xs border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
+            onClick={() => void apply("concluido")} disabled={busy || lead.outcome === "concluido"}
+          >
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
+            Concluído → Project
+          </Button>
+          <Button
+            size="sm" variant="outline"
+            className="gap-1.5 h-8 text-xs border-red-500/40 text-red-400 hover:bg-red-500/10"
+            onClick={() => void apply("cancelado")} disabled={busy || lead.outcome === "cancelado"}
+          >
+            <XCircle className="size-3.5" /> Cancelado
+          </Button>
+        </div>
+        {lead.outcome && (
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Desfecho atual: <span className="font-medium text-foreground capitalize">{lead.outcome.replace("_", " ")}</span>
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ─── Lead Detail Modal ────────────────────────────────────────────────────────
+
+function LeadDetailModal({
   lead, stages, onClose, onUpdated, onDeleted,
 }: {
   lead: CRMLead;
@@ -258,30 +508,175 @@ function LeadDetailSidebar({
   onUpdated: (lead: CRMLead) => void;
   onDeleted: (id: number) => void;
 }) {
-  const [tab, setTab] = useState<"info" | "agent">("info");
+  const [tab, setTab] = useState<"info" | "conversa" | "agente">("conversa");
+  const [editing, setEditing] = useState(false);
+  const [localLead, setLocalLead] = useState(lead);
+
+  useEffect(() => { setLocalLead(lead); }, [lead]);
+
+  const handleDelete = async () => {
+    if (!confirm(`Excluir "${localLead.nome}"?`)) return;
+    try {
+      await deleteLead(localLead.id);
+      onDeleted(localLead.id);
+      onClose();
+      toast.success("Lead excluído.");
+    } catch { toast.error("Erro ao excluir."); }
+  };
+
+  const handleUpdated = (updated: CRMLead) => {
+    setLocalLead(updated);
+    onUpdated(updated);
+  };
+
+  const mainLabel = localLead.stage_main === "deal" ? "Deal" : localLead.stage_main === "project" ? "Project" : "Lead";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-card border border-border rounded-xl w-full max-w-2xl shadow-2xl flex flex-col" style={{ maxHeight: "90vh" }}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="grid size-10 place-items-center rounded-full bg-muted text-sm font-bold text-foreground/70 shrink-0">
+              {initials(localLead.nome)}
+            </span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-base font-semibold text-foreground truncate">{localLead.nome}</p>
+                <Badge variant="outline" className="text-[10px] h-5 shrink-0">{mainLabel}</Badge>
+                {localLead.stage_name && (
+                  <Badge variant="outline" className="text-[10px] h-5 gap-1 shrink-0">
+                    {colorDot(localLead.stage_color ?? "blue")}
+                    {localLead.stage_name}
+                  </Badge>
+                )}
+              </div>
+              {localLead.empresa && <p className="text-sm text-muted-foreground truncate">{localLead.empresa}</p>}
+            </div>
+          </div>
+          <div className="flex items-center gap-1 shrink-0 ml-2">
+            {localLead.valor_estimado && (
+              <span className="text-sm font-semibold text-emerald-400 mr-2">{fmtValue(localLead.valor_estimado)}</span>
+            )}
+            <button onClick={() => setEditing(true)} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Editar">
+              <Pencil className="size-3.5" />
+            </button>
+            <button onClick={handleDelete} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Excluir">
+              <Trash2 className="size-3.5" />
+            </button>
+            <button onClick={onClose} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Fechar">
+              <X className="size-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-border shrink-0">
+          {([
+            { key: "conversa", label: "Conversa", icon: <MessageCircle className="size-3.5" /> },
+            { key: "info",     label: "Informações", icon: <User className="size-3.5" /> },
+            { key: "agente",   label: "Agente", icon: <Bot className="size-3.5" /> },
+          ] as const).map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${
+                tab === t.key
+                  ? "text-foreground border-b-2 border-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.icon}{t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-hidden flex flex-col">
+          {tab === "conversa" && <ConversationTab lead={localLead} />}
+
+          {tab === "info" && (
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { icon: <Mail className="size-4" />, label: "E-mail", value: localLead.email },
+                  { icon: <Phone className="size-4" />, label: "Telefone", value: localLead.telefone },
+                  { icon: <Briefcase className="size-4" />, label: "Cargo", value: localLead.cargo },
+                  { icon: <User className="size-4" />, label: "Responsável", value: localLead.responsavel },
+                  { icon: <DollarSign className="size-4" />, label: "Valor estimado", value: localLead.valor_estimado ? fmtValue(localLead.valor_estimado) : null },
+                  { icon: <MessageSquare className="size-4" />, label: "Origem", value: localLead.origem },
+                ].filter(r => r.value).map(r => (
+                  <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
+                    <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
+                      <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {localLead.observacoes && (
+                <div className="p-3 rounded-lg bg-muted/30">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
+                  <p className="text-sm text-foreground/80 leading-relaxed">{localLead.observacoes}</p>
+                </div>
+              )}
+
+              <p className="text-[11px] text-muted-foreground">
+                Criado em {new Date(localLead.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}
+              </p>
+            </div>
+          )}
+
+          {tab === "agente" && (
+            <AgentTab lead={localLead} stages={stages} onUpdated={handleUpdated} />
+          )}
+        </div>
+
+        {/* Outcome section — only for lead/deal stages */}
+        {(localLead.stage_main === "lead" || localLead.stage_main === "deal") && (
+          <OutcomeSection lead={localLead} stages={stages} onUpdated={handleUpdated} />
+        )}
+      </div>
+
+      {editing && (
+        <LeadFormDialog
+          initial={localLead}
+          onClose={() => setEditing(false)}
+          onSaved={updated => { handleUpdated(updated); setEditing(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Agent Tab (AI agent chat) ────────────────────────────────────────────────
+
+function AgentTab({
+  lead, stages, onUpdated,
+}: {
+  lead: CRMLead;
+  stages: CRMStage[];
+  onUpdated: (lead: CRMLead) => void;
+}) {
   const [messages, setMessages] = useState<LeadMessage[]>([]);
   const [input, setInput] = useState("");
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [closingSuggested, setClosingSuggested] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
 
-  const loadMessages = useCallback(async () => {
+  useEffect(() => {
     setLoadingMessages(true);
-    try {
-      setMessages(await getLeadMessages(lead.id));
-    } catch { /* ignore */ }
-    finally { setLoadingMessages(false); }
+    void getLeadMessages(lead.id)
+      .then(setMessages)
+      .catch(() => { /* ignore */ })
+      .finally(() => setLoadingMessages(false));
   }, [lead.id]);
 
-  useEffect(() => {
-    if (tab === "agent") void loadMessages();
-  }, [tab, loadMessages]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const handleSend = async () => {
     if (!input.trim() || sending) return;
@@ -314,168 +709,67 @@ function LeadDetailSidebar({
     } catch { toast.error("Erro ao mover lead."); }
   };
 
-  const handleDelete = async () => {
-    if (!confirm(`Excluir lead "${lead.nome}"?`)) return;
-    try {
-      await deleteLead(lead.id);
-      onDeleted(lead.id);
-      onClose();
-      toast.success("Lead excluído.");
-    } catch { toast.error("Erro ao excluir."); }
-  };
-
   return (
-    <div className="flex flex-col h-full bg-card border-l border-border w-full max-w-sm">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="grid size-8 place-items-center rounded-full bg-muted text-sm font-bold text-foreground/70 shrink-0">
-            {initials(lead.nome)}
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-foreground truncate">{lead.nome}</p>
-            {lead.empresa && <p className="text-xs text-muted-foreground truncate">{lead.empresa}</p>}
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {closingSuggested && (
+        <div className="mx-4 mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2 shrink-0">
+          <CheckCircle2 className="size-4 text-emerald-400 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-emerald-400">Pronto para avançar!</p>
+            <p className="text-[11px] text-emerald-400/80 mt-0.5">O agente detectou interesse. Mova para Deals?</p>
           </div>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <button onClick={() => setEditing(true)} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"><Pencil className="size-3.5" /></button>
-          <button onClick={handleDelete} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 className="size-3.5" /></button>
-          <button onClick={onClose} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"><X className="size-3.5" /></button>
-        </div>
-      </div>
-
-      {/* Stage badge */}
-      <div className="px-4 py-2 border-b border-border shrink-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          {lead.stage_name && (
-            <Badge variant="outline" className="text-xs gap-1">
-              {colorDot(lead.stage_color ?? "blue")}
-              {lead.stage_name}
-            </Badge>
-          )}
-          {lead.valor_estimado && (
-            <span className="text-xs font-semibold text-emerald-400">{fmtValue(lead.valor_estimado)}</span>
-          )}
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex border-b border-border shrink-0">
-        {(["info", "agent"] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 text-xs py-2 font-medium transition-colors ${tab === t ? "text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            {t === "info" ? "Informações" : "Agente"}
-          </button>
-        ))}
-      </div>
-
-      {/* Info Tab */}
-      {tab === "info" && (
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {[
-            { icon: <Mail className="size-3.5" />, label: "E-mail", value: lead.email },
-            { icon: <Phone className="size-3.5" />, label: "Telefone", value: lead.telefone },
-            { icon: <Briefcase className="size-3.5" />, label: "Cargo", value: lead.cargo },
-            { icon: <User className="size-3.5" />, label: "Responsável", value: lead.responsavel },
-            { icon: <DollarSign className="size-3.5" />, label: "Valor estimado", value: lead.valor_estimado ? fmtValue(lead.valor_estimado) : null },
-          ].filter(r => r.value).map(r => (
-            <div key={r.label} className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground shrink-0">{r.icon}</span>
-              <span className="text-muted-foreground text-xs w-20 shrink-0">{r.label}</span>
-              <span className="text-foreground truncate">{r.value}</span>
-            </div>
-          ))}
-
-          {lead.observacoes && (
-            <div className="mt-3 p-3 rounded-lg bg-muted/30 text-sm text-foreground/80 leading-relaxed">
-              {lead.observacoes}
-            </div>
-          )}
-
-          <div className="mt-3 text-[10px] text-muted-foreground">
-            Criado em {new Date(lead.created_at).toLocaleDateString("pt-BR")}
-          </div>
+          <Button size="sm" onClick={handleMoveToDeals} className="shrink-0 h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-500">
+            <ArrowRight className="size-3" /> Deals
+          </Button>
         </div>
       )}
 
-      {/* Agent Tab */}
-      {tab === "agent" && (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Closing suggestion banner */}
-          {closingSuggested && (
-            <div className="mx-3 mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2">
-              <CheckCircle2 className="size-4 text-emerald-400 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-emerald-400">Pronto para avançar!</p>
-                <p className="text-[11px] text-emerald-400/80 mt-0.5">O agente detectou interesse. Mova para Deals?</p>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {loadingMessages ? (
+          <div className="text-center py-6 text-xs text-muted-foreground">Carregando...</div>
+        ) : messages.filter(m => m.role !== "system").length === 0 ? (
+          <div className="text-center py-8 space-y-2">
+            <Bot className="size-8 text-muted-foreground/40 mx-auto" />
+            <p className="text-xs text-muted-foreground">Inicie a conversa com o agente comercial.</p>
+            <p className="text-[11px] text-muted-foreground/60">Ele vai responder dúvidas do lead e qualificar o interesse.</p>
+          </div>
+        ) : (
+          messages.filter(m => m.role !== "system").map(m => (
+            <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              {m.role === "agent" && (
+                <span className="grid size-6 place-items-center rounded-full bg-primary/20 text-primary shrink-0 mr-2 mt-0.5">
+                  <Bot className="size-3.5" />
+                </span>
+              )}
+              <div className={`max-w-[80%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
+                m.role === "user"
+                  ? "bg-primary text-primary-foreground rounded-br-sm"
+                  : "bg-muted text-foreground rounded-bl-sm"
+              }`}>
+                {m.content}
               </div>
-              <Button size="sm" onClick={handleMoveToDeals} className="shrink-0 h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-500">
-                <ArrowRight className="size-3" /> Deals
-              </Button>
             </div>
-          )}
+          ))
+        )}
+        <div ref={endRef} />
+      </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            {loadingMessages ? (
-              <div className="text-center py-6 text-xs text-muted-foreground">Carregando...</div>
-            ) : messages.length === 0 ? (
-              <div className="text-center py-8 space-y-2">
-                <Bot className="size-8 text-muted-foreground/40 mx-auto" />
-                <p className="text-xs text-muted-foreground">Inicie a conversa com o agente comercial.</p>
-                <p className="text-[11px] text-muted-foreground/60">Ele vai responder dúvidas do lead e qualificar o interesse.</p>
-              </div>
-            ) : (
-              messages.filter(m => m.role !== "system").map(m => (
-                <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                  {m.role === "agent" && (
-                    <span className="grid size-6 place-items-center rounded-full bg-primary/20 text-primary shrink-0 mr-2 mt-0.5">
-                      <Bot className="size-3.5" />
-                    </span>
-                  )}
-                  <div className={`max-w-[80%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
-                    m.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-br-sm"
-                      : "bg-muted text-foreground rounded-bl-sm"
-                  }`}>
-                    {m.content}
-                  </div>
-                </div>
-              ))
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Input */}
-          <div className="p-3 border-t border-border shrink-0">
-            <div className="flex gap-2">
-              <Input
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && !e.shiftKey && void handleSend()}
-                placeholder="Mensagem do lead..."
-                className="bg-background text-sm"
-                disabled={sending}
-              />
-              <Button size="sm" onClick={handleSend} disabled={sending || !input.trim()} className="shrink-0">
-                {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-              </Button>
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Simule a mensagem do lead para que o agente responda</p>
-          </div>
+      <div className="p-3 border-t border-border shrink-0">
+        <div className="flex gap-2">
+          <Input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && !e.shiftKey && void handleSend()}
+            placeholder="Mensagem do lead..."
+            className="bg-background text-sm"
+            disabled={sending}
+          />
+          <Button size="sm" onClick={handleSend} disabled={sending || !input.trim()} className="shrink-0">
+            {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+          </Button>
         </div>
-      )}
-
-      {editing && (
-        <LeadFormDialog
-          initial={lead}
-          onClose={() => setEditing(false)}
-          onSaved={updated => { onUpdated(updated); setEditing(false); }}
-        />
-      )}
+        <p className="text-[10px] text-muted-foreground mt-1">Simule a mensagem do lead para que o agente responda</p>
+      </div>
     </div>
   );
 }
@@ -544,7 +838,6 @@ function StageConfigDialog({
             </div>
           ))}
 
-          {/* Add new stage */}
           <div className="border-t border-border pt-4 space-y-2">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nova etapa</p>
             <div className="flex gap-2">
@@ -611,6 +904,12 @@ export function CRMKanban() {
     } catch { toast.error("Erro ao mover lead."); }
   };
 
+  const handleLeadUpdated = (updated: CRMLead) => {
+    setLeads(prev => prev.map(l => l.id === updated.id ? updated : l));
+    // If lead moved to another main stage (e.g. lead → deal), keep it visible
+    if (selectedLead?.id === updated.id) setSelectedLead(updated);
+  };
+
   const activeStages = (pipeline?.stages ?? [])
     .filter(s => s.main_stage === activeMain)
     .sort((a, b) => a.position - b.position);
@@ -656,87 +955,84 @@ export function CRMKanban() {
       )}
 
       {/* Kanban view */}
-      {view === "kanban" && <div className="flex flex-1 gap-0 overflow-hidden">
-      {/* Main area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top bar */}
-        <div className="flex items-center justify-between px-1 pb-4 gap-3 shrink-0 flex-wrap">
-          <div className="flex items-center gap-3 flex-wrap">
-            {MAIN_STAGES.map(ms => {
-              const count = leads.filter(l => l.stage_main === ms.key).length;
-              return (
-                <button
-                  key={ms.key}
-                  onClick={() => setActiveMain(ms.key)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${
-                    activeMain === ms.key
-                      ? `${ms.bgClass} border-current`
-                      : "text-muted-foreground border-transparent hover:bg-muted/40"
-                  }`}
-                >
-                  {ms.label}
-                  <span className="text-xs opacity-70">({count})</span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex items-center gap-2">
-            {totalValue > 0 && (
-              <span className="text-xs text-muted-foreground hidden sm:block">
-                Ganho: <span className="text-emerald-400 font-semibold">{fmtValue(String(totalValue))}</span>
-              </span>
-            )}
-            <Input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar lead..."
-              className="bg-background w-40 h-8 text-sm"
-            />
-            <Button variant="outline" size="sm" onClick={() => pipeline && setShowConfig(true)} className="gap-1.5 h-8">
-              <Settings className="size-3.5" />
-              <span className="hidden sm:inline">Etapas</span>
-            </Button>
-            <Button size="sm" onClick={() => setAddingToStage(activeStages[0] ?? null)} className="gap-1.5 h-8">
-              <Plus className="size-3.5" />
-              Lead
-            </Button>
-          </div>
-        </div>
-
-        {/* Board */}
-        <div className="flex-1 overflow-x-auto pb-4">
-          <div className="flex gap-3 h-full min-h-0" style={{ minWidth: `${activeStages.length * 250}px` }}>
-            {activeStages.map(stage => (
-              <KanbanColumn
-                key={stage.id}
-                stage={stage}
-                leads={filteredLeads.filter(l => l.stage === stage.id)}
-                onDrop={handleDrop}
-                onDragOver={e => e.preventDefault()}
-                onLeadClick={l => setSelectedLead(l)}
-                onAddLead={s => setAddingToStage(s)}
+      {view === "kanban" && (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Top bar */}
+          <div className="flex items-center justify-between px-1 pb-4 gap-3 shrink-0 flex-wrap">
+            <div className="flex items-center gap-3 flex-wrap">
+              {MAIN_STAGES.map(ms => {
+                const count = leads.filter(l => l.stage_main === ms.key).length;
+                return (
+                  <button
+                    key={ms.key}
+                    onClick={() => setActiveMain(ms.key)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${
+                      activeMain === ms.key
+                        ? `${ms.bgClass} border-current`
+                        : "text-muted-foreground border-transparent hover:bg-muted/40"
+                    }`}
+                  >
+                    {ms.label}
+                    <span className="text-xs opacity-70">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              {totalValue > 0 && (
+                <span className="text-xs text-muted-foreground hidden sm:block">
+                  Ganho: <span className="text-emerald-400 font-semibold">{fmtValue(String(totalValue))}</span>
+                </span>
+              )}
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar lead..."
+                className="bg-background w-40 h-8 text-sm"
               />
-            ))}
-            {activeStages.length === 0 && (
-              <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-                Nenhuma etapa configurada para {MAIN_STAGES.find(m => m.key === activeMain)?.label}.
-                <button onClick={() => pipeline && setShowConfig(true)} className="ml-2 text-primary hover:underline">Configurar</button>
-              </div>
-            )}
+              <Button variant="outline" size="sm" onClick={() => pipeline && setShowConfig(true)} className="gap-1.5 h-8">
+                <Settings className="size-3.5" />
+                <span className="hidden sm:inline">Etapas</span>
+              </Button>
+              <Button size="sm" onClick={() => setAddingToStage(activeStages[0] ?? null)} className="gap-1.5 h-8">
+                <Plus className="size-3.5" />
+                Lead
+              </Button>
+            </div>
+          </div>
+
+          {/* Board */}
+          <div className="flex-1 overflow-x-auto pb-4">
+            <div className="flex gap-3 h-full min-h-0" style={{ minWidth: `${activeStages.length * 250}px` }}>
+              {activeStages.map(stage => (
+                <KanbanColumn
+                  key={stage.id}
+                  stage={stage}
+                  leads={filteredLeads.filter(l => l.stage === stage.id)}
+                  onDrop={handleDrop}
+                  onDragOver={e => e.preventDefault()}
+                  onLeadClick={l => setSelectedLead(l)}
+                  onAddLead={s => setAddingToStage(s)}
+                />
+              ))}
+              {activeStages.length === 0 && (
+                <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+                  Nenhuma etapa configurada para {MAIN_STAGES.find(m => m.key === activeMain)?.label}.
+                  <button onClick={() => pipeline && setShowConfig(true)} className="ml-2 text-primary hover:underline">Configurar</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Sidebar */}
+      {/* Lead Detail Modal */}
       {selectedLead && (
-        <LeadDetailSidebar
+        <LeadDetailModal
           lead={selectedLead}
           stages={pipeline?.stages ?? []}
           onClose={() => setSelectedLead(null)}
-          onUpdated={updated => {
-            setLeads(prev => prev.map(l => l.id === updated.id ? updated : l));
-            setSelectedLead(updated);
-          }}
+          onUpdated={handleLeadUpdated}
           onDeleted={id => {
             setLeads(prev => prev.filter(l => l.id !== id));
             setSelectedLead(null);
@@ -761,6 +1057,6 @@ export function CRMKanban() {
           onSaved={() => void load()}
         />
       )}
-    </div>}</div>
+    </div>
   );
 }

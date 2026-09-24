@@ -91,6 +91,19 @@ class Lead(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         help_text="Identificador único do lead no canal de origem (ex: número WhatsApp, Telegram chat_id).",
     )
 
+    # Desfecho — define a automação de transição entre colunas do kanban:
+    # Lead → Deal: "vendido" ou "concluido"
+    # Deal → Project: "contrato_assinado" ou "concluido"
+    OUTCOME_CHOICES = [
+        ("", "—"),
+        ("vendido", "Vendido"),
+        ("concluido", "Concluído"),
+        ("perdido", "Perdido"),
+        ("contrato_assinado", "Contrato Assinado"),
+        ("cancelado", "Cancelado"),
+    ]
+    outcome = models.CharField(max_length=30, choices=OUTCOME_CHOICES, blank=True, default="")
+
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
