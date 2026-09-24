@@ -68,10 +68,12 @@ PERGUNTA: {question}
     except ProviderConfigError as exc:
         raise OrchestrationError(f"Falha ao consultar o modelo: {exc}") from exc
 
+    logger.debug("_select_function raw response (%s): %r", provider, raw[:500])
     try:
         data = extract_json(raw)
         validate_schema(data, {"function": (str, type(None)), "params": dict})
     except ValueError as exc:
+        logger.error("_select_function parse error (%s) raw=%r exc=%s", provider, raw[:500], exc)
         raise OrchestrationError(f"Saída do modelo fora do formato esperado: {exc}") from exc
 
     return data.get("function"), data.get("params") or {}
