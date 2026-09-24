@@ -3,7 +3,7 @@ import {
   Plus, X, Send, User,
   Mail, Phone, DollarSign, Briefcase, MessageSquare,
   CheckCircle2, XCircle, Settings, Pencil, Trash2, Bot,
-  ArrowRight, Loader2,
+  ArrowRight, Loader2, Radio,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
   updateLead, deleteLead, moveLead, getLeadMessages, qualifyLead,
   createStage, deleteStage,
 } from "@/lib/api";
+import { CRMChannels } from "@/components/empresa/crm-channels";
 import { toast } from "sonner";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -570,6 +571,7 @@ function StageConfigDialog({
 // ─── Main Export ──────────────────────────────────────────────────────────────
 
 export function CRMKanban() {
+  const [view, setView] = useState<"kanban" | "channels">("kanban");
   const [pipeline, setPipeline] = useState<CRMPipeline | null>(null);
   const [leads, setLeads] = useState<CRMLead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -624,7 +626,37 @@ export function CRMKanban() {
   if (loading) return <div className="text-center py-16 text-sm text-muted-foreground">Carregando CRM...</div>;
 
   return (
-    <div className="flex h-full gap-0 overflow-hidden">
+    <div className="flex flex-col h-full gap-0 overflow-hidden">
+      {/* View switcher */}
+      <div className="flex items-center gap-1 pb-3 shrink-0 border-b border-border mb-3">
+        <button
+          onClick={() => setView("kanban")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+            view === "kanban" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          Pipeline
+        </button>
+        <button
+          onClick={() => setView("channels")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+            view === "channels" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          <Radio className="size-3.5" />
+          Canais
+        </button>
+      </div>
+
+      {/* Canais view */}
+      {view === "channels" && (
+        <div className="flex-1 overflow-y-auto">
+          <CRMChannels />
+        </div>
+      )}
+
+      {/* Kanban view */}
+      {view === "kanban" && <div className="flex flex-1 gap-0 overflow-hidden">
       {/* Main area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
@@ -729,6 +761,6 @@ export function CRMKanban() {
           onSaved={() => void load()}
         />
       )}
-    </div>
+    </div>}</div>
   );
 }

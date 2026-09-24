@@ -802,6 +802,50 @@ export async function qualifyLead(leadId: number, message: string): Promise<{
   });
 }
 
+// ─── CRM Channels ─────────────────────────────────────────────────────────────
+
+export type ChannelType = "whatsapp" | "telegram" | "landing_page" | "meta_ads";
+
+export interface ChannelConfig {
+  id: number;
+  channel: ChannelType;
+  is_active: boolean;
+  config: Record<string, string>;
+  webhook_secret: string;
+  target_pipeline: number | null;
+  api_key?: string;
+  api_key_masked: string;
+  webhook_url: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listChannels(): Promise<ChannelConfig[]> {
+  return request<ChannelConfig[]>("/api/v1/crm/channels/");
+}
+
+export async function createChannel(data: Partial<ChannelConfig>): Promise<ChannelConfig> {
+  return request<ChannelConfig>("/api/v1/crm/channels/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateChannel(id: number, data: Partial<ChannelConfig>): Promise<ChannelConfig> {
+  return request<ChannelConfig>(`/api/v1/crm/channels/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteChannel(id: number): Promise<void> {
+  return request(`/api/v1/crm/channels/${id}/`, { method: "DELETE" });
+}
+
+export async function testChannel(id: number): Promise<{ ok: boolean; message: string; channel: string }> {
+  return request(`/api/v1/crm/channels/${id}/test/`, { method: "POST" });
+}
+
 // --- agency: agent metrics overview -------------------------------------
 
 export interface AgentMetricsOverview {

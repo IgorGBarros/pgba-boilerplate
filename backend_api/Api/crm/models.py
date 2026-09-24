@@ -56,6 +56,10 @@ class Lead(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         ("social", "Redes sociais"),
         ("evento", "Evento"),
         ("cold_outreach", "Cold outreach"),
+        ("whatsapp", "WhatsApp"),
+        ("telegram", "Telegram"),
+        ("landing_page", "Landing Page"),
+        ("meta_ads", "Meta Ads (Facebook/Instagram)"),
         ("outro", "Outro"),
     ]
 
@@ -81,6 +85,12 @@ class Lead(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     origem = models.CharField(max_length=20, choices=ORIGEM_CHOICES, default="outro")
     observacoes = models.TextField(blank=True)
 
+    # Identificador externo do canal (ex: número WhatsApp, chat_id Telegram)
+    channel_ref = models.CharField(
+        max_length=200, blank=True,
+        help_text="Identificador único do lead no canal de origem (ex: número WhatsApp, Telegram chat_id).",
+    )
+
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -89,6 +99,7 @@ class Lead(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
             models.Index(fields=["tenant_id", "stage"]),
             models.Index(fields=["tenant_id", "pipeline"]),
             models.Index(fields=["tenant_id", "responsavel"]),
+            models.Index(fields=["tenant_id", "channel_ref"]),
         ]
 
     def __str__(self):
@@ -192,3 +203,73 @@ class LeadMessage(TenantMixin, models.Model):
 
     def __str__(self):
         return f"[{self.role}] {self.content[:60]}"
+
+
+# ─── Configuração de canais de entrada de leads ────────────────────────────────
+
+class ChannelConfig(TenantMixin, models.Model):
+    """
+    Configuração de um canal de entrada de leads (WhatsApp, Telegram, Landing Page, Meta Ads).
+
+    O webhook_secret é usado para validar a autenticidade das requisições
+    recebidas (HMAC no caso do Meta, token no caso do Telegram).
+    """
+
+    class Channel(models.TextChoices):
+        WHATSAPP = "whatsapp", "WhatsApp (Evolution API)"
+        TELEGRAM = "telegram", "Telegram Bot"
+        LANDING_PAGE = "landing_page", "Landing Page"
+        META_ADS = "meta_ads", "Meta Lead Ads (Facebook/Instagram)"
+
+    channel = models.CharField(max_length=20, choices=Channel.choices)
+    is_active = models.BooleanField(default=True)
+
+    # Credenciais do canal (criptografadas via harness.crypto)
+    _api_key = models.TextField(db_column="api_key_encrypted", blank=True)
+
+    # Configurações específicas por canal (armazenadas como JSON)
+    config = models.JSONField(
+        default=dict, blank=True,
+        help_text=(
+            "WhatsApp: {\"instance\": \"...\", \"server_url\": \"http://...\"}. "
+            "Telegram: {\"bot_username\": \"...\"}. "
+            "Meta Ads: {\"page_id\": \"...\", \"verify_token\": \"...\"}."
+        ),
+    )
+
+    # Webhook secret para validação de assinatura (HMAC-SHA256)
+    webhook_secret = models.CharField(max_length=255, blank=True)
+
+    # Pipeline de destino para leads capturados por este canal
+    target_pipeline = models.ForeignKey(
+        Pipeline, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="channel_configs",
+    )
+
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuração de Canal"
+        verbose_name_plural = "Configurações de Canais"
+        indexes = [models.Index(fields=["tenant_id", "channel", "is_active"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "channel"],
+                condition=models.Q(is_active=True),
+                name="uniq_active_channel_per_tenant",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.get_channel_display()} (tenant={self.tenant_id})"
+
+    @property
+    def api_key(self) -> str:
+        from harness.crypto import decrypt_secret
+        return decrypt_secret(self._api_key) if self._api_key else ""
+
+    @api_key.setter
+    def api_key(self, plaintext: str) -> None:
+        from harness.crypto import encrypt_secret
+        self._api_key = encrypt_secret(plaintext) if plaintext else ""
