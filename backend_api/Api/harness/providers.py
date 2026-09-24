@@ -214,8 +214,16 @@ def _chat_openai_compatible(cred, model, messages, temperature, json_mode, timeo
             json=body,
             timeout=timeout,
         )
-        resp.raise_for_status()
+        if not resp.is_success:
+            try:
+                detail = resp.json()
+            except Exception:
+                detail = resp.text
+            logger.error("Erro %s chat (%s): %s", cred.provider, resp.status_code, detail)
+            resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"].strip()
+    except httpx.HTTPStatusError as exc:
+        raise ProviderConfigError(str(exc)) from exc
     except (httpx.HTTPError, KeyError, IndexError) as exc:
         logger.error("Erro %s chat: %s", cred.provider, exc)
         raise ProviderConfigError(str(exc)) from exc
