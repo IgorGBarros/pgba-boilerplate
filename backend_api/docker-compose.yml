@@ -15,8 +15,10 @@ services:
       POSTGRES_DB: ${DB_NAME:-pgba}
       POSTGRES_USER: ${DB_USER:-pgba}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-pgba}
+      EVOLUTION_DB_NAME: ${EVOLUTION_DB_NAME:-evolution_db}
     volumes:
       - pgba_pg_data:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -120,6 +122,38 @@ services:
     volumes:
       - pgba_ollama_data:/root/.ollama
 
+  # Evolution API — WhatsApp via Baileys. Usa o mesmo Postgres e Redis do
+  # stack PGBA; banco lógico separado (evolution_db) para não misturar schemas.
+  # Docs: https://github.com/evolution-foundation/evolution-api
+  evolution:
+    image: evoapicloud/evolution-api:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_URL: ${EVOLUTION_SERVER_URL:-http://localhost:8080}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-change-me-in-env}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      # Banco dedicado no mesmo Postgres
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${DB_USER:-pgba}:${DB_PASSWORD:-pgba}@db:5432/${EVOLUTION_DB_NAME:-evolution_db}
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_exchange
+      # Redis compartilhado, banco lógico /6
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/6
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      DEL_INSTANCE: "false"
+      # Telemetria desligada por padrão (LGPD / privacidade)
+      TELEMETRY_ENABLED: "false"
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   pgba_pg_data:
   pgba_ollama_data:
+  evolution_instances:
