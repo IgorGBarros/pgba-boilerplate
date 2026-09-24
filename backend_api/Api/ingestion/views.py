@@ -58,6 +58,59 @@ class KnowledgeSourceViewSet(TenantContextMixin, TenantScopedMixin, viewsets.Mod
         sync_obsidian_source_task.delay(source.id)
         return Response({"detail": "Sincronização enfileirada."}, status=202)
 
+    @action(detail=True, methods=["post"], url_path="test-connection")
+    def test_connection(self, request, pk=None):
+        """Valida a configuração da fonte sem executar um sync completo."""
+        source = self.get_object()
+        cfg = source.config or {}
+
+        REQUIRED_FIELDS = {
+            "rest_api": ["url"],
+            "url": ["url"],
+            "sql": ["host", "database", "user"],
+            "google_sheets": ["spreadsheet_id"],
+            "slack": ["bot_token"],
+            "webhook": [],
+            "email": ["host", "user"],
+            "notion": ["integration_token", "database_id"],
+            "hubspot": ["api_key"],
+            "salesforce": ["client_id", "client_secret", "instance_url"],
+            "obsidian": ["vault_path"],
+        }
+
+        required = REQUIRED_FIELDS.get(source.source_type, [])
+        missing = [f for f in required if not cfg.get(f)]
+        if missing:
+            return Response(
+                {"ok": False, "message": f"Campos obrigatórios ausentes: {', '.join(missing)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Para tipos com URL, tenta um HEAD request simples
+        if source.source_type in ("rest_api", "url") and cfg.get("url"):
+            try:
+                import urllib.request
+                req = urllib.request.Request(cfg["url"], method="HEAD")
+                headers = cfg.get("headers", {})
+                auth_type = cfg.get("auth_type", "none")
+                if auth_type == "bearer" and cfg.get("api_key"):
+                    req.add_header("Authorization", f"Bearer {cfg['api_key']}")
+                elif auth_type == "api_key" and cfg.get("api_key"):
+                    header_name = cfg.get("api_key_header", "X-API-Key")
+                    req.add_header(header_name, cfg["api_key"])
+                for k, v in headers.items():
+                    req.add_header(k, v)
+                with urllib.request.urlopen(req, timeout=5):
+                    pass
+                return Response({"ok": True, "message": "Conexão estabelecida com sucesso."})
+            except Exception as exc:
+                return Response(
+                    {"ok": False, "message": f"Falha na conexão: {exc}"},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+        return Response({"ok": True, "message": "Configuração salva. Conexão será verificada no primeiro sync."})
+
 
 class DocumentViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ReadOnlyModelViewSet):
     queryset = Document.objects.all()
