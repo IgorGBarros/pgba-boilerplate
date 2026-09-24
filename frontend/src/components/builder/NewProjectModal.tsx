@@ -1,7 +1,7 @@
 // frontend/src/components/builder/NewProjectModal.tsx
 import { useEffect, useState } from "react";
 import { X, Rocket, Loader2 } from "lucide-react";
-import { listAgents, createProject, type Agent, ApiError } from "@/lib/api";
+import { listAgents, createAgencyProject as createProject, type Agent, ApiError } from "@/lib/api";
 import { createWorkspace } from "@/lib/devserver";
 
 interface NewProjectModalProps {

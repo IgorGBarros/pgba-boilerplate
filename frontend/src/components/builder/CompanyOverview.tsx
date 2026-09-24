@@ -21,7 +21,7 @@ import {
 import {
   listAgents,
   listSectors,
-  listProjects,
+  listAgencyProjects as listProjects,
   getSectorMetrics,
   listKnowledgeSources,
   createSector,

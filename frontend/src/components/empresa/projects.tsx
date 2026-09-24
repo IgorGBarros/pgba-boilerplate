@@ -32,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionHeader } from "@/components/empresa/shared";
-import { listProjects, deleteProject, updateProject, type Project } from "@/lib/api";
+import { listAgencyProjects as listProjects, deleteAgencyProject as deleteProject, updateAgencyProject as updateProject, type Project } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 function statusVariant(status: Project["status"]) {

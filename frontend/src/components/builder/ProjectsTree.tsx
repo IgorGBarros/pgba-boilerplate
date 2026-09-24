@@ -1,7 +1,7 @@
 // frontend/src/components/builder/ProjectsTree.tsx
 import { useEffect, useState } from "react";
 import { FolderTree, Github, Server, ExternalLink, Loader2, Monitor, Sparkles, Download, Plus } from "lucide-react";
-import { listProjects, type Project } from "@/lib/api";
+import { listAgencyProjects as listProjects, type Project } from "@/lib/api";
 import { listWorkspaces, type Workspace } from "@/lib/devserver";
 
 const STATUS_COLOR: Record<Project["status"], string> = {
