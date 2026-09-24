@@ -43,7 +43,7 @@ class StageViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet)
 
 
 class LeadViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
-    queryset = Lead.objects.select_related("stage").all()
+    queryset = Lead.objects.select_related("stage").filter(is_active=True)
     serializer_class = LeadSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -120,7 +120,7 @@ class LeadViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
 
 
 class ContatoViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
-    queryset = Contato.objects.select_related("lead").all()
+    queryset = Contato.objects.select_related("lead").filter(is_active=True)
     serializer_class = ContatoSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -130,7 +130,7 @@ class ContatoViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSe
 
 
 class OportunidadeViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
-    queryset = Oportunidade.objects.select_related("lead").all()
+    queryset = Oportunidade.objects.select_related("lead").filter(is_active=True)
     serializer_class = OportunidadeSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -140,7 +140,7 @@ class OportunidadeViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelV
 
 
 class AtividadeCRMViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
-    queryset = AtividadeCRM.objects.select_related("lead").all()
+    queryset = AtividadeCRM.objects.select_related("lead").filter(is_active=True)
     serializer_class = AtividadeCRMSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
