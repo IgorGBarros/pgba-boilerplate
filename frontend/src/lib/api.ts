@@ -684,6 +684,124 @@ export async function listQueryLogs(params?: { status?: string; page?: number; p
   return { results: data.results ?? [], count: (data as { count: number }).count ?? 0 };
 }
 
+// ─── CRM ──────────────────────────────────────────────────────────────────────
+
+export type MainStage = "lead" | "deal" | "project";
+
+export interface CRMStage {
+  id: number;
+  pipeline: number;
+  main_stage: MainStage;
+  name: string;
+  position: number;
+  color: string;
+  is_won: boolean;
+  is_lost: boolean;
+  leads_count: number;
+}
+
+export interface CRMPipeline {
+  id: number;
+  name: string;
+  is_default: boolean;
+  stages: CRMStage[];
+}
+
+export interface CRMLead {
+  id: number;
+  nome: string;
+  empresa: string;
+  email: string;
+  telefone: string;
+  cargo: string;
+  valor_estimado: string | null;
+  responsavel: string;
+  origem: string;
+  observacoes: string;
+  pipeline: number | null;
+  stage: number | null;
+  position: number;
+  stage_name: string | null;
+  stage_main: MainStage | null;
+  stage_color: string | null;
+  stage_is_won: boolean | null;
+  stage_is_lost: boolean | null;
+  oportunidades_count: number;
+  atividades_count: number;
+  messages_count: number;
+  created_at: string;
+}
+
+export interface LeadMessage {
+  id: number;
+  role: "user" | "agent" | "system";
+  content: string;
+  created_at: string;
+}
+
+export async function listCRMPipelines(): Promise<CRMPipeline[]> {
+  return requestList<CRMPipeline>("/api/v1/crm/pipelines/");
+}
+
+export async function seedDefaultPipeline(): Promise<CRMPipeline> {
+  return request<CRMPipeline>("/api/v1/crm/pipelines/seed-default/", { method: "POST" });
+}
+
+export async function createStage(data: Omit<CRMStage, "id" | "leads_count">): Promise<CRMStage> {
+  return request<CRMStage>("/api/v1/crm/stages/", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateStage(id: number, data: Partial<CRMStage>): Promise<CRMStage> {
+  return request<CRMStage>(`/api/v1/crm/stages/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteStage(id: number): Promise<void> {
+  await request<unknown>(`/api/v1/crm/stages/${id}/`, { method: "DELETE" });
+}
+
+export async function listLeads(params?: { stage?: number; pipeline?: number; search?: string }): Promise<CRMLead[]> {
+  const q = new URLSearchParams();
+  if (params?.stage) q.set("stage", String(params.stage));
+  if (params?.pipeline) q.set("pipeline", String(params.pipeline));
+  if (params?.search) q.set("search", params.search);
+  const query = q.toString() ? `?${q}` : "";
+  return requestList<CRMLead>(`/api/v1/crm/leads/${query}`);
+}
+
+export async function createLead(data: Partial<CRMLead>): Promise<CRMLead> {
+  return request<CRMLead>("/api/v1/crm/leads/", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateLead(id: number, data: Partial<CRMLead>): Promise<CRMLead> {
+  return request<CRMLead>(`/api/v1/crm/leads/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteLead(id: number): Promise<void> {
+  await request<unknown>(`/api/v1/crm/leads/${id}/`, { method: "DELETE" });
+}
+
+export async function moveLead(leadId: number, stageId: number): Promise<CRMLead> {
+  return request<CRMLead>(`/api/v1/crm/leads/${leadId}/move/`, {
+    method: "POST",
+    body: JSON.stringify({ stage_id: stageId }),
+  });
+}
+
+export async function getLeadMessages(leadId: number): Promise<LeadMessage[]> {
+  return request<LeadMessage[]>(`/api/v1/crm/leads/${leadId}/messages/`);
+}
+
+export async function qualifyLead(leadId: number, message: string): Promise<{
+  response: string;
+  closing_suggested: boolean;
+  lead_id: number;
+}> {
+  return request(`/api/v1/crm/leads/${leadId}/qualify/`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+}
+
 // --- agency: agent metrics overview -------------------------------------
 
 export interface AgentMetricsOverview {
@@ -778,7 +896,7 @@ export async function deleteAIProvider(id: number): Promise<void> {
   await request<void>(`/api/v1/harness/providers/${id}/`, { method: "DELETE" });
 }
 
-// ─── CRM ──────────────────────────────────────────────────────────────────────
+// ─── CRM legacy types (usados por crm.tsx) ────────────────────────────────────
 
 export type LeadStatus = "novo" | "contato" | "qualificado" | "proposta" | "negociacao" | "ganho" | "perdido";
 export type LeadOrigem = "site" | "indicacao" | "social" | "evento" | "cold_outreach" | "outro";
@@ -835,20 +953,6 @@ export interface AtividadeCRM {
   data_hora: string;
   resultado: string;
   created_at: string;
-}
-
-export async function listLeads(params?: Record<string, string>): Promise<Lead[]> {
-  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-  return requestList<Lead>(`/api/v1/crm/leads/${qs}`);
-}
-export async function createLead(data: Partial<Lead>): Promise<Lead> {
-  return request<Lead>("/api/v1/crm/leads/", { method: "POST", body: JSON.stringify(data) });
-}
-export async function updateLead(id: number, data: Partial<Lead>): Promise<Lead> {
-  return request<Lead>(`/api/v1/crm/leads/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
-}
-export async function deleteLead(id: number): Promise<void> {
-  await request<void>(`/api/v1/crm/leads/${id}/`, { method: "DELETE" });
 }
 
 export async function listContatos(params?: Record<string, string>): Promise<Contato[]> {

@@ -220,7 +220,7 @@ export function CRMView({ onBack }: { onBack: () => void }) {
   const [leadSearch, setLeadSearch] = useState("");
 
   useEffect(() => {
-    listLeads().then(setLeads).catch(() => {});
+    listLeads().then(r => setLeads(r as unknown as Lead[])).catch(() => {});
     listOportunidades().then(setOportunidades).catch(() => {});
     listAtividadesCRM().then(setAtividades).catch(() => {});
   }, []);
