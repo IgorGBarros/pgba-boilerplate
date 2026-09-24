@@ -361,11 +361,12 @@ export interface Project {
   created_at: string;
 }
 
-export async function listProjects(): Promise<Project[]> {
+export async function listAgencyProjects(): Promise<Project[]> {
   return requestList<Project>("/api/v1/agency/projects/");
 }
 
-export async function createProject(params: {
+
+export async function createAgencyProject(params: {
   requestingAgentId: number;
   name: string;
   description?: string;
@@ -383,6 +384,7 @@ export async function createProject(params: {
     }),
   });
 }
+
 
 /** Registra um projeto que JÁ EXISTIA — nunca cria repositório novo, confirma de verdade que o repositório é acessível antes de marcar como pronto. */
 export async function importProject(params: {
@@ -407,7 +409,7 @@ export async function importProject(params: {
 }
 
 /** Atualiza campos editáveis de um projeto (local_path, github_full_name, description, name). */
-export async function updateProject(
+export async function updateAgencyProject(
   id: number,
   params: { name?: string; description?: string; localPath?: string; githubFullName?: string },
 ): Promise<Project> {
@@ -421,6 +423,7 @@ export async function updateProject(
     body: JSON.stringify(body),
   });
 }
+
 
 // --- agency: tasks (ciclo de vida completo) --------------------------
 
@@ -1102,8 +1105,8 @@ export async function getAgentMetrics(): Promise<AgentMetric[]> {
   return request<AgentMetric[]>("/api/v1/agency/metrics/agents/");
 }
 
-// Deleção de projeto
-export async function deleteProject(id: number): Promise<void> {
+// Deleção de projeto (agency)
+export async function deleteAgencyProject(id: number): Promise<void> {
   await request<void>(`/api/v1/agency/projects/${id}/`, { method: "DELETE" });
 }
 

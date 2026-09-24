@@ -21,11 +21,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  createProject,
+  createAgencyProject as createProject,
   importProject,
   createTask,
   listAgents,
-  listProjects,
+  listAgencyProjects as listProjects,
   listSectors,
   type Agent,
   type Project,

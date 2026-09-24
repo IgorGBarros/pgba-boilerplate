@@ -13,7 +13,7 @@ import {
   type GenerateLogEvent,
   type ProjectFile,
 } from "@/lib/devserver";
-import { listProjects, type Project } from "@/lib/api";
+import { listAgencyProjects as listProjects, type Project } from "@/lib/api";
 import type { ChatMessage } from "@/types/builder";
 
 // Mostra só as páginas geradas, sem carregar o Studio de novo dentro do iframe.
