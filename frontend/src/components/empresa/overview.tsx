@@ -12,11 +12,13 @@ import {
   Handshake,
   Landmark,
   Layers,
+  MessageCircle,
   MessageSquare,
   PauseCircle,
   Pencil,
   Plus,
   Receipt,
+  RefreshCw,
   Save,
   Settings,
   ShoppingCart,
@@ -66,6 +68,7 @@ import SettingsModal from "@/components/builder/SettingsModal";
 import { DEFAULT_SETTINGS, type AppSettings } from "@/types/settings";
 import { aiModels } from "@/lib/pgba-data";
 import {
+  askAsAgent,
   createAgent,
   createSector,
   deleteAgent,
@@ -77,12 +80,14 @@ import {
   listDocuments,
   uploadDocumentFile,
   updateAgent,
+  type AgentAskResult,
   type Sector,
   type Agent,
   type AgentMetricsOverview,
   type SectorMetric,
   type KnowledgeDocument,
   type AgentAccessLevel,
+  ApiError,
 } from "@/lib/api";
 
 const CompanyOffice3D = lazy(() => import("@/components/builder/CompanyOffice3D"));
@@ -729,6 +734,102 @@ const MODULE_CARDS: { state: ModuleState; label: string; desc: string; icon: Rea
   { state: { key: "helpdesk" }, label: "TI · Helpdesk", desc: "Chamados, SLA e inventário", icon: Brain, color: "text-teal-400", bg: "bg-teal-500/10 hover:bg-teal-500/20", border: "border-teal-500/20 hover:border-teal-400/40" },
 ];
 
+// ─── Ask Agent Dialog ─────────────────────────────────────────────────────────
+
+function AskAgentDialog({ agent, open, onClose }: { agent: Agent | null; open: boolean; onClose: () => void }) {
+  const [question, setQuestion] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<AgentAskResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleOpenChange(v: boolean) {
+    if (!v) { onClose(); setQuestion(""); setResult(null); setError(null); }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!agent || !question.trim()) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await askAsAgent(agent.id, question.trim());
+      setResult(res);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Falha ao perguntar ao agente.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MessageCircle className="size-4 text-primary" />
+            {agent?.name}
+          </DialogTitle>
+          <DialogDescription>{agent?.role}</DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <textarea
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            rows={3}
+            required
+            autoFocus
+            placeholder="O que você quer perguntar a este agente?"
+            className="w-full resize-none rounded-md border border-border bg-elevated px-3 py-2 text-sm focus:border-primary focus:outline-none"
+          />
+          <Button type="submit" disabled={loading || !question.trim()} className="w-full gap-2">
+            {loading ? <RefreshCw className="size-4 animate-spin" /> : <MessageCircle className="size-4" />}
+            {loading ? "Perguntando..." : "Perguntar"}
+          </Button>
+        </form>
+
+        {error && <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}
+
+        {result?.status === "pending_approval" && (
+          <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
+            Esta ação aguarda aprovação humana — veja a aba "Aprovações". {result.answer}
+          </div>
+        )}
+
+        {result?.status === "ok" && (
+          <div className="rounded-md border border-border bg-elevated px-3 py-3 text-sm space-y-2">
+            <p className="leading-relaxed">{result.answer}</p>
+            {result.function_called && (
+              <p className="text-[10px] text-muted-foreground">função: {result.function_called}</p>
+            )}
+            {result.sources && result.sources.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 border-t border-border pt-2">
+                {result.sources.map((src, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground" title={src.source}>
+                    <span className="opacity-60">▸</span>
+                    {src.document.length > 35 ? src.document.slice(0, 35) + "…" : src.document}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {result && ["function_error", "llm_error", "rejected"].includes(result.status) && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{result.answer}</div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Fechar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Visão Geral ──────────────────────────────────────────────────────────────
+
 function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (sector?: string) => void; onSectorClick: (sector: Sector) => void; onModuleClick: (m: ModuleState) => void }) {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -738,6 +839,8 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
   const [sectorKnowledgeOpen, setSectorKnowledgeOpen] = useState(false);
   const [openAgent, setOpenAgent] = useState<Agent | null>(null);
   const [agentEditOpen, setAgentEditOpen] = useState(false);
+  const [askAgentTarget, setAskAgentTarget] = useState<Agent | null>(null);
+  const [askAgentOpen, setAskAgentOpen] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -992,6 +1095,14 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
                         <div className="flex items-center gap-1 shrink-0">
                           <button
                             type="button"
+                            onClick={() => { setAskAgentTarget(agent); setAskAgentOpen(true); }}
+                            className="rounded p-1 text-muted-foreground hover:text-primary transition-colors"
+                            title="Perguntar a este agente"
+                          >
+                            <MessageCircle className="size-4" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => { setOpenAgent(agent); setAgentEditOpen(true); }}
                             className="rounded p-1 text-muted-foreground hover:text-foreground transition-colors"
                             title="Editar agente"
@@ -1100,6 +1211,11 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
         open={agentEditOpen}
         onClose={() => setAgentEditOpen(false)}
         onUpdated={handleAgentUpdated}
+      />
+      <AskAgentDialog
+        agent={askAgentTarget}
+        open={askAgentOpen}
+        onClose={() => setAskAgentOpen(false)}
       />
       <NewSectorDialog
         open={newSectorOpen}

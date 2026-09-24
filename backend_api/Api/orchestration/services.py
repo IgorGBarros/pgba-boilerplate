@@ -217,7 +217,7 @@ PERGUNTA: {question}
     except ProviderConfigError as exc:
         log.status = QueryLog.Status.LLM_ERROR
         log.error_message = str(exc)
-        _finish(log, start)
+        _finish(log, start, provider=provider)
         return {
             "answer": "Encontrei o dado, mas não consegui gerar o texto da resposta agora.",
             "function_called": function_name, "sources": rag_sources, "status": log.status,
