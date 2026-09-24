@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   CRMPipeline, CRMStage, CRMLead, CRMDeal, CRMProject,
   LeadMessage, MainStage, LeadOutcome, DealOutcome, ProjectOutcome,
-  CustomFieldValue,
+  CustomFieldValue, CustomFieldDefinition,
   listCRMPipelines, seedDefaultPipeline,
   listLeads, createLead, updateLead, deleteLead, moveLead,
   setLeadOutcome, convertLeadToDeal,
@@ -22,6 +22,7 @@ import {
   setProjectOutcome,
   getLeadMessages, qualifyLead,
   createStage, deleteStage,
+  listCustomFieldDefs, createCustomFieldDef, deleteCustomFieldDef, bulkUpsertCustomFieldValues,
 } from "@/lib/api";
 import { CRMChannels } from "@/components/empresa/crm-channels";
 import { toast } from "sonner";
@@ -71,25 +72,132 @@ function initials(name: string) {
   return name.split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase();
 }
 
-// ─── Custom Fields View ───────────────────────────────────────────────────────
+// ─── Custom Fields Manager ────────────────────────────────────────────────────
 
-function CustomFieldsView({ fields }: { fields: CustomFieldValue[] }) {
-  if (!fields.length) return null;
+function CustomFieldsManager({
+  entityType, entityId, values, onUpdated,
+}: {
+  entityType: MainStage;
+  entityId: number;
+  values: CustomFieldValue[];
+  onUpdated: (values: CustomFieldValue[]) => void;
+}) {
+  const [defs, setDefs] = useState<CustomFieldDefinition[]>([]);
+  const [localValues, setLocalValues] = useState<Record<number, string>>({});
+  const [newFieldName, setNewFieldName] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loadingDefs, setLoadingDefs] = useState(true);
+
+  useEffect(() => {
+    setLocalValues(Object.fromEntries(values.map(v => [v.field_def, String(v.value ?? "")])));
+  }, [values]);
+
+  useEffect(() => {
+    setLoadingDefs(true);
+    listCustomFieldDefs(entityType)
+      .then(setDefs)
+      .catch(() => toast.error("Erro ao carregar campos."))
+      .finally(() => setLoadingDefs(false));
+  }, [entityType]);
+
+  const handleAddDef = async () => {
+    if (!newFieldName.trim()) return;
+    setAdding(true);
+    try {
+      const key = newFieldName.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+      const def = await createCustomFieldDef({
+        entity_type: entityType,
+        name: newFieldName.trim(),
+        key,
+        field_type: "text",
+        options: [],
+        required: false,
+        position: defs.length,
+        is_active: true,
+      });
+      setDefs(prev => [...prev, def]);
+      setNewFieldName("");
+      toast.success("Campo criado.");
+    } catch { toast.error("Erro ao criar campo."); }
+    finally { setAdding(false); }
+  };
+
+  const handleDeleteDef = async (defId: number) => {
+    try {
+      await deleteCustomFieldDef(defId);
+      setDefs(prev => prev.filter(d => d.id !== defId));
+      setLocalValues(prev => { const n = { ...prev }; delete n[defId]; return n; });
+      toast.success("Campo removido.");
+    } catch { toast.error("Erro ao remover campo."); }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const entries = defs
+        .filter(d => (localValues[d.id] ?? "") !== "")
+        .map(d => ({ field_def: d.id, entity_type: entityType, entity_id: entityId, value: localValues[d.id] }));
+      const updated = await bulkUpsertCustomFieldValues(entries);
+      onUpdated(updated);
+      toast.success("Valores salvos.");
+    } catch { toast.error("Erro ao salvar campos."); }
+    finally { setSaving(false); }
+  };
+
   return (
-    <div className="px-5 py-3 border-t border-border">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Campos personalizados</p>
-      <div className="grid grid-cols-2 gap-2">
-        {fields.map(f => (
-          <div key={f.id} className="p-2 rounded-md bg-muted/30">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{f.field_name}</p>
-            <p className="text-sm text-foreground mt-0.5 truncate">
-              {f.value === null || f.value === undefined || f.value === ""
-                ? <span className="text-muted-foreground/50 italic text-xs">—</span>
-                : String(f.value)}
-            </p>
-          </div>
-        ))}
+    <div className="p-5 space-y-4">
+      {loadingDefs ? (
+        <div className="space-y-2">
+          {[0, 1].map(i => <div key={i} className="h-12 animate-pulse rounded-lg bg-muted/40" />)}
+        </div>
+      ) : defs.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-4">Nenhum campo personalizado. Crie o primeiro abaixo.</p>
+      ) : (
+        <div className="space-y-3">
+          {defs.map(def => (
+            <div key={def.id} className="flex items-end gap-2 group">
+              <div className="flex-1">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-0.5">{def.name}</p>
+                <Input
+                  value={localValues[def.id] ?? ""}
+                  onChange={e => setLocalValues(prev => ({ ...prev, [def.id]: e.target.value }))}
+                  placeholder="Valor..."
+                  className="h-8 text-sm"
+                />
+              </div>
+              <button
+                onClick={() => void handleDeleteDef(def.id)}
+                className="shrink-0 mb-0.5 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
+                title="Remover campo"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex gap-2 border-t border-border pt-3">
+        <Input
+          value={newFieldName}
+          onChange={e => setNewFieldName(e.target.value)}
+          placeholder="Nome do novo campo..."
+          className="h-8 text-sm flex-1"
+          onKeyDown={e => { if (e.key === "Enter") void handleAddDef(); }}
+        />
+        <Button size="sm" variant="outline" onClick={() => void handleAddDef()} disabled={adding || !newFieldName.trim()} className="h-8 gap-1.5">
+          {adding ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+          Criar
+        </Button>
       </div>
+
+      {defs.length > 0 && (
+        <Button size="sm" onClick={() => void handleSave()} disabled={saving} className="w-full gap-1.5">
+          {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
+          Salvar valores
+        </Button>
+      )}
     </div>
   );
 }
@@ -789,7 +897,7 @@ function LeadDetailModal({
   onDeleted: (id: number) => void;
   onConverted: (deal: CRMDeal) => void;
 }) {
-  const [tab, setTab] = useState<"conversa" | "info">("conversa");
+  const [tab, setTab] = useState<"conversa" | "info" | "campos">("conversa");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [local, setLocal] = useState(lead);
@@ -892,6 +1000,7 @@ function LeadDetailModal({
         {([
           { key: "conversa" as const, label: "Conversa", icon: <MessageCircle className="size-3.5" /> },
           { key: "info" as const, label: "Informações", icon: <User className="size-3.5" /> },
+          { key: "campos" as const, label: "Campos extra", icon: <Settings className="size-3.5" /> },
         ]).map(t => (
           <button
             key={t.key}
@@ -934,7 +1043,17 @@ function LeadDetailModal({
             )}
             <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
           </div>
-          <CustomFieldsView fields={local.custom_fields} />
+        </div>
+      )}
+
+      {tab === "campos" && (
+        <div className="flex-1 overflow-y-auto">
+          <CustomFieldsManager
+            entityType="lead"
+            entityId={local.id}
+            values={local.custom_fields}
+            onUpdated={updated => { setLocal(prev => ({ ...prev, custom_fields: updated })); onUpdated({ ...local, custom_fields: updated }); }}
+          />
         </div>
       )}
 
@@ -1108,9 +1227,12 @@ function DealDetailModal({
 
       {tab === "campos" && (
         <div className="flex-1 overflow-y-auto">
-          {local.custom_fields.length > 0
-            ? <CustomFieldsView fields={local.custom_fields} />
-            : <p className="text-sm text-muted-foreground p-5">Nenhum campo personalizado configurado para Deal.</p>}
+          <CustomFieldsManager
+            entityType="deal"
+            entityId={local.id}
+            values={local.custom_fields}
+            onUpdated={updated => { setLocal(prev => ({ ...prev, custom_fields: updated })); onUpdated({ ...local, custom_fields: updated }); }}
+          />
         </div>
       )}
 
@@ -1256,9 +1378,12 @@ function ProjectDetailModal({
 
       {tab === "campos" && (
         <div className="flex-1 overflow-y-auto">
-          {local.custom_fields.length > 0
-            ? <CustomFieldsView fields={local.custom_fields} />
-            : <p className="text-sm text-muted-foreground p-5">Nenhum campo personalizado configurado para Projeto.</p>}
+          <CustomFieldsManager
+            entityType="project"
+            entityId={local.id}
+            values={local.custom_fields}
+            onUpdated={updated => { setLocal(prev => ({ ...prev, custom_fields: updated })); onUpdated({ ...local, custom_fields: updated }); }}
+          />
         </div>
       )}
 
@@ -1517,8 +1642,8 @@ export function CRMKanban() {
           <div className="flex-1 overflow-x-auto pb-4">
             <div className="flex gap-3 h-full min-h-0" style={{ minWidth: `${activeStages.length * 250}px` }}>
 
-              {activeTab === "lead" && activeStages.map(stage => {
-                const stageLeads = filteredLeads.filter(l => l.stage === stage.id);
+              {activeTab === "lead" && activeStages.map((stage, idx) => {
+                const stageLeads = filteredLeads.filter(l => l.stage === stage.id || (!l.stage && idx === 0));
                 const totalValue = stageLeads.reduce((s, l) => s + (l.valor_estimado ? Number(l.valor_estimado) : 0), 0);
                 return (
                   <KanbanColumn
@@ -1542,8 +1667,8 @@ export function CRMKanban() {
                 );
               })}
 
-              {activeTab === "deal" && activeStages.map(stage => {
-                const stageDeals = filteredDeals.filter(d => d.stage === stage.id);
+              {activeTab === "deal" && activeStages.map((stage, idx) => {
+                const stageDeals = filteredDeals.filter(d => d.stage === stage.id || (!d.stage && idx === 0));
                 const totalValue = stageDeals.reduce((s, d) => s + (d.valor ? Number(d.valor) : 0), 0);
                 return (
                   <KanbanColumn
@@ -1567,8 +1692,8 @@ export function CRMKanban() {
                 );
               })}
 
-              {activeTab === "project" && activeStages.map(stage => {
-                const stageProjects = filteredProjects.filter(p => p.stage === stage.id);
+              {activeTab === "project" && activeStages.map((stage, idx) => {
+                const stageProjects = filteredProjects.filter(p => p.stage === stage.id || (!p.stage && idx === 0));
                 return (
                   <KanbanColumn
                     key={stage.id}
