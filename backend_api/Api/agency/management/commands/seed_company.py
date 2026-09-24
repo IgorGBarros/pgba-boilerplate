@@ -15,11 +15,37 @@ estado ou adicionar tenant novo.
 Todo agente nasce com autonomy_level=OBSERVER (o padrao mais seguro,
 ver agency/models.py) — subir autonomia e uma decisao explicita
 posterior, nunca o ponto de partida.
+
+As instrucoes (instructions) de cada agente sao carregadas automaticamente
+dos arquivos .md em agency/skills/ na primeira criacao e sempre que o
+arquivo existir e o campo estiver vazio.
 """
+import pathlib
+
 from django.core.management.base import BaseCommand, CommandError
 
 from agency.models import Agent, Sector
 from ingestion.models import KnowledgeSource
+
+SKILLS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "skills"
+
+# Mapeamento nome-do-agente → arquivo de skill (relativo a SKILLS_DIR)
+AGENT_SKILL_MAP = {
+    "CEO Virtual":                      "ceo-virtual.md",
+    "AI Controller":                    "ai-controller.md",
+    "Orquestrador de Desenvolvimento":  "orquestrador-desenvolvimento.md",
+    "AI Backend":                       "ai-backend.md",
+    "AI Frontend":                      "ai-frontend.md",
+    "AI Vendedor":                      "ai-vendedor.md",
+    "AI Planejador":                    "ai-planejador.md",
+    "AI Comprador":                     "ai-comprador.md",
+    "AI Financeiro":                    "ai-financeiro.md",
+    "AI Controladoria":                 "ai-controladoria.md",
+    "AI RH":                            "ai-rh.md",
+    "AI TI":                            "ai-ti.md",
+    "AI Juridico":                      "ai-juridico.md",
+    "AI Inteligencia de Mercado":       "ai-inteligencia-mercado.md",
+}
 
 # (nome do setor, descricao) — ordem importa so para a impressao no terminal
 SECTORS = [
@@ -109,6 +135,17 @@ class Command(BaseCommand):
             label = "Criado" if created else "Ja existia"
             escopo = sector.name if sector else "acesso total"
             self.stdout.write(f"  [Agente] {label}: {name} ({role}) — {escopo}")
+
+            # Carrega skill file no campo instructions sempre que:
+            # - o arquivo existir em agency/skills/
+            # - o campo estiver vazio (nao sobrescreve customizacao manual)
+            skill_file = AGENT_SKILL_MAP.get(name)
+            if skill_file:
+                skill_path = SKILLS_DIR / skill_file
+                if skill_path.exists() and not agent.instructions:
+                    agent.instructions = skill_path.read_text(encoding="utf-8")
+                    agent.save(update_fields=["instructions"])
+                    self.stdout.write(f"           → skill carregada de {skill_file}")
 
         self.stdout.write("")
 
