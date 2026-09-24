@@ -101,6 +101,11 @@ def parse_whatsapp_evolution(payload: dict) -> Optional[tuple[str, str, str]]:
             return None
 
         remote_jid: str = key.get("remoteJid", "")
+
+        # Ignora mensagens de grupos (@g.us) — só processa contatos individuais (@s.whatsapp.net)
+        if remote_jid.endswith("@g.us"):
+            return None
+
         # Remove o sufixo @s.whatsapp.net e fica só com o número
         channel_ref = remote_jid.split("@")[0]
         nome = data.get("pushName", channel_ref)
