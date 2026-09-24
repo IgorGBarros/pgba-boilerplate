@@ -698,6 +698,8 @@ export interface CRMStage {
   is_won: boolean;
   is_lost: boolean;
   leads_count: number;
+  deals_count: number;
+  projects_count: number;
 }
 
 export interface CRMPipeline {
@@ -707,7 +709,37 @@ export interface CRMPipeline {
   stages: CRMStage[];
 }
 
-export type LeadOutcome = "" | "vendido" | "concluido" | "perdido" | "contrato_assinado" | "cancelado";
+// ─── Custom Fields ────────────────────────────────────────────────────────────
+
+export type CustomFieldType = "text" | "textarea" | "number" | "currency" | "date" | "select" | "multiselect" | "checkbox" | "email" | "phone" | "url";
+
+export interface CustomFieldDefinition {
+  id: number;
+  entity_type: MainStage;
+  name: string;
+  key: string;
+  field_type: CustomFieldType;
+  options: string[];
+  required: boolean;
+  position: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface CustomFieldValue {
+  id: number;
+  field_def: number;
+  field_name: string;
+  field_key: string;
+  field_type: CustomFieldType;
+  entity_type: string;
+  entity_id: number;
+  value: unknown;
+}
+
+// ─── Lead ─────────────────────────────────────────────────────────────────────
+
+export type LeadOutcome = "" | "convertido" | "perdido" | "cancelado";
 
 export interface CRMLead {
   id: number;
@@ -729,9 +761,10 @@ export interface CRMLead {
   stage_color: string | null;
   stage_is_won: boolean | null;
   stage_is_lost: boolean | null;
-  oportunidades_count: number;
   atividades_count: number;
   messages_count: number;
+  deals_count: number;
+  custom_fields: CustomFieldValue[];
   created_at: string;
 }
 
@@ -742,6 +775,68 @@ export interface LeadMessage {
   created_at: string;
 }
 
+// ─── Deal ─────────────────────────────────────────────────────────────────────
+
+export type DealOutcome = "" | "ganho" | "contrato_assinado" | "perdido" | "cancelado";
+
+export interface CRMDeal {
+  id: number;
+  titulo: string;
+  empresa: string;
+  responsavel: string;
+  valor: string | null;
+  moeda: string;
+  data_fechamento_previsto: string | null;
+  observacoes: string;
+  outcome: DealOutcome;
+  lead: number | null;
+  lead_nome: string | null;
+  lead_empresa: string | null;
+  pipeline: number | null;
+  stage: number | null;
+  position: number;
+  stage_name: string | null;
+  stage_main: MainStage | null;
+  stage_color: string | null;
+  stage_is_won: boolean | null;
+  stage_is_lost: boolean | null;
+  projects_count: number;
+  custom_fields: CustomFieldValue[];
+  created_at: string;
+}
+
+// ─── Project ──────────────────────────────────────────────────────────────────
+
+export type ProjectOutcome = "" | "concluido" | "pausado" | "cancelado";
+
+export interface CRMProject {
+  id: number;
+  titulo: string;
+  empresa: string;
+  responsavel: string;
+  data_inicio: string | null;
+  data_fim_previsto: string | null;
+  data_fim_realizado: string | null;
+  observacoes: string;
+  outcome: ProjectOutcome;
+  deal: number | null;
+  deal_titulo: string | null;
+  lead: number | null;
+  lead_nome: string | null;
+  pipeline: number | null;
+  stage: number | null;
+  position: number;
+  stage_name: string | null;
+  stage_main: MainStage | null;
+  stage_color: string | null;
+  stage_is_won: boolean | null;
+  stage_is_lost: boolean | null;
+  custom_fields: CustomFieldValue[];
+  created_at: string;
+}
+
+// ─── Pipeline / Stage ─────────────────────────────────────────────────────────
+
 export async function listCRMPipelines(): Promise<CRMPipeline[]> {
   return requestList<CRMPipeline>("/api/v1/crm/pipelines/");
 }
@@ -750,7 +845,7 @@ export async function seedDefaultPipeline(): Promise<CRMPipeline> {
   return request<CRMPipeline>("/api/v1/crm/pipelines/seed-default/", { method: "POST" });
 }
 
-export async function createStage(data: Omit<CRMStage, "id" | "leads_count">): Promise<CRMStage> {
+export async function createStage(data: Omit<CRMStage, "id" | "leads_count" | "deals_count" | "projects_count">): Promise<CRMStage> {
   return request<CRMStage>("/api/v1/crm/stages/", { method: "POST", body: JSON.stringify(data) });
 }
 
@@ -762,11 +857,42 @@ export async function deleteStage(id: number): Promise<void> {
   await request<unknown>(`/api/v1/crm/stages/${id}/`, { method: "DELETE" });
 }
 
-export async function listLeads(params?: { stage?: number; pipeline?: number; search?: string }): Promise<CRMLead[]> {
+// ─── Custom Fields API ────────────────────────────────────────────────────────
+
+export async function listCustomFieldDefs(entityType?: MainStage): Promise<CustomFieldDefinition[]> {
+  const q = entityType ? `?entity_type=${entityType}` : "";
+  return requestList<CustomFieldDefinition>(`/api/v1/crm/custom-fields/${q}`);
+}
+
+export async function createCustomFieldDef(data: Omit<CustomFieldDefinition, "id" | "created_at">): Promise<CustomFieldDefinition> {
+  return request<CustomFieldDefinition>("/api/v1/crm/custom-fields/", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateCustomFieldDef(id: number, data: Partial<CustomFieldDefinition>): Promise<CustomFieldDefinition> {
+  return request<CustomFieldDefinition>(`/api/v1/crm/custom-fields/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteCustomFieldDef(id: number): Promise<void> {
+  await request<unknown>(`/api/v1/crm/custom-fields/${id}/`, { method: "DELETE" });
+}
+
+export async function bulkUpsertCustomFieldValues(values: Array<{
+  field_def: number; entity_type: string; entity_id: number; value: unknown;
+}>): Promise<CustomFieldValue[]> {
+  return request<CustomFieldValue[]>("/api/v1/crm/custom-field-values/bulk-upsert/", {
+    method: "POST",
+    body: JSON.stringify({ values }),
+  });
+}
+
+// ─── Leads ────────────────────────────────────────────────────────────────────
+
+export async function listLeads(params?: { stage?: number; pipeline?: number; search?: string; outcome?: string }): Promise<CRMLead[]> {
   const q = new URLSearchParams();
   if (params?.stage) q.set("stage", String(params.stage));
   if (params?.pipeline) q.set("pipeline", String(params.pipeline));
   if (params?.search) q.set("search", params.search);
+  if (params?.outcome !== undefined) q.set("outcome", params.outcome);
   const query = q.toString() ? `?${q}` : "";
   return requestList<CRMLead>(`/api/v1/crm/leads/${query}`);
 }
@@ -807,6 +933,96 @@ export async function qualifyLead(leadId: number, message: string): Promise<{
 
 export async function setLeadOutcome(leadId: number, outcome: LeadOutcome): Promise<CRMLead> {
   return request<CRMLead>(`/api/v1/crm/leads/${leadId}/set-outcome/`, {
+    method: "POST",
+    body: JSON.stringify({ outcome }),
+  });
+}
+
+export async function convertLeadToDeal(leadId: number, data?: { titulo?: string; responsavel?: string; valor?: string }): Promise<CRMDeal> {
+  return request<CRMDeal>(`/api/v1/crm/leads/${leadId}/convert-to-deal/`, {
+    method: "POST",
+    body: JSON.stringify(data ?? {}),
+  });
+}
+
+// ─── Deals ────────────────────────────────────────────────────────────────────
+
+export async function listDeals(params?: { stage?: number; pipeline?: number; search?: string; outcome?: string }): Promise<CRMDeal[]> {
+  const q = new URLSearchParams();
+  if (params?.stage) q.set("stage", String(params.stage));
+  if (params?.pipeline) q.set("pipeline", String(params.pipeline));
+  if (params?.search) q.set("search", params.search);
+  if (params?.outcome !== undefined) q.set("outcome", params.outcome);
+  const query = q.toString() ? `?${q}` : "";
+  return requestList<CRMDeal>(`/api/v1/crm/deals/${query}`);
+}
+
+export async function createDeal(data: Partial<CRMDeal>): Promise<CRMDeal> {
+  return request<CRMDeal>("/api/v1/crm/deals/", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateDeal(id: number, data: Partial<CRMDeal>): Promise<CRMDeal> {
+  return request<CRMDeal>(`/api/v1/crm/deals/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteDeal(id: number): Promise<void> {
+  await request<unknown>(`/api/v1/crm/deals/${id}/`, { method: "DELETE" });
+}
+
+export async function moveDeal(dealId: number, stageId: number): Promise<CRMDeal> {
+  return request<CRMDeal>(`/api/v1/crm/deals/${dealId}/move/`, {
+    method: "POST",
+    body: JSON.stringify({ stage_id: stageId }),
+  });
+}
+
+export async function setDealOutcome(dealId: number, outcome: DealOutcome): Promise<CRMDeal> {
+  return request<CRMDeal>(`/api/v1/crm/deals/${dealId}/set-outcome/`, {
+    method: "POST",
+    body: JSON.stringify({ outcome }),
+  });
+}
+
+export async function convertDealToProject(dealId: number, data?: { titulo?: string }): Promise<CRMProject> {
+  return request<CRMProject>(`/api/v1/crm/deals/${dealId}/convert-to-project/`, {
+    method: "POST",
+    body: JSON.stringify(data ?? {}),
+  });
+}
+
+// ─── Projects ─────────────────────────────────────────────────────────────────
+
+export async function listProjects(params?: { stage?: number; pipeline?: number; search?: string; outcome?: string }): Promise<CRMProject[]> {
+  const q = new URLSearchParams();
+  if (params?.stage) q.set("stage", String(params.stage));
+  if (params?.pipeline) q.set("pipeline", String(params.pipeline));
+  if (params?.search) q.set("search", params.search);
+  if (params?.outcome !== undefined) q.set("outcome", params.outcome);
+  const query = q.toString() ? `?${q}` : "";
+  return requestList<CRMProject>(`/api/v1/crm/projects/${query}`);
+}
+
+export async function createProject(data: Partial<CRMProject>): Promise<CRMProject> {
+  return request<CRMProject>("/api/v1/crm/projects/", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateProject(id: number, data: Partial<CRMProject>): Promise<CRMProject> {
+  return request<CRMProject>(`/api/v1/crm/projects/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteProject(id: number): Promise<void> {
+  await request<unknown>(`/api/v1/crm/projects/${id}/`, { method: "DELETE" });
+}
+
+export async function moveProject(projectId: number, stageId: number): Promise<CRMProject> {
+  return request<CRMProject>(`/api/v1/crm/projects/${projectId}/move/`, {
+    method: "POST",
+    body: JSON.stringify({ stage_id: stageId }),
+  });
+}
+
+export async function setProjectOutcome(projectId: number, outcome: ProjectOutcome): Promise<CRMProject> {
+  return request<CRMProject>(`/api/v1/crm/projects/${projectId}/set-outcome/`, {
     method: "POST",
     body: JSON.stringify({ outcome }),
   });

@@ -3,26 +3,35 @@ import {
   Plus, X, Send, User,
   Mail, Phone, DollarSign, Briefcase, MessageSquare,
   CheckCircle2, XCircle, Settings, Pencil, Trash2, Bot,
-  ArrowRight, Loader2, Radio, MessageCircle,
+  ArrowRight, Loader2, Radio, MessageCircle, Calendar, Package2,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  CRMPipeline, CRMStage, CRMLead, LeadMessage, MainStage, LeadOutcome,
-  listCRMPipelines, seedDefaultPipeline, listLeads, createLead,
-  updateLead, deleteLead, moveLead, getLeadMessages, qualifyLead,
-  createStage, deleteStage, setLeadOutcome,
+  CRMPipeline, CRMStage, CRMLead, CRMDeal, CRMProject,
+  LeadMessage, MainStage, LeadOutcome, DealOutcome, ProjectOutcome,
+  CustomFieldValue,
+  listCRMPipelines, seedDefaultPipeline,
+  listLeads, createLead, updateLead, deleteLead, moveLead,
+  setLeadOutcome, convertLeadToDeal,
+  listDeals, createDeal, updateDeal, deleteDeal, moveDeal,
+  setDealOutcome, convertDealToProject,
+  listProjects, createProject, updateProject, deleteProject, moveProject,
+  setProjectOutcome,
+  getLeadMessages, qualifyLead,
+  createStage, deleteStage,
 } from "@/lib/api";
 import { CRMChannels } from "@/components/empresa/crm-channels";
 import { toast } from "sonner";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const MAIN_STAGES: { key: MainStage; label: string; color: string; bgClass: string }[] = [
-  { key: "lead",    label: "Lead",    color: "#6366f1", bgClass: "bg-indigo-500/15 text-indigo-400 border-indigo-500/30" },
-  { key: "deal",    label: "Deals",   color: "#f59e0b", bgClass: "bg-amber-500/15  text-amber-400  border-amber-500/30"  },
-  { key: "project", label: "Project", color: "#10b981", bgClass: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+const TAB_META: { key: MainStage; label: string; bgClass: string }[] = [
+  { key: "lead",    label: "Leads",    bgClass: "bg-indigo-500/15 text-indigo-400 border-indigo-500/40" },
+  { key: "deal",    label: "Deals",    bgClass: "bg-amber-500/15  text-amber-400  border-amber-500/40"  },
+  { key: "project", label: "Projetos", bgClass: "bg-emerald-500/15 text-emerald-400 border-emerald-500/40" },
 ];
 
 const COLOR_MAP: Record<string, string> = {
@@ -32,23 +41,23 @@ const COLOR_MAP: Record<string, string> = {
 };
 
 function colorDot(color: string) {
-  return <span className="inline-block size-2 rounded-full" style={{ backgroundColor: COLOR_MAP[color] ?? "#94a3b8" }} />;
+  return <span className="inline-block size-2 rounded-full shrink-0" style={{ backgroundColor: COLOR_MAP[color] ?? "#94a3b8" }} />;
 }
 
-function fmtValue(v: string | null) {
+function fmtCurrency(v: string | null | undefined, moeda = "BRL") {
   if (!v) return null;
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0 }).format(Number(v));
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: moeda, minimumFractionDigits: 0 }).format(Number(v));
 }
 
-function initials(name: string) {
-  return name.split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase();
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
 }
 
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function fmtDate(iso: string) {
+function fmtDateFull(iso: string) {
   const d = new Date(iso);
   const today = new Date();
   if (d.toDateString() === today.toDateString()) return "Hoje";
@@ -56,6 +65,33 @@ function fmtDate(iso: string) {
   yesterday.setDate(today.getDate() - 1);
   if (d.toDateString() === yesterday.toDateString()) return "Ontem";
   return d.toLocaleDateString("pt-BR");
+}
+
+function initials(name: string) {
+  return name.split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase();
+}
+
+// ─── Custom Fields View ───────────────────────────────────────────────────────
+
+function CustomFieldsView({ fields }: { fields: CustomFieldValue[] }) {
+  if (!fields.length) return null;
+  return (
+    <div className="px-5 py-3 border-t border-border">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Campos personalizados</p>
+      <div className="grid grid-cols-2 gap-2">
+        {fields.map(f => (
+          <div key={f.id} className="p-2 rounded-md bg-muted/30">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{f.field_name}</p>
+            <p className="text-sm text-foreground mt-0.5 truncate">
+              {f.value === null || f.value === undefined || f.value === ""
+                ? <span className="text-muted-foreground/50 italic text-xs">—</span>
+                : String(f.value)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ─── Lead Card ────────────────────────────────────────────────────────────────
@@ -76,7 +112,7 @@ function LeadCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="shrink-0 grid size-7 place-items-center rounded-full bg-muted text-[11px] font-semibold text-foreground/70">
+          <span className="shrink-0 grid size-7 place-items-center rounded-full bg-indigo-500/15 text-[11px] font-semibold text-indigo-400">
             {initials(lead.nome)}
           </span>
           <div className="min-w-0">
@@ -84,28 +120,27 @@ function LeadCard({
             {lead.empresa && <p className="text-[11px] text-muted-foreground truncate">{lead.empresa}</p>}
           </div>
         </div>
-        {lead.stage_is_won && <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />}
-        {lead.stage_is_lost && <XCircle className="size-3.5 text-red-400 shrink-0" />}
+        {lead.stage_is_won && <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0 mt-0.5" />}
+        {lead.stage_is_lost && <XCircle className="size-3.5 text-red-400 shrink-0 mt-0.5" />}
       </div>
-
-      <div className="mt-2 flex items-center justify-between">
-        {lead.valor_estimado ? (
-          <span className="text-xs font-semibold text-emerald-400">{fmtValue(lead.valor_estimado)}</span>
-        ) : (
-          <span />
-        )}
+      <div className="mt-2 flex items-center justify-between gap-2">
+        {lead.valor_estimado
+          ? <span className="text-xs font-semibold text-emerald-400">{fmtCurrency(lead.valor_estimado)}</span>
+          : <span />}
         <div className="flex items-center gap-2 text-muted-foreground">
           {lead.messages_count > 0 && (
             <span className="flex items-center gap-0.5 text-[10px]">
               <MessageSquare className="size-3" />{lead.messages_count}
             </span>
           )}
+          {lead.deals_count > 0 && (
+            <span className="flex items-center gap-0.5 text-[10px] text-amber-400">
+              <ChevronRight className="size-3" />{lead.deals_count} deal{lead.deals_count > 1 ? "s" : ""}
+            </span>
+          )}
           {lead.outcome && (
             <Badge className="text-[9px] h-4 px-1.5" variant="outline">
-              {lead.outcome === "vendido" ? "Vendido" :
-               lead.outcome === "concluido" ? "Concluído" :
-               lead.outcome === "perdido" ? "Perdido" :
-               lead.outcome === "contrato_assinado" ? "Contrato" : "Cancelado"}
+              {lead.outcome === "convertido" ? "Convertido" : lead.outcome === "perdido" ? "Perdido" : "Cancelado"}
             </Badge>
           )}
         </div>
@@ -114,21 +149,122 @@ function LeadCard({
   );
 }
 
-// ─── Kanban Column ────────────────────────────────────────────────────────────
+// ─── Deal Card ────────────────────────────────────────────────────────────────
+
+function DealCard({
+  deal, onDragStart, onClick,
+}: {
+  deal: CRMDeal;
+  onDragStart: (e: React.DragEvent) => void;
+  onClick: () => void;
+}) {
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onClick={onClick}
+      className="group bg-card border border-border rounded-lg p-3 cursor-grab active:cursor-grabbing hover:border-border/60 hover:shadow-sm transition-all select-none"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground truncate leading-tight">{deal.titulo}</p>
+          {deal.empresa && <p className="text-[11px] text-muted-foreground truncate">{deal.empresa}</p>}
+        </div>
+        {deal.stage_is_won && <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0 mt-0.5" />}
+        {deal.stage_is_lost && <XCircle className="size-3.5 text-red-400 shrink-0 mt-0.5" />}
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        {deal.valor
+          ? <span className="text-xs font-semibold text-emerald-400">{fmtCurrency(deal.valor, deal.moeda)}</span>
+          : <span />}
+        <div className="flex items-center gap-2 text-muted-foreground">
+          {deal.data_fechamento_previsto && (
+            <span className="flex items-center gap-0.5 text-[10px]">
+              <Calendar className="size-3" />{fmtDate(deal.data_fechamento_previsto)}
+            </span>
+          )}
+          {deal.projects_count > 0 && (
+            <span className="flex items-center gap-0.5 text-[10px] text-emerald-400">
+              <Package2 className="size-3" />{deal.projects_count}
+            </span>
+          )}
+          {deal.outcome && (
+            <Badge className="text-[9px] h-4 px-1.5" variant="outline">
+              {deal.outcome === "ganho" ? "Ganho" : deal.outcome === "contrato_assinado" ? "Contrato" : deal.outcome === "perdido" ? "Perdido" : "Cancelado"}
+            </Badge>
+          )}
+        </div>
+      </div>
+      {deal.lead_nome && (
+        <p className="mt-1.5 text-[10px] text-muted-foreground/60 truncate">
+          Lead: {deal.lead_nome}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Project Card ─────────────────────────────────────────────────────────────
+
+function ProjectCard({
+  project, onDragStart, onClick,
+}: {
+  project: CRMProject;
+  onDragStart: (e: React.DragEvent) => void;
+  onClick: () => void;
+}) {
+  const overdue = project.data_fim_previsto && !project.data_fim_realizado && new Date(project.data_fim_previsto) < new Date();
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onClick={onClick}
+      className="group bg-card border border-border rounded-lg p-3 cursor-grab active:cursor-grabbing hover:border-border/60 hover:shadow-sm transition-all select-none"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground truncate leading-tight">{project.titulo}</p>
+          {project.empresa && <p className="text-[11px] text-muted-foreground truncate">{project.empresa}</p>}
+        </div>
+        {project.stage_is_won && <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0 mt-0.5" />}
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          {project.data_fim_previsto && (
+            <span className={`flex items-center gap-0.5 text-[10px] ${overdue ? "text-red-400" : ""}`}>
+              <Calendar className="size-3" />{fmtDate(project.data_fim_previsto)}
+            </span>
+          )}
+        </div>
+        {project.outcome && (
+          <Badge className="text-[9px] h-4 px-1.5" variant="outline">
+            {project.outcome === "concluido" ? "Concluído" : project.outcome === "pausado" ? "Pausado" : "Cancelado"}
+          </Badge>
+        )}
+      </div>
+      {project.deal_titulo && (
+        <p className="mt-1.5 text-[10px] text-muted-foreground/60 truncate">
+          Deal: {project.deal_titulo}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Generic Kanban Column ────────────────────────────────────────────────────
 
 function KanbanColumn({
-  stage, leads, onDrop, onDragOver, onLeadClick, onAddLead,
+  stage, count, totalValue, children, onDrop, onDragOver, onAdd,
 }: {
   stage: CRMStage;
-  leads: CRMLead[];
+  count: number;
+  totalValue?: number;
+  children: React.ReactNode;
   onDrop: (e: React.DragEvent, stageId: number) => void;
   onDragOver: (e: React.DragEvent) => void;
-  onLeadClick: (lead: CRMLead) => void;
-  onAddLead: (stage: CRMStage) => void;
+  onAdd: (stage: CRMStage) => void;
 }) {
   const [over, setOver] = useState(false);
-  const totalValue = leads.reduce((s, l) => s + (l.valor_estimado ? Number(l.valor_estimado) : 0), 0);
-
   return (
     <div
       className={`flex flex-col min-w-[220px] max-w-[260px] rounded-xl border transition-colors ${over ? "border-primary/40 bg-primary/5" : "border-border bg-muted/20"}`}
@@ -140,32 +276,23 @@ function KanbanColumn({
         <div className="flex items-center gap-2 min-w-0">
           {colorDot(stage.color)}
           <span className="text-xs font-semibold text-foreground truncate">{stage.name}</span>
-          <span className="text-[10px] text-muted-foreground shrink-0">({leads.length})</span>
+          <span className="text-[10px] text-muted-foreground shrink-0">({count})</span>
         </div>
         <button
-          onClick={() => onAddLead(stage)}
+          onClick={() => onAdd(stage)}
           className="grid size-5 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
         >
           <Plus className="size-3" />
         </button>
       </div>
-
-      {totalValue > 0 && (
+      {totalValue != null && totalValue > 0 && (
         <div className="px-3 py-1 border-b border-border/50">
-          <span className="text-[10px] font-semibold text-emerald-400">{fmtValue(String(totalValue))}</span>
+          <span className="text-[10px] font-semibold text-emerald-400">{fmtCurrency(String(totalValue))}</span>
         </div>
       )}
-
       <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-[120px]">
-        {leads.map(lead => (
-          <LeadCard
-            key={lead.id}
-            lead={lead}
-            onDragStart={(e) => e.dataTransfer.setData("leadId", String(lead.id))}
-            onClick={() => onLeadClick(lead)}
-          />
-        ))}
-        {leads.length === 0 && (
+        {children}
+        {count === 0 && (
           <div className="text-center py-4 text-[11px] text-muted-foreground/50 border border-dashed border-border/40 rounded-lg">
             Arraste um card aqui
           </div>
@@ -199,16 +326,6 @@ function LeadFormDialog({
   onClose: () => void;
   onSaved: (lead: CRMLead) => void;
 }) {
-  const contextLabel = defaultStage?.main_stage === "deal"
-    ? "Deal"
-    : defaultStage?.main_stage === "project"
-    ? "Project"
-    : initial?.stage_main === "deal"
-    ? "Deal"
-    : initial?.stage_main === "project"
-    ? "Project"
-    : "Lead";
-
   const [form, setForm] = useState({
     nome: initial?.nome ?? "",
     empresa: initial?.empresa ?? "",
@@ -233,14 +350,12 @@ function LeadFormDialog({
         stage: defaultStage?.id ?? initial?.stage ?? null,
         pipeline: pipelineId ?? initial?.pipeline ?? null,
       };
-      const saved = initial
-        ? await updateLead(initial.id, payload)
-        : await createLead(payload);
+      const saved = initial ? await updateLead(initial.id, payload) : await createLead(payload);
       onSaved(saved);
-      toast.success(`${contextLabel} "${saved.nome}" ${initial ? "atualizado" : "criado"}.`);
+      toast.success(`Lead "${saved.nome}" ${initial ? "atualizado" : "criado"}.`);
       onClose();
     } catch {
-      toast.error(`Erro ao salvar ${contextLabel.toLowerCase()}.`);
+      toast.error("Erro ao salvar lead.");
     } finally {
       setSaving(false);
     }
@@ -250,11 +365,11 @@ function LeadFormDialog({
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-card border border-border rounded-xl w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="font-semibold text-foreground">{initial ? `Editar ${contextLabel}` : `Novo ${contextLabel}`}</h3>
+          <h3 className="font-semibold text-foreground">{initial ? "Editar Lead" : "Novo Lead"}</h3>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
         </div>
         <div className="px-5 py-4 space-y-3 max-h-[70vh] overflow-y-auto">
-          {[
+          {([
             { key: "nome", label: "Nome *", placeholder: "João Silva" },
             { key: "empresa", label: "Empresa", placeholder: "Acme Ltda" },
             { key: "email", label: "E-mail", placeholder: "joao@acme.com" },
@@ -262,7 +377,7 @@ function LeadFormDialog({
             { key: "cargo", label: "Cargo", placeholder: "Diretor Comercial" },
             { key: "valor_estimado", label: "Valor estimado (R$)", placeholder: "50000" },
             { key: "responsavel", label: "Responsável", placeholder: "Maria (SDR)" },
-          ].map(f => (
+          ] as const).map(f => (
             <div key={f.key} className="space-y-1">
               <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">{f.label}</label>
               <Input value={(form as Record<string, string>)[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} className="bg-background" />
@@ -270,29 +385,20 @@ function LeadFormDialog({
           ))}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Origem</label>
-            <select
-              value={form.origem}
-              onChange={e => set("origem", e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-            >
+            <select value={form.origem} onChange={e => set("origem", e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
               {ORIGEM_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Observações</label>
-            <textarea
-              value={form.observacoes}
-              onChange={e => set("observacoes", e.target.value)}
-              rows={3}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-            />
+            <textarea value={form.observacoes} onChange={e => set("observacoes", e.target.value)} rows={3} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring" />
           </div>
         </div>
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-border">
           <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
           <Button size="sm" onClick={handleSave} disabled={saving} className="gap-2">
             {saving && <Loader2 className="size-3.5 animate-spin" />}
-            {initial ? "Salvar" : `Criar ${contextLabel.toLowerCase()}`}
+            {initial ? "Salvar" : "Criar lead"}
           </Button>
         </div>
       </div>
@@ -300,444 +406,193 @@ function LeadFormDialog({
   );
 }
 
-// ─── WhatsApp Conversation Tab ────────────────────────────────────────────────
+// ─── Deal Form Dialog ─────────────────────────────────────────────────────────
+
+function DealFormDialog({
+  initial, defaultStage, pipelineId, onClose, onSaved,
+}: {
+  initial?: CRMDeal;
+  defaultStage?: CRMStage;
+  pipelineId?: number;
+  onClose: () => void;
+  onSaved: (deal: CRMDeal) => void;
+}) {
+  const [form, setForm] = useState({
+    titulo: initial?.titulo ?? "",
+    empresa: initial?.empresa ?? "",
+    responsavel: initial?.responsavel ?? "",
+    valor: initial?.valor ?? "",
+    moeda: initial?.moeda ?? "BRL",
+    data_fechamento_previsto: initial?.data_fechamento_previsto ?? "",
+    observacoes: initial?.observacoes ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.titulo.trim()) { toast.error("Título é obrigatório."); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        ...form,
+        valor: form.valor || null,
+        data_fechamento_previsto: form.data_fechamento_previsto || null,
+        stage: defaultStage?.id ?? initial?.stage ?? null,
+        pipeline: pipelineId ?? initial?.pipeline ?? null,
+      };
+      const saved = initial ? await updateDeal(initial.id, payload) : await createDeal(payload);
+      onSaved(saved);
+      toast.success(`Deal "${saved.titulo}" ${initial ? "atualizado" : "criado"}.`);
+      onClose();
+    } catch {
+      toast.error("Erro ao salvar deal.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-card border border-border rounded-xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h3 className="font-semibold text-foreground">{initial ? "Editar Deal" : "Novo Deal"}</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+        <div className="px-5 py-4 space-y-3 max-h-[70vh] overflow-y-auto">
+          {([
+            { key: "titulo", label: "Título *", placeholder: "Projeto Website" },
+            { key: "empresa", label: "Empresa", placeholder: "Acme Ltda" },
+            { key: "responsavel", label: "Responsável", placeholder: "Maria (AE)" },
+            { key: "valor", label: "Valor (R$)", placeholder: "150000" },
+          ] as const).map(f => (
+            <div key={f.key} className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">{f.label}</label>
+              <Input value={(form as Record<string, string>)[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} className="bg-background" />
+            </div>
+          ))}
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Previsão de fechamento</label>
+            <Input type="date" value={form.data_fechamento_previsto} onChange={e => set("data_fechamento_previsto", e.target.value)} className="bg-background" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Observações</label>
+            <textarea value={form.observacoes} onChange={e => set("observacoes", e.target.value)} rows={3} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-border">
+          <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving} className="gap-2">
+            {saving && <Loader2 className="size-3.5 animate-spin" />}
+            {initial ? "Salvar" : "Criar deal"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Project Form Dialog ──────────────────────────────────────────────────────
+
+function ProjectFormDialog({
+  initial, defaultStage, pipelineId, onClose, onSaved,
+}: {
+  initial?: CRMProject;
+  defaultStage?: CRMStage;
+  pipelineId?: number;
+  onClose: () => void;
+  onSaved: (project: CRMProject) => void;
+}) {
+  const [form, setForm] = useState({
+    titulo: initial?.titulo ?? "",
+    empresa: initial?.empresa ?? "",
+    responsavel: initial?.responsavel ?? "",
+    data_inicio: initial?.data_inicio ?? "",
+    data_fim_previsto: initial?.data_fim_previsto ?? "",
+    observacoes: initial?.observacoes ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.titulo.trim()) { toast.error("Título é obrigatório."); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        ...form,
+        data_inicio: form.data_inicio || null,
+        data_fim_previsto: form.data_fim_previsto || null,
+        stage: defaultStage?.id ?? initial?.stage ?? null,
+        pipeline: pipelineId ?? initial?.pipeline ?? null,
+      };
+      const saved = initial ? await updateProject(initial.id, payload) : await createProject(payload);
+      onSaved(saved);
+      toast.success(`Projeto "${saved.titulo}" ${initial ? "atualizado" : "criado"}.`);
+      onClose();
+    } catch {
+      toast.error("Erro ao salvar projeto.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-card border border-border rounded-xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h3 className="font-semibold text-foreground">{initial ? "Editar Projeto" : "Novo Projeto"}</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+        <div className="px-5 py-4 space-y-3 max-h-[70vh] overflow-y-auto">
+          {([
+            { key: "titulo", label: "Título *", placeholder: "Projeto Website" },
+            { key: "empresa", label: "Empresa", placeholder: "Acme Ltda" },
+            { key: "responsavel", label: "Responsável", placeholder: "Carlos (PM)" },
+          ] as const).map(f => (
+            <div key={f.key} className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">{f.label}</label>
+              <Input value={(form as Record<string, string>)[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} className="bg-background" />
+            </div>
+          ))}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Início</label>
+              <Input type="date" value={form.data_inicio} onChange={e => set("data_inicio", e.target.value)} className="bg-background" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Previsão de entrega</label>
+              <Input type="date" value={form.data_fim_previsto} onChange={e => set("data_fim_previsto", e.target.value)} className="bg-background" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Observações</label>
+            <textarea value={form.observacoes} onChange={e => set("observacoes", e.target.value)} rows={3} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-border">
+          <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving} className="gap-2">
+            {saving && <Loader2 className="size-3.5 animate-spin" />}
+            {initial ? "Salvar" : "Criar projeto"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Conversation Tab (Lead only) ─────────────────────────────────────────────
 
 function ConversationTab({ lead }: { lead: CRMLead }) {
   const [messages, setMessages] = useState<LeadMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { setMessages(await getLeadMessages(lead.id)); }
-    catch { /* ignore */ }
-    finally { setLoading(false); }
-  }, [lead.id]);
-
-  useEffect(() => { void load(); }, [load]);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-
-  const handleSend = async () => {
-    if (!input.trim() || sending) return;
-    const msg = input.trim();
-    setInput("");
-    setSending(true);
-    try {
-      const result = await qualifyLead(lead.id, msg);
-      setMessages(prev => [
-        ...prev,
-        { id: Date.now(), role: "user", content: msg, created_at: new Date().toISOString() },
-        { id: Date.now() + 1, role: "agent", content: result.response, created_at: new Date().toISOString() },
-      ]);
-    } catch {
-      toast.error("Erro ao enviar mensagem.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const visibleMessages = messages.filter(m => m.role !== "system");
-
-  // Group messages by date
-  const grouped: { date: string; msgs: LeadMessage[] }[] = [];
-  for (const m of visibleMessages) {
-    const d = fmtDate(m.created_at);
-    const last = grouped[grouped.length - 1];
-    if (last?.date === d) last.msgs.push(m);
-    else grouped.push({ date: d, msgs: [m] });
-  }
-
-  if (loading) return <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">Carregando...</div>;
-
-  return (
-    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "hsl(var(--background))" }}>
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-1">
-        {visibleMessages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3 py-12">
-            <MessageCircle className="size-10 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground text-center">Nenhuma mensagem ainda.</p>
-            <p className="text-xs text-muted-foreground/60 text-center">
-              Mensagens do WhatsApp/Telegram aparecem aqui automaticamente.
-            </p>
-          </div>
-        ) : (
-          grouped.map(group => (
-            <div key={group.date}>
-              <div className="flex justify-center my-3">
-                <span className="text-[10px] bg-muted/60 text-muted-foreground px-2 py-0.5 rounded-full">{group.date}</span>
-              </div>
-              <div className="space-y-1.5">
-                {group.msgs.map(m => (
-                  <div key={m.id} className={`flex ${m.role === "user" ? "justify-start" : "justify-end"}`}>
-                    <div className={`max-w-[75%] rounded-2xl px-3 py-2 ${
-                      m.role === "user"
-                        ? "bg-muted text-foreground rounded-tl-sm"
-                        : "bg-primary text-primary-foreground rounded-tr-sm"
-                    }`}>
-                      {m.role === "agent" && (
-                        <div className="flex items-center gap-1 mb-1">
-                          <Bot className="size-3 opacity-70" />
-                          <span className="text-[9px] opacity-70 font-medium">Agente</span>
-                        </div>
-                      )}
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{m.content}</p>
-                      <p className={`text-[10px] mt-1 text-right ${m.role === "user" ? "text-muted-foreground" : "text-primary-foreground/70"}`}>
-                        {fmtTime(m.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
-        )}
-        <div ref={endRef} />
-      </div>
-
-      {/* Input */}
-      <div className="p-3 border-t border-border bg-card/50 shrink-0">
-        <div className="flex gap-2">
-          <Input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && !e.shiftKey && void handleSend()}
-            placeholder="Simular mensagem do lead..."
-            className="bg-background text-sm"
-            disabled={sending}
-          />
-          <Button size="sm" onClick={handleSend} disabled={sending || !input.trim()} className="shrink-0">
-            {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-          </Button>
-        </div>
-        <p className="text-[10px] text-muted-foreground mt-1.5">
-          Simule uma mensagem do lead para o agente qualificar e responder.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ─── Outcome Buttons ──────────────────────────────────────────────────────────
-
-function OutcomeSection({
-  lead, onUpdated,
-}: {
-  lead: CRMLead;
-  onUpdated: (lead: CRMLead) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const main = lead.stage_main;
-
-  const apply = async (outcome: LeadOutcome) => {
-    setBusy(true);
-    try {
-      const updated = await setLeadOutcome(lead.id, outcome);
-      onUpdated(updated);
-      const moved = updated.stage_main !== main;
-      if (moved) {
-        toast.success(`Lead avançado para ${updated.stage_main === "deal" ? "Deals" : "Project"}!`);
-      } else if (outcome === "perdido" || outcome === "cancelado") {
-        toast.success("Desfecho registrado.");
-      } else {
-        toast.success("Desfecho salvo.");
-      }
-    } catch {
-      toast.error("Erro ao definir desfecho.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (main === "lead") {
-    return (
-      <div className="px-5 py-4 border-t border-border">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Desfecho</p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm" variant="outline"
-            className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-            onClick={() => void apply("vendido")} disabled={busy || lead.outcome === "vendido"}
-          >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
-            Vendido → Deals
-          </Button>
-          <Button
-            size="sm" variant="outline"
-            className="gap-1.5 h-8 text-xs border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
-            onClick={() => void apply("concluido")} disabled={busy || lead.outcome === "concluido"}
-          >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
-            Concluído → Deals
-          </Button>
-          <Button
-            size="sm" variant="outline"
-            className="gap-1.5 h-8 text-xs border-red-500/40 text-red-400 hover:bg-red-500/10"
-            onClick={() => void apply("perdido")} disabled={busy || lead.outcome === "perdido"}
-          >
-            <XCircle className="size-3.5" /> Perdido
-          </Button>
-        </div>
-        {lead.outcome && (
-          <p className="text-[11px] text-muted-foreground mt-2">
-            Desfecho atual: <span className="font-medium text-foreground capitalize">{lead.outcome.replace("_", " ")}</span>
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  if (main === "deal") {
-    return (
-      <div className="px-5 py-4 border-t border-border">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Desfecho</p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm" variant="outline"
-            className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-            onClick={() => void apply("contrato_assinado")} disabled={busy || lead.outcome === "contrato_assinado"}
-          >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
-            Contrato Assinado → Project
-          </Button>
-          <Button
-            size="sm" variant="outline"
-            className="gap-1.5 h-8 text-xs border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
-            onClick={() => void apply("concluido")} disabled={busy || lead.outcome === "concluido"}
-          >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
-            Concluído → Project
-          </Button>
-          <Button
-            size="sm" variant="outline"
-            className="gap-1.5 h-8 text-xs border-red-500/40 text-red-400 hover:bg-red-500/10"
-            onClick={() => void apply("cancelado")} disabled={busy || lead.outcome === "cancelado"}
-          >
-            <XCircle className="size-3.5" /> Cancelado
-          </Button>
-        </div>
-        {lead.outcome && (
-          <p className="text-[11px] text-muted-foreground mt-2">
-            Desfecho atual: <span className="font-medium text-foreground capitalize">{lead.outcome.replace("_", " ")}</span>
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  return null;
-}
-
-// ─── Lead Detail Modal ────────────────────────────────────────────────────────
-
-function LeadDetailModal({
-  lead, stages, onClose, onUpdated, onDeleted,
-}: {
-  lead: CRMLead;
-  stages: CRMStage[];
-  onClose: () => void;
-  onUpdated: (lead: CRMLead) => void;
-  onDeleted: (id: number) => void;
-}) {
-  const [tab, setTab] = useState<"info" | "conversa" | "agente">("conversa");
-  const [editing, setEditing] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [localLead, setLocalLead] = useState(lead);
-
-  useEffect(() => { setLocalLead(lead); setConfirmDelete(false); }, [lead]);
-
-  const handleDeleteClick = () => setConfirmDelete(true);
-
-  const handleDeleteConfirm = async () => {
-    setDeleting(true);
-    try {
-      await deleteLead(localLead.id);
-      toast.success(`${localLead.stage_main === "deal" ? "Deal" : localLead.stage_main === "project" ? "Project" : "Lead"} "${localLead.nome}" excluído.`);
-      onDeleted(localLead.id);
-      onClose();
-    } catch {
-      toast.error("Erro ao excluir.");
-      setDeleting(false);
-      setConfirmDelete(false);
-    }
-  };
-
-  const handleUpdated = (updated: CRMLead) => {
-    setLocalLead(updated);
-    onUpdated(updated);
-  };
-
-  const mainLabel = localLead.stage_main === "deal" ? "Deal" : localLead.stage_main === "project" ? "Project" : "Lead";
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-card border border-border rounded-xl w-full max-w-2xl shadow-2xl flex flex-col" style={{ maxHeight: "90vh" }}>
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="grid size-10 place-items-center rounded-full bg-muted text-sm font-bold text-foreground/70 shrink-0">
-              {initials(localLead.nome)}
-            </span>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-base font-semibold text-foreground truncate">{localLead.nome}</p>
-                <Badge variant="outline" className="text-[10px] h-5 shrink-0">{mainLabel}</Badge>
-                {localLead.stage_name && (
-                  <Badge variant="outline" className="text-[10px] h-5 gap-1 shrink-0">
-                    {colorDot(localLead.stage_color ?? "blue")}
-                    {localLead.stage_name}
-                  </Badge>
-                )}
-              </div>
-              {localLead.empresa && <p className="text-sm text-muted-foreground truncate">{localLead.empresa}</p>}
-            </div>
-          </div>
-          <div className="flex items-center gap-1 shrink-0 ml-2">
-            {localLead.valor_estimado && (
-              <span className="text-sm font-semibold text-emerald-400 mr-2">{fmtValue(localLead.valor_estimado)}</span>
-            )}
-            {!confirmDelete ? (
-              <>
-                <button onClick={() => setEditing(true)} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Editar">
-                  <Pencil className="size-3.5" />
-                </button>
-                <button onClick={handleDeleteClick} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Excluir">
-                  <Trash2 className="size-3.5" />
-                </button>
-              </>
-            ) : (
-              <div className="flex items-center gap-1.5 mr-1">
-                <span className="text-xs text-muted-foreground">Excluir?</span>
-                <Button
-                  size="sm" variant="destructive"
-                  className="h-6 px-2 text-xs gap-1"
-                  onClick={handleDeleteConfirm}
-                  disabled={deleting}
-                >
-                  {deleting ? <Loader2 className="size-3 animate-spin" /> : null}
-                  Sim
-                </Button>
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="grid size-6 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors text-xs"
-                >
-                  Não
-                </button>
-              </div>
-            )}
-            <button onClick={onClose} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Fechar">
-              <X className="size-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex border-b border-border shrink-0">
-          {([
-            { key: "conversa", label: "Conversa", icon: <MessageCircle className="size-3.5" /> },
-            { key: "info",     label: "Informações", icon: <User className="size-3.5" /> },
-            { key: "agente",   label: "Agente", icon: <Bot className="size-3.5" /> },
-          ] as const).map(t => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${
-                tab === t.key
-                  ? "text-foreground border-b-2 border-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {t.icon}{t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-          {tab === "conversa" && <ConversationTab lead={localLead} />}
-
-          {tab === "info" && (
-            <div className="flex-1 overflow-y-auto p-5 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { icon: <Mail className="size-4" />, label: "E-mail", value: localLead.email },
-                  { icon: <Phone className="size-4" />, label: "Telefone", value: localLead.telefone },
-                  { icon: <Briefcase className="size-4" />, label: "Cargo", value: localLead.cargo },
-                  { icon: <User className="size-4" />, label: "Responsável", value: localLead.responsavel },
-                  { icon: <DollarSign className="size-4" />, label: "Valor estimado", value: localLead.valor_estimado ? fmtValue(localLead.valor_estimado) : null },
-                  { icon: <MessageSquare className="size-4" />, label: "Origem", value: localLead.origem },
-                ].filter(r => r.value).map(r => (
-                  <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
-                    <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
-                    <div className="min-w-0">
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
-                      <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {localLead.observacoes && (
-                <div className="p-3 rounded-lg bg-muted/30">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
-                  <p className="text-sm text-foreground/80 leading-relaxed">{localLead.observacoes}</p>
-                </div>
-              )}
-
-              <p className="text-[11px] text-muted-foreground">
-                Criado em {new Date(localLead.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}
-              </p>
-            </div>
-          )}
-
-          {tab === "agente" && (
-            <AgentTab lead={localLead} stages={stages} onUpdated={handleUpdated} />
-          )}
-        </div>
-
-        {/* Outcome section — only for lead/deal stages */}
-        {(localLead.stage_main === "lead" || localLead.stage_main === "deal") && (
-          <OutcomeSection lead={localLead} onUpdated={handleUpdated} />
-        )}
-      </div>
-
-      {editing && (
-        <LeadFormDialog
-          initial={localLead}
-          onClose={() => setEditing(false)}
-          onSaved={updated => { handleUpdated(updated); setEditing(false); }}
-        />
-      )}
-    </div>
-  );
-}
-
-// ─── Agent Tab (AI agent chat) ────────────────────────────────────────────────
-
-function AgentTab({
-  lead, stages, onUpdated,
-}: {
-  lead: CRMLead;
-  stages: CRMStage[];
-  onUpdated: (lead: CRMLead) => void;
-}) {
-  const [messages, setMessages] = useState<LeadMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [sending, setSending] = useState(false);
   const [closingSuggested, setClosingSuggested] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setLoadingMessages(true);
-    void getLeadMessages(lead.id)
-      .then(setMessages)
-      .catch(() => { /* ignore */ })
-      .finally(() => setLoadingMessages(false));
+    setLoading(true);
+    void getLeadMessages(lead.id).then(setMessages).catch(() => {}).finally(() => setLoading(false));
   }, [lead.id]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
@@ -762,69 +617,69 @@ function AgentTab({
     }
   };
 
-  const handleMoveToDeals = async () => {
-    const dealStage = stages.find(s => s.main_stage === "deal" && !s.is_lost);
-    if (!dealStage) { toast.error("Nenhuma etapa de Deal configurada."); return; }
-    try {
-      const updated = await moveLead(lead.id, dealStage.id);
-      onUpdated(updated);
-      toast.success(`Lead movido para ${dealStage.name}.`);
-      setClosingSuggested(false);
-    } catch { toast.error("Erro ao mover lead."); }
-  };
+  const visible = messages.filter(m => m.role !== "system");
+  const grouped: { date: string; msgs: LeadMessage[] }[] = [];
+  for (const m of visible) {
+    const d = fmtDateFull(m.created_at);
+    const last = grouped[grouped.length - 1];
+    if (last?.date === d) last.msgs.push(m);
+    else grouped.push({ date: d, msgs: [m] });
+  }
+
+  if (loading) return <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">Carregando...</div>;
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex flex-col flex-1 overflow-hidden">
       {closingSuggested && (
-        <div className="mx-4 mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2 shrink-0">
-          <CheckCircle2 className="size-4 text-emerald-400 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-emerald-400">Pronto para avançar!</p>
-            <p className="text-[11px] text-emerald-400/80 mt-0.5">O agente detectou interesse. Mova para Deals?</p>
-          </div>
-          <Button size="sm" onClick={handleMoveToDeals} className="shrink-0 h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-500">
-            <ArrowRight className="size-3" /> Deals
-          </Button>
+        <div className="mx-4 mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2 shrink-0">
+          <CheckCircle2 className="size-4 text-emerald-400 shrink-0" />
+          <p className="text-xs text-emerald-400 flex-1">Agente detectou interesse! Considere converter em Deal.</p>
+          <button onClick={() => setClosingSuggested(false)} className="text-emerald-400/60 hover:text-emerald-400"><X className="size-3.5" /></button>
         </div>
       )}
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {loadingMessages ? (
-          <div className="text-center py-6 text-xs text-muted-foreground">Carregando...</div>
-        ) : messages.filter(m => m.role !== "system").length === 0 ? (
-          <div className="text-center py-8 space-y-2">
-            <Bot className="size-8 text-muted-foreground/40 mx-auto" />
-            <p className="text-xs text-muted-foreground">Inicie a conversa com o agente comercial.</p>
-            <p className="text-[11px] text-muted-foreground/60">Ele vai responder dúvidas do lead e qualificar o interesse.</p>
+      <div className="flex-1 overflow-y-auto p-4 space-y-1">
+        {visible.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 py-12">
+            <MessageCircle className="size-10 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground text-center">Nenhuma mensagem ainda.</p>
+            <p className="text-xs text-muted-foreground/60 text-center">Mensagens de canais conectados aparecem aqui.</p>
           </div>
         ) : (
-          messages.filter(m => m.role !== "system").map(m => (
-            <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              {m.role === "agent" && (
-                <span className="grid size-6 place-items-center rounded-full bg-primary/20 text-primary shrink-0 mr-2 mt-0.5">
-                  <Bot className="size-3.5" />
-                </span>
-              )}
-              <div className={`max-w-[80%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
-                m.role === "user"
-                  ? "bg-primary text-primary-foreground rounded-br-sm"
-                  : "bg-muted text-foreground rounded-bl-sm"
-              }`}>
-                {m.content}
+          grouped.map(group => (
+            <div key={group.date}>
+              <div className="flex justify-center my-3">
+                <span className="text-[10px] bg-muted/60 text-muted-foreground px-2 py-0.5 rounded-full">{group.date}</span>
+              </div>
+              <div className="space-y-1.5">
+                {group.msgs.map(m => (
+                  <div key={m.id} className={`flex ${m.role === "user" ? "justify-start" : "justify-end"}`}>
+                    <div className={`max-w-[75%] rounded-2xl px-3 py-2 ${m.role === "user" ? "bg-muted text-foreground rounded-tl-sm" : "bg-primary text-primary-foreground rounded-tr-sm"}`}>
+                      {m.role === "agent" && (
+                        <div className="flex items-center gap-1 mb-1">
+                          <Bot className="size-3 opacity-70" />
+                          <span className="text-[9px] opacity-70 font-medium">Agente</span>
+                        </div>
+                      )}
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{m.content}</p>
+                      <p className={`text-[10px] mt-1 text-right ${m.role === "user" ? "text-muted-foreground" : "text-primary-foreground/70"}`}>
+                        {fmtTime(m.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))
         )}
         <div ref={endRef} />
       </div>
-
-      <div className="p-3 border-t border-border shrink-0">
+      <div className="p-3 border-t border-border bg-card/50 shrink-0">
         <div className="flex gap-2">
           <Input
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === "Enter" && !e.shiftKey && void handleSend()}
-            placeholder="Mensagem do lead..."
+            placeholder="Simular mensagem do lead..."
             className="bg-background text-sm"
             disabled={sending}
           />
@@ -832,9 +687,579 @@ function AgentTab({
             {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
           </Button>
         </div>
-        <p className="text-[10px] text-muted-foreground mt-1">Simule a mensagem do lead para que o agente responda</p>
+        <p className="text-[10px] text-muted-foreground mt-1.5">Simule uma mensagem do lead para o agente qualificar e responder.</p>
       </div>
     </div>
+  );
+}
+
+// ─── Modal shell helpers ───────────────────────────────────────────────────────
+
+function ModalShell({
+  title, subtitle, badge, icon, extra, onEdit, onDelete, onClose, children, footer,
+}: {
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  icon?: React.ReactNode;
+  extra?: React.ReactNode;
+  onEdit: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-card border border-border rounded-xl w-full max-w-2xl shadow-2xl flex flex-col" style={{ maxHeight: "90vh" }}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            {icon}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-base font-semibold text-foreground truncate">{title}</p>
+                {badge && <Badge variant="outline" className="text-[10px] h-5 shrink-0">{badge}</Badge>}
+              </div>
+              {subtitle && <p className="text-sm text-muted-foreground truncate">{subtitle}</p>}
+            </div>
+          </div>
+          <div className="flex items-center gap-1 shrink-0 ml-2">
+            {extra}
+            {!confirmDelete ? (
+              <>
+                <button onClick={onEdit} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Editar">
+                  <Pencil className="size-3.5" />
+                </button>
+                <button onClick={() => setConfirmDelete(true)} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Excluir">
+                  <Trash2 className="size-3.5" />
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-1.5 mr-1">
+                <span className="text-xs text-muted-foreground">Excluir?</span>
+                <Button
+                  size="sm" variant="destructive" className="h-6 px-2 text-xs gap-1"
+                  onClick={async () => {
+                    setDeleting(true);
+                    try { await onDelete(); }
+                    finally { setDeleting(false); setConfirmDelete(false); }
+                  }}
+                  disabled={deleting}
+                >
+                  {deleting ? <Loader2 className="size-3 animate-spin" /> : null} Sim
+                </Button>
+                <button onClick={() => setConfirmDelete(false)} className="grid size-6 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors text-xs">Não</button>
+              </div>
+            )}
+            <button onClick={onClose} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Fechar">
+              <X className="size-4" />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden flex flex-col">
+          {children}
+        </div>
+        {footer}
+      </div>
+    </div>
+  );
+}
+
+// ─── Lead Detail Modal ────────────────────────────────────────────────────────
+
+function LeadDetailModal({
+  lead, onClose, onUpdated, onDeleted, onConverted,
+}: {
+  lead: CRMLead;
+  onClose: () => void;
+  onUpdated: (lead: CRMLead) => void;
+  onDeleted: (id: number) => void;
+  onConverted: (deal: CRMDeal) => void;
+}) {
+  const [tab, setTab] = useState<"conversa" | "info">("conversa");
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [local, setLocal] = useState(lead);
+  useEffect(() => { setLocal(lead); }, [lead]);
+
+  const handleConvert = async () => {
+    setBusy(true);
+    try {
+      const deal = await convertLeadToDeal(local.id);
+      const updatedLead = { ...local, outcome: "convertido" as LeadOutcome };
+      setLocal(updatedLead);
+      onUpdated(updatedLead);
+      onConverted(deal);
+      toast.success(`Deal "${deal.titulo}" criado!`);
+    } catch {
+      toast.error("Erro ao converter lead.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleOutcome = async (outcome: LeadOutcome) => {
+    setBusy(true);
+    try {
+      const updated = await setLeadOutcome(local.id, outcome);
+      setLocal(updated);
+      onUpdated(updated);
+      toast.success("Desfecho registrado.");
+    } catch {
+      toast.error("Erro ao definir desfecho.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalShell
+      title={local.nome}
+      subtitle={local.empresa}
+      badge={local.stage_name ?? undefined}
+      icon={
+        <span className="grid size-10 place-items-center rounded-full bg-indigo-500/15 text-sm font-bold text-indigo-400 shrink-0">
+          {initials(local.nome)}
+        </span>
+      }
+      extra={
+        local.valor_estimado ? (
+          <span className="text-sm font-semibold text-emerald-400 mr-1">{fmtCurrency(local.valor_estimado)}</span>
+        ) : null
+      }
+      onEdit={() => setEditing(true)}
+      onDelete={async () => {
+        await deleteLead(local.id);
+        toast.success(`Lead "${local.nome}" excluído.`);
+        onDeleted(local.id);
+        onClose();
+      }}
+      onClose={onClose}
+      footer={
+        <div className="px-5 py-3 border-t border-border shrink-0">
+          <div className="flex flex-wrap gap-2">
+            {local.outcome !== "convertido" && (
+              <Button
+                size="sm" variant="outline"
+                className="gap-1.5 h-8 text-xs border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                onClick={handleConvert} disabled={busy}
+              >
+                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
+                Converter em Deal
+              </Button>
+            )}
+            {local.outcome !== "perdido" && (
+              <Button
+                size="sm" variant="outline"
+                className="gap-1.5 h-8 text-xs border-red-500/40 text-red-400 hover:bg-red-500/10"
+                onClick={() => void handleOutcome("perdido")} disabled={busy}
+              >
+                <XCircle className="size-3.5" /> Perdido
+              </Button>
+            )}
+            {local.outcome !== "cancelado" && (
+              <Button
+                size="sm" variant="outline"
+                className="gap-1.5 h-8 text-xs border-muted-foreground/30 text-muted-foreground hover:bg-muted/40"
+                onClick={() => void handleOutcome("cancelado")} disabled={busy}
+              >
+                Cancelado
+              </Button>
+            )}
+            {local.outcome && (
+              <span className="text-xs text-muted-foreground self-center ml-1">
+                Atual: <span className="font-medium text-foreground capitalize">{local.outcome.replace("_", " ")}</span>
+              </span>
+            )}
+          </div>
+        </div>
+      }
+    >
+      <div className="flex border-b border-border shrink-0">
+        {([
+          { key: "conversa" as const, label: "Conversa", icon: <MessageCircle className="size-3.5" /> },
+          { key: "info" as const, label: "Informações", icon: <User className="size-3.5" /> },
+        ]).map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${tab === t.key ? "text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            {t.icon}{t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "conversa" && <ConversationTab lead={local} />}
+
+      {tab === "info" && (
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-5 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { icon: <Mail className="size-4" />, label: "E-mail", value: local.email },
+                { icon: <Phone className="size-4" />, label: "Telefone", value: local.telefone },
+                { icon: <Briefcase className="size-4" />, label: "Cargo", value: local.cargo },
+                { icon: <User className="size-4" />, label: "Responsável", value: local.responsavel },
+                { icon: <DollarSign className="size-4" />, label: "Valor estimado", value: local.valor_estimado ? fmtCurrency(local.valor_estimado) : null },
+                { icon: <MessageSquare className="size-4" />, label: "Origem", value: local.origem },
+              ].filter(r => r.value).map(r => (
+                <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
+                  <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
+                    <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {local.observacoes && (
+              <div className="p-3 rounded-lg bg-muted/30">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
+                <p className="text-sm text-foreground/80 leading-relaxed">{local.observacoes}</p>
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
+          </div>
+          <CustomFieldsView fields={local.custom_fields} />
+        </div>
+      )}
+
+      {editing && (
+        <LeadFormDialog
+          initial={local}
+          onClose={() => setEditing(false)}
+          onSaved={updated => { setLocal(updated); onUpdated(updated); setEditing(false); }}
+        />
+      )}
+    </ModalShell>
+  );
+}
+
+// ─── Deal Detail Modal ────────────────────────────────────────────────────────
+
+function DealDetailModal({
+  deal, onClose, onUpdated, onDeleted, onConverted,
+}: {
+  deal: CRMDeal;
+  onClose: () => void;
+  onUpdated: (deal: CRMDeal) => void;
+  onDeleted: (id: number) => void;
+  onConverted: (project: CRMProject) => void;
+}) {
+  const [tab, setTab] = useState<"info" | "campos">("info");
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [local, setLocal] = useState(deal);
+  useEffect(() => { setLocal(deal); }, [deal]);
+
+  const handleConvert = async () => {
+    setBusy(true);
+    try {
+      const project = await convertDealToProject(local.id);
+      onConverted(project);
+      toast.success(`Projeto "${project.titulo}" criado!`);
+    } catch {
+      toast.error("Erro ao converter deal em projeto.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleOutcome = async (outcome: DealOutcome) => {
+    setBusy(true);
+    try {
+      const updated = await setDealOutcome(local.id, outcome);
+      setLocal(updated);
+      onUpdated(updated);
+      if (outcome === "ganho" || outcome === "contrato_assinado") {
+        toast.success("Deal ganho! Projeto criado automaticamente se não existia.");
+      } else {
+        toast.success("Desfecho registrado.");
+      }
+    } catch {
+      toast.error("Erro ao definir desfecho.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalShell
+      title={local.titulo}
+      subtitle={local.empresa}
+      badge={local.stage_name ?? undefined}
+      icon={
+        <span className="grid size-10 place-items-center rounded-full bg-amber-500/15 text-sm font-bold text-amber-400 shrink-0">
+          <DollarSign className="size-5" />
+        </span>
+      }
+      extra={
+        local.valor ? (
+          <span className="text-sm font-semibold text-emerald-400 mr-1">{fmtCurrency(local.valor, local.moeda)}</span>
+        ) : null
+      }
+      onEdit={() => setEditing(true)}
+      onDelete={async () => {
+        await deleteDeal(local.id);
+        toast.success(`Deal "${local.titulo}" excluído.`);
+        onDeleted(local.id);
+        onClose();
+      }}
+      onClose={onClose}
+      footer={
+        <div className="px-5 py-3 border-t border-border shrink-0">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm" variant="outline"
+              className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+              onClick={() => void handleOutcome("ganho")} disabled={busy || local.outcome === "ganho"}
+            >
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+              Ganho
+            </Button>
+            <Button
+              size="sm" variant="outline"
+              className="gap-1.5 h-8 text-xs border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
+              onClick={() => void handleOutcome("contrato_assinado")} disabled={busy || local.outcome === "contrato_assinado"}
+            >
+              Contrato Assinado → Projeto
+            </Button>
+            <Button
+              size="sm" variant="outline"
+              className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+              onClick={handleConvert} disabled={busy}
+            >
+              <ArrowRight className="size-3.5" /> Converter em Projeto
+            </Button>
+            <Button
+              size="sm" variant="outline"
+              className="gap-1.5 h-8 text-xs border-red-500/40 text-red-400 hover:bg-red-500/10"
+              onClick={() => void handleOutcome("perdido")} disabled={busy || local.outcome === "perdido"}
+            >
+              <XCircle className="size-3.5" /> Perdido
+            </Button>
+            {local.outcome && (
+              <span className="text-xs text-muted-foreground self-center ml-1">
+                Atual: <span className="font-medium text-foreground capitalize">{local.outcome.replace("_", " ")}</span>
+              </span>
+            )}
+          </div>
+        </div>
+      }
+    >
+      <div className="flex border-b border-border shrink-0">
+        {([
+          { key: "info" as const, label: "Informações", icon: <Briefcase className="size-3.5" /> },
+          { key: "campos" as const, label: "Campos extra", icon: <Settings className="size-3.5" /> },
+        ]).map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${tab === t.key ? "text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            {t.icon}{t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "info" && (
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-5 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { icon: <User className="size-4" />, label: "Responsável", value: local.responsavel },
+                { icon: <DollarSign className="size-4" />, label: "Valor", value: local.valor ? fmtCurrency(local.valor, local.moeda) : null },
+                { icon: <Calendar className="size-4" />, label: "Previsão de fechamento", value: local.data_fechamento_previsto ? fmtDate(local.data_fechamento_previsto) : null },
+                { icon: <MessageSquare className="size-4" />, label: "Lead de origem", value: local.lead_nome },
+              ].filter(r => r.value).map(r => (
+                <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
+                  <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
+                    <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {local.observacoes && (
+              <div className="p-3 rounded-lg bg-muted/30">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
+                <p className="text-sm text-foreground/80 leading-relaxed">{local.observacoes}</p>
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
+          </div>
+        </div>
+      )}
+
+      {tab === "campos" && (
+        <div className="flex-1 overflow-y-auto">
+          {local.custom_fields.length > 0
+            ? <CustomFieldsView fields={local.custom_fields} />
+            : <p className="text-sm text-muted-foreground p-5">Nenhum campo personalizado configurado para Deal.</p>}
+        </div>
+      )}
+
+      {editing && (
+        <DealFormDialog
+          initial={local}
+          onClose={() => setEditing(false)}
+          onSaved={updated => { setLocal(updated); onUpdated(updated); setEditing(false); }}
+        />
+      )}
+    </ModalShell>
+  );
+}
+
+// ─── Project Detail Modal ─────────────────────────────────────────────────────
+
+function ProjectDetailModal({
+  project, onClose, onUpdated, onDeleted,
+}: {
+  project: CRMProject;
+  onClose: () => void;
+  onUpdated: (project: CRMProject) => void;
+  onDeleted: (id: number) => void;
+}) {
+  const [tab, setTab] = useState<"info" | "campos">("info");
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [local, setLocal] = useState(project);
+  useEffect(() => { setLocal(project); }, [project]);
+
+  const handleOutcome = async (outcome: ProjectOutcome) => {
+    setBusy(true);
+    try {
+      const updated = await setProjectOutcome(local.id, outcome);
+      setLocal(updated);
+      onUpdated(updated);
+      toast.success("Desfecho registrado.");
+    } catch {
+      toast.error("Erro ao definir desfecho.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalShell
+      title={local.titulo}
+      subtitle={local.empresa}
+      badge={local.stage_name ?? undefined}
+      icon={
+        <span className="grid size-10 place-items-center rounded-full bg-emerald-500/15 text-sm font-bold text-emerald-400 shrink-0">
+          <Package2 className="size-5" />
+        </span>
+      }
+      onEdit={() => setEditing(true)}
+      onDelete={async () => {
+        await deleteProject(local.id);
+        toast.success(`Projeto "${local.titulo}" excluído.`);
+        onDeleted(local.id);
+        onClose();
+      }}
+      onClose={onClose}
+      footer={
+        <div className="px-5 py-3 border-t border-border shrink-0">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm" variant="outline"
+              className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+              onClick={() => void handleOutcome("concluido")} disabled={busy || local.outcome === "concluido"}
+            >
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+              Concluído
+            </Button>
+            <Button
+              size="sm" variant="outline"
+              className="gap-1.5 h-8 text-xs border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10"
+              onClick={() => void handleOutcome("pausado")} disabled={busy || local.outcome === "pausado"}
+            >
+              Pausado
+            </Button>
+            <Button
+              size="sm" variant="outline"
+              className="gap-1.5 h-8 text-xs border-red-500/40 text-red-400 hover:bg-red-500/10"
+              onClick={() => void handleOutcome("cancelado")} disabled={busy || local.outcome === "cancelado"}
+            >
+              <XCircle className="size-3.5" /> Cancelado
+            </Button>
+            {local.outcome && (
+              <span className="text-xs text-muted-foreground self-center ml-1">
+                Atual: <span className="font-medium text-foreground capitalize">{local.outcome}</span>
+              </span>
+            )}
+          </div>
+        </div>
+      }
+    >
+      <div className="flex border-b border-border shrink-0">
+        {([
+          { key: "info" as const, label: "Informações", icon: <Package2 className="size-3.5" /> },
+          { key: "campos" as const, label: "Campos extra", icon: <Settings className="size-3.5" /> },
+        ]).map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${tab === t.key ? "text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            {t.icon}{t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "info" && (
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-5 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { icon: <User className="size-4" />, label: "Responsável", value: local.responsavel },
+                { icon: <Calendar className="size-4" />, label: "Início", value: local.data_inicio ? fmtDate(local.data_inicio) : null },
+                { icon: <Calendar className="size-4" />, label: "Previsão de entrega", value: local.data_fim_previsto ? fmtDate(local.data_fim_previsto) : null },
+                { icon: <CheckCircle2 className="size-4" />, label: "Entregue em", value: local.data_fim_realizado ? fmtDate(local.data_fim_realizado) : null },
+                { icon: <DollarSign className="size-4" />, label: "Deal de origem", value: local.deal_titulo },
+                { icon: <MessageSquare className="size-4" />, label: "Lead de origem", value: local.lead_nome },
+              ].filter(r => r.value).map(r => (
+                <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
+                  <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
+                    <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {local.observacoes && (
+              <div className="p-3 rounded-lg bg-muted/30">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
+                <p className="text-sm text-foreground/80 leading-relaxed">{local.observacoes}</p>
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
+          </div>
+        </div>
+      )}
+
+      {tab === "campos" && (
+        <div className="flex-1 overflow-y-auto">
+          {local.custom_fields.length > 0
+            ? <CustomFieldsView fields={local.custom_fields} />
+            : <p className="text-sm text-muted-foreground p-5">Nenhum campo personalizado configurado para Projeto.</p>}
+        </div>
+      )}
+
+      {editing && (
+        <ProjectFormDialog
+          initial={local}
+          onClose={() => setEditing(false)}
+          onSaved={updated => { setLocal(updated); onUpdated(updated); setEditing(false); }}
+        />
+      )}
+    </ModalShell>
   );
 }
 
@@ -881,7 +1306,7 @@ function StageConfigDialog({
           <button onClick={() => { onSaved(); onClose(); }} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
         </div>
         <div className="px-5 py-4 space-y-4 max-h-[65vh] overflow-y-auto">
-          {MAIN_STAGES.map(ms => (
+          {TAB_META.map(ms => (
             <div key={ms.key}>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{ms.label}</p>
               <div className="space-y-1">
@@ -901,16 +1326,11 @@ function StageConfigDialog({
               </div>
             </div>
           ))}
-
           <div className="border-t border-border pt-4 space-y-2">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nova etapa</p>
             <div className="flex gap-2">
-              <select
-                value={newMain}
-                onChange={e => setNewMain(e.target.value as MainStage)}
-                className="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-              >
-                {MAIN_STAGES.map(ms => <option key={ms.key} value={ms.key}>{ms.label}</option>)}
+              <select value={newMain} onChange={e => setNewMain(e.target.value as MainStage)} className="rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+                {TAB_META.map(ms => <option key={ms.key} value={ms.key}>{ms.label}</option>)}
               </select>
               <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nome da etapa" className="flex-1 bg-background" onKeyDown={e => e.key === "Enter" && void handleAdd()} />
               <Button size="sm" onClick={handleAdd} disabled={saving || !newName.trim()} className="gap-1.5 shrink-0">
@@ -931,9 +1351,13 @@ export function CRMKanban() {
   const [view, setView] = useState<"kanban" | "channels">("kanban");
   const [pipeline, setPipeline] = useState<CRMPipeline | null>(null);
   const [leads, setLeads] = useState<CRMLead[]>([]);
+  const [deals, setDeals] = useState<CRMDeal[]>([]);
+  const [projects, setProjects] = useState<CRMProject[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeMain, setActiveMain] = useState<MainStage>("lead");
+  const [activeTab, setActiveTab] = useState<MainStage>("lead");
   const [selectedLead, setSelectedLead] = useState<CRMLead | null>(null);
+  const [selectedDeal, setSelectedDeal] = useState<CRMDeal | null>(null);
+  const [selectedProject, setSelectedProject] = useState<CRMProject | null>(null);
   const [addingToStage, setAddingToStage] = useState<CRMStage | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [search, setSearch] = useState("");
@@ -945,9 +1369,16 @@ export function CRMKanban() {
         const seeded = await seedDefaultPipeline();
         pipelines = [seeded];
       }
-      const p = pipelines.find(p => p.is_default) ?? pipelines[0]!;
+      const p = pipelines.find(pp => pp.is_default) ?? pipelines[0]!;
       setPipeline(p);
-      setLeads(await listLeads({ pipeline: p.id }));
+      const [l, d, pr] = await Promise.all([
+        listLeads({ pipeline: p.id }),
+        listDeals({ pipeline: p.id }),
+        listProjects({ pipeline: p.id }),
+      ]);
+      setLeads(l);
+      setDeals(d);
+      setProjects(pr);
     } catch {
       toast.error("Erro ao carregar CRM.");
     } finally {
@@ -957,34 +1388,51 @@ export function CRMKanban() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const handleDrop = async (e: React.DragEvent, stageId: number) => {
+  const handleDropLead = async (e: React.DragEvent, stageId: number) => {
     e.preventDefault();
-    const leadId = Number(e.dataTransfer.getData("leadId"));
-    if (!leadId) return;
+    const id = Number(e.dataTransfer.getData("leadId"));
+    if (!id) return;
     try {
-      const updated = await moveLead(leadId, stageId);
-      setLeads(prev => prev.map(l => l.id === leadId ? updated : l));
-      if (selectedLead?.id === leadId) setSelectedLead(updated);
+      const updated = await moveLead(id, stageId);
+      setLeads(prev => prev.map(l => l.id === id ? updated : l));
+      if (selectedLead?.id === id) setSelectedLead(updated);
     } catch { toast.error("Erro ao mover lead."); }
   };
 
-  const handleLeadUpdated = (updated: CRMLead) => {
-    setLeads(prev => prev.map(l => l.id === updated.id ? updated : l));
-    // If lead moved to another main stage (e.g. lead → deal), keep it visible
-    if (selectedLead?.id === updated.id) setSelectedLead(updated);
+  const handleDropDeal = async (e: React.DragEvent, stageId: number) => {
+    e.preventDefault();
+    const id = Number(e.dataTransfer.getData("dealId"));
+    if (!id) return;
+    try {
+      const updated = await moveDeal(id, stageId);
+      setDeals(prev => prev.map(d => d.id === id ? updated : d));
+      if (selectedDeal?.id === id) setSelectedDeal(updated);
+    } catch { toast.error("Erro ao mover deal."); }
+  };
+
+  const handleDropProject = async (e: React.DragEvent, stageId: number) => {
+    e.preventDefault();
+    const id = Number(e.dataTransfer.getData("projectId"));
+    if (!id) return;
+    try {
+      const updated = await moveProject(id, stageId);
+      setProjects(prev => prev.map(p => p.id === id ? updated : p));
+      if (selectedProject?.id === id) setSelectedProject(updated);
+    } catch { toast.error("Erro ao mover projeto."); }
   };
 
   const activeStages = (pipeline?.stages ?? [])
-    .filter(s => s.main_stage === activeMain)
+    .filter(s => s.main_stage === activeTab)
     .sort((a, b) => a.position - b.position);
 
-  const filteredLeads = leads.filter(l =>
-    !search || l.nome.toLowerCase().includes(search.toLowerCase()) || l.empresa?.toLowerCase().includes(search.toLowerCase())
-  );
+  const q = search.toLowerCase();
+  const filteredLeads = q ? leads.filter(l => l.nome.toLowerCase().includes(q) || l.empresa?.toLowerCase().includes(q)) : leads;
+  const filteredDeals = q ? deals.filter(d => d.titulo.toLowerCase().includes(q) || d.empresa?.toLowerCase().includes(q)) : deals;
+  const filteredProjects = q ? projects.filter(p => p.titulo.toLowerCase().includes(q) || p.empresa?.toLowerCase().includes(q)) : projects;
 
-  const totalValue = leads
-    .filter(l => l.stage_main === "deal" && l.stage_is_won)
-    .reduce((s, l) => s + (l.valor_estimado ? Number(l.valor_estimado) : 0), 0);
+  const wonValue = deals.filter(d => d.stage_is_won).reduce((s, d) => s + (d.valor ? Number(d.valor) : 0), 0);
+
+  const addLabel = activeTab === "lead" ? "Lead" : activeTab === "deal" ? "Deal" : "Projeto";
 
   if (loading) return <div className="text-center py-16 text-sm text-muted-foreground">Carregando CRM...</div>;
 
@@ -994,47 +1442,37 @@ export function CRMKanban() {
       <div className="flex items-center gap-1 pb-3 shrink-0 border-b border-border mb-3">
         <button
           onClick={() => setView("kanban")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
-            view === "kanban" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${view === "kanban" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
         >
           Pipeline
         </button>
         <button
           onClick={() => setView("channels")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
-            view === "channels" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-          }`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${view === "channels" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
         >
           <Radio className="size-3.5" />
           Canais
         </button>
       </div>
 
-      {/* Canais view */}
       {view === "channels" && (
         <div className="flex-1 overflow-y-auto">
           <CRMChannels />
         </div>
       )}
 
-      {/* Kanban view */}
       {view === "kanban" && (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Top bar */}
           <div className="flex items-center justify-between px-1 pb-4 gap-3 shrink-0 flex-wrap">
-            <div className="flex items-center gap-3 flex-wrap">
-              {MAIN_STAGES.map(ms => {
-                const count = leads.filter(l => l.stage_main === ms.key).length;
+            <div className="flex items-center gap-2 flex-wrap">
+              {TAB_META.map(ms => {
+                const count = ms.key === "lead" ? leads.length : ms.key === "deal" ? deals.length : projects.length;
                 return (
                   <button
                     key={ms.key}
-                    onClick={() => setActiveMain(ms.key)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${
-                      activeMain === ms.key
-                        ? `${ms.bgClass} border-current`
-                        : "text-muted-foreground border-transparent hover:bg-muted/40"
-                    }`}
+                    onClick={() => setActiveTab(ms.key)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${activeTab === ms.key ? `${ms.bgClass} border-current` : "text-muted-foreground border-transparent hover:bg-muted/40"}`}
                   >
                     {ms.label}
                     <span className="text-xs opacity-70">({count})</span>
@@ -1043,15 +1481,15 @@ export function CRMKanban() {
               })}
             </div>
             <div className="flex items-center gap-2">
-              {totalValue > 0 && (
+              {wonValue > 0 && (
                 <span className="text-xs text-muted-foreground hidden sm:block">
-                  Ganho: <span className="text-emerald-400 font-semibold">{fmtValue(String(totalValue))}</span>
+                  Ganho: <span className="text-emerald-400 font-semibold">{fmtCurrency(String(wonValue))}</span>
                 </span>
               )}
               <Input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Buscar lead..."
+                placeholder={`Buscar ${activeTab === "lead" ? "lead" : activeTab === "deal" ? "deal" : "projeto"}...`}
                 className="bg-background w-40 h-8 text-sm"
               />
               <Button variant="outline" size="sm" onClick={() => pipeline && setShowConfig(true)} className="gap-1.5 h-8">
@@ -1060,7 +1498,7 @@ export function CRMKanban() {
               </Button>
               <Button size="sm" onClick={() => setAddingToStage(activeStages[0] ?? null)} className="gap-1.5 h-8">
                 <Plus className="size-3.5" />
-                Lead
+                {addLabel}
               </Button>
             </div>
           </div>
@@ -1068,20 +1506,83 @@ export function CRMKanban() {
           {/* Board */}
           <div className="flex-1 overflow-x-auto pb-4">
             <div className="flex gap-3 h-full min-h-0" style={{ minWidth: `${activeStages.length * 250}px` }}>
-              {activeStages.map(stage => (
-                <KanbanColumn
-                  key={stage.id}
-                  stage={stage}
-                  leads={filteredLeads.filter(l => l.stage === stage.id)}
-                  onDrop={handleDrop}
-                  onDragOver={e => e.preventDefault()}
-                  onLeadClick={l => setSelectedLead(l)}
-                  onAddLead={s => setAddingToStage(s)}
-                />
-              ))}
+
+              {activeTab === "lead" && activeStages.map(stage => {
+                const stageLeads = filteredLeads.filter(l => l.stage === stage.id);
+                const totalValue = stageLeads.reduce((s, l) => s + (l.valor_estimado ? Number(l.valor_estimado) : 0), 0);
+                return (
+                  <KanbanColumn
+                    key={stage.id}
+                    stage={stage}
+                    count={stageLeads.length}
+                    totalValue={totalValue}
+                    onDrop={handleDropLead}
+                    onDragOver={e => e.preventDefault()}
+                    onAdd={setAddingToStage}
+                  >
+                    {stageLeads.map(lead => (
+                      <LeadCard
+                        key={lead.id}
+                        lead={lead}
+                        onDragStart={e => e.dataTransfer.setData("leadId", String(lead.id))}
+                        onClick={() => setSelectedLead(lead)}
+                      />
+                    ))}
+                  </KanbanColumn>
+                );
+              })}
+
+              {activeTab === "deal" && activeStages.map(stage => {
+                const stageDeals = filteredDeals.filter(d => d.stage === stage.id);
+                const totalValue = stageDeals.reduce((s, d) => s + (d.valor ? Number(d.valor) : 0), 0);
+                return (
+                  <KanbanColumn
+                    key={stage.id}
+                    stage={stage}
+                    count={stageDeals.length}
+                    totalValue={totalValue}
+                    onDrop={handleDropDeal}
+                    onDragOver={e => e.preventDefault()}
+                    onAdd={setAddingToStage}
+                  >
+                    {stageDeals.map(deal => (
+                      <DealCard
+                        key={deal.id}
+                        deal={deal}
+                        onDragStart={e => e.dataTransfer.setData("dealId", String(deal.id))}
+                        onClick={() => setSelectedDeal(deal)}
+                      />
+                    ))}
+                  </KanbanColumn>
+                );
+              })}
+
+              {activeTab === "project" && activeStages.map(stage => {
+                const stageProjects = filteredProjects.filter(p => p.stage === stage.id);
+                return (
+                  <KanbanColumn
+                    key={stage.id}
+                    stage={stage}
+                    count={stageProjects.length}
+                    onDrop={handleDropProject}
+                    onDragOver={e => e.preventDefault()}
+                    onAdd={setAddingToStage}
+                  >
+                    {stageProjects.map(project => (
+                      <ProjectCard
+                        key={project.id}
+                        project={project}
+                        onDragStart={e => e.dataTransfer.setData("projectId", String(project.id))}
+                        onClick={() => setSelectedProject(project)}
+                      />
+                    ))}
+                  </KanbanColumn>
+                );
+              })}
+
               {activeStages.length === 0 && (
                 <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-                  Nenhuma etapa configurada para {MAIN_STAGES.find(m => m.key === activeMain)?.label}.
+                  Nenhuma etapa configurada para {TAB_META.find(m => m.key === activeTab)?.label}.
                   <button onClick={() => pipeline && setShowConfig(true)} className="ml-2 text-primary hover:underline">Configurar</button>
                 </div>
               )}
@@ -1090,27 +1591,61 @@ export function CRMKanban() {
         </div>
       )}
 
-      {/* Lead Detail Modal */}
+      {/* Detail Modals */}
       {selectedLead && (
         <LeadDetailModal
           lead={selectedLead}
-          stages={pipeline?.stages ?? []}
           onClose={() => setSelectedLead(null)}
-          onUpdated={handleLeadUpdated}
-          onDeleted={id => {
-            setLeads(prev => prev.filter(l => l.id !== id));
-            setSelectedLead(null);
-          }}
+          onUpdated={updated => setLeads(prev => prev.map(l => l.id === updated.id ? updated : l))}
+          onDeleted={id => { setLeads(prev => prev.filter(l => l.id !== id)); setSelectedLead(null); }}
+          onConverted={deal => { setDeals(prev => [deal, ...prev]); setActiveTab("deal"); }}
         />
       )}
 
-      {/* Dialogs */}
-      {addingToStage && pipeline && (
+      {selectedDeal && (
+        <DealDetailModal
+          deal={selectedDeal}
+          onClose={() => setSelectedDeal(null)}
+          onUpdated={updated => setDeals(prev => prev.map(d => d.id === updated.id ? updated : d))}
+          onDeleted={id => { setDeals(prev => prev.filter(d => d.id !== id)); setSelectedDeal(null); }}
+          onConverted={project => { setProjects(prev => [project, ...prev]); setActiveTab("project"); }}
+        />
+      )}
+
+      {selectedProject && (
+        <ProjectDetailModal
+          project={selectedProject}
+          onClose={() => setSelectedProject(null)}
+          onUpdated={updated => setProjects(prev => prev.map(p => p.id === updated.id ? updated : p))}
+          onDeleted={id => { setProjects(prev => prev.filter(p => p.id !== id)); setSelectedProject(null); }}
+        />
+      )}
+
+      {/* Add Dialogs */}
+      {addingToStage && pipeline && activeTab === "lead" && (
         <LeadFormDialog
           defaultStage={addingToStage}
           pipelineId={pipeline.id}
           onClose={() => setAddingToStage(null)}
-          onSaved={lead => setLeads(prev => [lead, ...prev])}
+          onSaved={lead => { setLeads(prev => [lead, ...prev]); setAddingToStage(null); }}
+        />
+      )}
+
+      {addingToStage && pipeline && activeTab === "deal" && (
+        <DealFormDialog
+          defaultStage={addingToStage}
+          pipelineId={pipeline.id}
+          onClose={() => setAddingToStage(null)}
+          onSaved={deal => { setDeals(prev => [deal, ...prev]); setAddingToStage(null); }}
+        />
+      )}
+
+      {addingToStage && pipeline && activeTab === "project" && (
+        <ProjectFormDialog
+          defaultStage={addingToStage}
+          pipelineId={pipeline.id}
+          onClose={() => setAddingToStage(null)}
+          onSaved={project => { setProjects(prev => [project, ...prev]); setAddingToStage(null); }}
         />
       )}
 

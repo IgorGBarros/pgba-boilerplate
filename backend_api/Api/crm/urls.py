@@ -4,9 +4,12 @@ from crm.views import (
     PipelineViewSet,
     StageViewSet,
     LeadViewSet,
+    DealViewSet,
+    ProjectViewSet,
     ContatoViewSet,
-    OportunidadeViewSet,
     AtividadeCRMViewSet,
+    CustomFieldDefinitionViewSet,
+    CustomFieldValueViewSet,
 )
 from crm.webhooks import (
     ChannelConfigViewSet,
@@ -20,9 +23,12 @@ router = DefaultRouter()
 router.register("pipelines", PipelineViewSet, basename="pipeline")
 router.register("stages", StageViewSet, basename="stage")
 router.register("leads", LeadViewSet, basename="lead")
+router.register("deals", DealViewSet, basename="deal")
+router.register("projects", ProjectViewSet, basename="project")
 router.register("contatos", ContatoViewSet, basename="contato")
-router.register("oportunidades", OportunidadeViewSet, basename="oportunidade")
 router.register("atividades", AtividadeCRMViewSet, basename="atividade")
+router.register("custom-fields", CustomFieldDefinitionViewSet, basename="custom-field")
+router.register("custom-field-values", CustomFieldValueViewSet, basename="custom-field-value")
 router.register("channels", ChannelConfigViewSet, basename="channel")
 
 urlpatterns = [
