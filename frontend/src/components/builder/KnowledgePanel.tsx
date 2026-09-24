@@ -1,7 +1,7 @@
 // frontend/src/components/builder/KnowledgePanel.tsx
 import { useEffect, useState } from "react";
-import { UploadCloud, FileText, FileWarning, Loader2 } from "lucide-react";
-import { listSectors, listDocuments, uploadDocumentFile, type Sector, type KnowledgeDocument, ApiError } from "@/lib/api";
+import { UploadCloud, FileText, FileWarning, Loader2, PlusCircle } from "lucide-react";
+import { listSectors, listDocuments, uploadDocumentFile, createKnowledgeSource, updateSector, type Sector, type KnowledgeDocument, ApiError } from "@/lib/api";
 
 const STATUS_LABEL: Record<KnowledgeDocument["status"], string> = {
   pending: "Aguardando indexação",
@@ -31,6 +31,7 @@ export default function KnowledgePanel() {
   const [loadingSectors, setLoadingSectors] = useState(true);
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [creatingSource, setCreatingSource] = useState(false);
   const [lastWarning, setLastWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +65,25 @@ export default function KnowledgePanel() {
     if (sourceId) refreshDocuments(sourceId);
     else setDocuments([]);
   }, [sourceId]);
+
+  async function handleCreateSource() {
+    if (!selectedSector) return;
+    setCreatingSource(true);
+    setError(null);
+    try {
+      const source = await createKnowledgeSource({
+        name: `${selectedSector.name} — Base de Conhecimento`,
+        source_type: "upload",
+      });
+      await updateSector(selectedSector.id, { knowledge_source: source.id });
+      const updated = await listSectors();
+      setSectors(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Falha ao criar base de conhecimento.");
+    } finally {
+      setCreatingSource(false);
+    }
+  }
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0 || !sourceId) return;
@@ -118,10 +138,23 @@ export default function KnowledgePanel() {
         </div>
 
         {!sourceId ? (
-          <p className="rounded-card border border-dashed border-white/10 p-4 text-xs text-slate-500">
-            Este setor ainda não tem fonte de conhecimento configurada — rode <code className="text-slate-400">pgbasync</code> ou vincule
-            uma fonte pra habilitar upload.
-          </p>
+          <div className="flex flex-col gap-3 rounded-card border border-dashed border-white/10 p-4">
+            <p className="text-xs text-slate-500">
+              Este setor ainda não tem base de conhecimento. Crie uma para começar a enviar documentos.
+            </p>
+            <button
+              onClick={handleCreateSource}
+              disabled={creatingSource}
+              className="flex items-center justify-center gap-2 rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-600 disabled:opacity-50"
+            >
+              {creatingSource ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <PlusCircle className="h-4 w-4" />
+              )}
+              {creatingSource ? "Criando..." : "Criar base de conhecimento"}
+            </button>
+          </div>
         ) : (
           <label
             className={`flex cursor-pointer flex-col items-center gap-2 rounded-card border border-dashed border-white/10 px-4 py-10 text-center transition hover:border-brand-500 ${
