@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { aiModels } from "@/lib/pgba-data";
-import { listDocuments, type Agent, type Sector, type KnowledgeDocument } from "@/lib/api";
+import { listDocuments, updateAgent, type Agent, type Sector, type KnowledgeDocument } from "@/lib/api";
 
 export function SectorDialog({
   sector,
@@ -124,12 +124,13 @@ export function AgentDialog({
   const [model, setModel] = useState(aiModels[0]!);
   const [skills, setSkills] = useState("");
   const [role, setRole] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (agent) {
       setRole(agent.role);
       setModel(aiModels[0]!);
-      setSkills("");
+      setSkills(agent.instructions ?? "");
     }
   }, [agent]);
 
@@ -194,9 +195,19 @@ export function AgentDialog({
             Cancelar
           </Button>
           <Button
-            onClick={() => {
-              onOpenChange(false);
-              toast.success("Configuração salva");
+            disabled={saving}
+            onClick={async () => {
+              if (!agent) return;
+              setSaving(true);
+              try {
+                await updateAgent(agent.id, { role, skillsMd: skills });
+                toast.success("Configuração salva");
+                onOpenChange(false);
+              } catch (e: unknown) {
+                toast.error(e instanceof Error ? e.message : "Erro ao salvar agente");
+              } finally {
+                setSaving(false);
+              }
             }}
           >
             <Save className="size-4" />
