@@ -62,6 +62,7 @@ export default function AIProvidersPanel() {
   const [showForm, setShowForm] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -77,6 +78,24 @@ export default function AIProvidersPanel() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (form.provider !== "ollama") {
+      setOllamaModels([]);
+      return;
+    }
+    const baseUrl = (form.base_url || "http://ollama:11434").replace(/\/$/, "");
+    let cancelled = false;
+    fetch(`${baseUrl}/api/tags`)
+      .then((r) => r.json())
+      .then((data: { models?: { name: string }[] }) => {
+        if (!cancelled) setOllamaModels((data.models ?? []).map((m) => m.name));
+      })
+      .catch(() => {
+        if (!cancelled) setOllamaModels([]);
+      });
+    return () => { cancelled = true; };
+  }, [form.provider, form.base_url]);
 
   const notify = (msg: string, type: "ok" | "err") => {
     if (type === "ok") {
@@ -252,11 +271,15 @@ export default function AIProvidersPanel() {
                 className="flex-1 rounded-md border border-white/10 bg-surface-raised px-2 py-1.5 font-mono text-xs text-slate-200 placeholder:text-slate-600"
               />
               <datalist id={`models-${form.provider}`}>
-                {meta.models.map((m) => <option key={m} value={m} />)}
+                {(form.provider === "ollama" && ollamaModels.length > 0 ? ollamaModels : meta.models).map((m) => (
+                  <option key={m} value={m} />
+                ))}
               </datalist>
             </div>
             <p className="text-[10px] text-slate-600">
-              Sugestões: {meta.models.join(", ")}
+              {form.provider === "ollama" && ollamaModels.length > 0
+                ? `Modelos detectados: ${ollamaModels.join(", ")}`
+                : `Sugestões: ${meta.models.join(", ")}`}
             </p>
           </label>
 

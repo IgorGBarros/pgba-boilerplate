@@ -475,7 +475,7 @@ function AgentEditDialog({
     if (agent) {
       setRole(agent.role);
       setModel(aiModels[0]!);
-      setSkillsMd("");
+      setSkillsMd(agent.instructions ?? "");
     }
   }, [agent]);
 

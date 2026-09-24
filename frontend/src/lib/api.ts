@@ -145,6 +145,7 @@ export interface Agent {
   sector_name: string | null;
   name: string;
   role: string;
+  instructions: string;
   access_level: AgentAccessLevel;
   autonomy_level: AgentAutonomyLevel;
   work_status: AgentWorkStatus;
