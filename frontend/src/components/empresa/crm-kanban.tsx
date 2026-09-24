@@ -4,7 +4,7 @@ import {
   Mail, Phone, DollarSign, Briefcase, MessageSquare,
   CheckCircle2, XCircle, Settings, Pencil, Trash2, Bot,
   ArrowRight, Loader2, Radio, MessageCircle, Calendar, Package2,
-  ChevronRight,
+  ChevronRight, GripVertical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,7 @@ import {
   listProjects, createProject, updateProject, deleteProject, moveProject,
   setProjectOutcome,
   getLeadMessages, qualifyLead,
-  createStage, deleteStage,
+  createStage, updateStage, deleteStage,
   listCustomFieldDefs, createCustomFieldDef, deleteCustomFieldDef, bulkUpsertCustomFieldValues,
 } from "@/lib/api";
 import { CRMChannels } from "@/components/empresa/crm-channels";
@@ -1374,6 +1374,8 @@ function StageConfigDialog({
   const [newName, setNewName] = useState("");
   const [newMain, setNewMain] = useState<MainStage>("lead");
   const [saving, setSaving] = useState(false);
+  const dragItem = useRef<{ id: number; mainStage: MainStage } | null>(null);
+  const [dragOverId, setDragOverId] = useState<number | null>(null);
 
   const handleAdd = async () => {
     if (!newName.trim()) return;
@@ -1396,6 +1398,23 @@ function StageConfigDialog({
     } catch { toast.error("Erro ao remover etapa."); }
   };
 
+  const handleDrop = async (targetId: number, mainStage: MainStage) => {
+    if (!dragItem.current || dragItem.current.id === targetId) return;
+    const group = [...stages.filter(s => s.main_stage === mainStage)].sort((a, b) => a.position - b.position);
+    const fromIdx = group.findIndex(s => s.id === dragItem.current!.id);
+    const toIdx = group.findIndex(s => s.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const reordered = [...group];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    const updated = reordered.map((s, i) => ({ ...s, position: i }));
+    setStages(prev => [...prev.filter(s => s.main_stage !== mainStage), ...updated]);
+    setDragOverId(null);
+    dragItem.current = null;
+    await Promise.all(updated.map(s => updateStage(s.id, { position: s.position }).catch(() => {})));
+    onSaved();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-card border border-border rounded-xl w-full max-w-lg shadow-2xl">
@@ -1409,7 +1428,16 @@ function StageConfigDialog({
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{ms.label}</p>
               <div className="space-y-1">
                 {stages.filter(s => s.main_stage === ms.key).sort((a, b) => a.position - b.position).map(s => (
-                  <div key={s.id} className="flex items-center gap-2 group">
+                  <div
+                    key={s.id}
+                    draggable
+                    onDragStart={() => { dragItem.current = { id: s.id, mainStage: ms.key }; }}
+                    onDragOver={e => { e.preventDefault(); setDragOverId(s.id); }}
+                    onDragLeave={() => setDragOverId(null)}
+                    onDrop={() => void handleDrop(s.id, ms.key)}
+                    className={`flex items-center gap-2 group rounded px-1 py-0.5 cursor-grab active:cursor-grabbing transition-colors ${dragOverId === s.id ? "bg-muted/60 border border-dashed border-border" : "hover:bg-muted/30"}`}
+                  >
+                    <GripVertical className="size-3.5 text-muted-foreground/40 shrink-0" />
                     {colorDot(s.color)}
                     <span className="flex-1 text-sm text-foreground">{s.name}</span>
                     {s.is_won && <Badge className="text-[10px] h-4 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">Ganho</Badge>}
