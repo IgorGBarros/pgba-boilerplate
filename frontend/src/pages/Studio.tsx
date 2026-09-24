@@ -5,6 +5,7 @@ import {
   ClipboardList,
   ScrollText,
   ShieldCheck,
+  Users2,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Overview } from "@/components/empresa/overview";
@@ -12,21 +13,23 @@ import { Tasks } from "@/components/empresa/tasks";
 import { Approvals } from "@/components/empresa/approvals";
 import { Knowledge } from "@/components/empresa/knowledge";
 import { Logs } from "@/components/empresa/logs";
+import { CRMKanban } from "@/components/empresa/crm-kanban";
 import { NewTaskDialog } from "@/components/empresa/dialogs";
 import GeneratePanel from "@/components/builder/GeneratePanel";
 import { Toaster } from "sonner";
 
 // "gerar" não aparece na barra — só abre via openGerar(projectId)
 const tabs = [
-  { id: "empresa", label: "Empresa", icon: Building2 },
-  { id: "tarefas", label: "Tarefas", icon: ClipboardList },
+  { id: "empresa",    label: "Empresa",    icon: Building2   },
+  { id: "crm",        label: "CRM",        icon: Users2      },
+  { id: "tarefas",    label: "Tarefas",    icon: ClipboardList },
   { id: "aprovacoes", label: "Aprovações", icon: ShieldCheck },
-  { id: "conhecimento", label: "Conhecimento", icon: Boxes },
-  { id: "logs", label: "Logs", icon: ScrollText },
+  { id: "conhecimento", label: "Conhecimento", icon: Boxes   },
+  { id: "logs",       label: "Logs",       icon: ScrollText  },
 ];
 
 const STUDIO_TAB_KEY = "studio_active_tab";
-const VALID_TABS = new Set(["gerar", "empresa", "tarefas", "aprovacoes", "conhecimento", "logs"]);
+const VALID_TABS = new Set(["gerar", "empresa", "crm", "tarefas", "aprovacoes", "conhecimento", "logs"]);
 
 function readStoredTab(): string {
   try {
@@ -84,6 +87,14 @@ export default function Studio() {
           <div className="p-4 md:p-6">
             <TabsContent value="empresa">
               <Overview onNewTask={openTask} onOpenGerar={openGerar} />
+            </TabsContent>
+            <TabsContent value="crm">
+              <div className="flex flex-col" style={{ height: "calc(100vh - 120px)" }}>
+                <h2 className="text-lg font-semibold text-foreground mb-4 shrink-0">CRM</h2>
+                <div className="flex-1 overflow-hidden">
+                  <CRMKanban />
+                </div>
+              </div>
             </TabsContent>
             <TabsContent value="tarefas">
               <Tasks onNewTask={openTask} />
