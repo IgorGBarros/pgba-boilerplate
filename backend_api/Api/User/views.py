@@ -1,4 +1,6 @@
 import logging
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializer import CustomTokenObtainPairSerializer, CustomUserSerializer
 from .models import CustomUser, Plan
@@ -153,9 +155,13 @@ class PasswordResetConfirmView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
+            try:
+                validate_password(new_password, user)
+            except DjangoValidationError as exc:
+                return Response({"error": exc.messages}, status=status.HTTP_400_BAD_REQUEST)
             user.set_password(new_password)
             user.save()
-            
+
             return Response({"message": "Senha redefinida com sucesso!"})
         except (TypeError, ValueError, OverflowError, CustomUser.DoesNotExist):
             return Response(

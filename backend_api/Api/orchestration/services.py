@@ -48,7 +48,6 @@ class OrchestrationError(Exception):
 def _select_function(tenant_id, question: str, provider: str, model: str) -> tuple[str | None, dict]:
     """Pede ao LLM para escolher uma função do catálogo, em JSON validado."""
     catalog = registry.catalog_for_prompt()
-    safe_question = sanitize_user_input(question, source="orchestration_select")
     prompt = f"""Você escolhe qual função usar para responder a pergunta abaixo.
 Responda SOMENTE em JSON no formato:
 {{"function": "<nome_da_funcao_ou_null>", "params": {{}}}}
@@ -58,7 +57,7 @@ Use "function": null se nenhuma função do catálogo servir para a pergunta.
 FUNÇÕES DISPONÍVEIS:
 {catalog}
 
-PERGUNTA: {safe_question}
+PERGUNTA: {question}
 """
     try:
         raw = chat_completion(
@@ -140,7 +139,7 @@ def answer_question(
                 log.function_called = function_name
                 log.function_params = params
                 log.error_message = reason
-                _finish(log, start)
+                _finish(log, start, provider=provider)
                 return {
                     "answer": f"Essa ação precisa de aprovação humana antes de executar: {reason}",
                     "function_called": function_name, "sources": [], "status": log.status,
@@ -154,7 +153,7 @@ def answer_question(
         except (LookupError, ValueError) as exc:
             log.status = QueryLog.Status.FUNCTION_ERROR
             log.error_message = str(exc)
-            _finish(log, start)
+            _finish(log, start, provider=provider)
             return {
                 "answer": "Não encontrei uma forma segura de responder essa pergunta com os dados disponíveis.",
                 "function_called": function_name, "sources": [], "status": log.status,
@@ -181,7 +180,7 @@ def answer_question(
     except GroundingError:
         log.status = QueryLog.Status.REJECTED
         log.answer = NoAnswer.TEXT
-        _finish(log, start)
+        _finish(log, start, provider=provider)
         return {
             "answer": NoAnswer.TEXT,
             "function_called": function_name, "sources": rag_sources, "status": log.status,
