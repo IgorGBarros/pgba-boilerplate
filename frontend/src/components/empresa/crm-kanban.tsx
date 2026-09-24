@@ -423,10 +423,9 @@ function ConversationTab({ lead }: { lead: CRMLead }) {
 // ─── Outcome Buttons ──────────────────────────────────────────────────────────
 
 function OutcomeSection({
-  lead, stages, onUpdated,
+  lead, onUpdated,
 }: {
   lead: CRMLead;
-  stages: CRMStage[];
   onUpdated: (lead: CRMLead) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -702,7 +701,7 @@ function LeadDetailModal({
 
         {/* Outcome section — only for lead/deal stages */}
         {(localLead.stage_main === "lead" || localLead.stage_main === "deal") && (
-          <OutcomeSection lead={localLead} stages={stages} onUpdated={handleUpdated} />
+          <OutcomeSection lead={localLead} onUpdated={handleUpdated} />
         )}
       </div>
 

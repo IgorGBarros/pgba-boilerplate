@@ -6,6 +6,7 @@ import GeneratedRouter from "@/components/GeneratedRouter";
 import LoginScreen from "@/components/LoginScreen";
 import { isLoggedIn, logout } from "@/lib/auth";
 import { RealtimeProvider } from "@/lib/RealtimeContext";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 // Carregado sob demanda: só quem abre o Estúdio paga o custo de
 // framer-motion + cmdk + react-syntax-highlighter (~700KB) — sem isso, o
@@ -73,7 +74,7 @@ export default function App() {
     <main className="min-h-screen bg-surface">
       <header
         style={{ height: HEADER_HEIGHT_PX }}
-        className="flex items-center justify-between gap-3 border-b border-white/10 bg-surface-raised/80 px-4 backdrop-blur-sm sm:px-6"
+        className="flex items-center justify-between gap-3 border-b border-border bg-surface/80 px-4 backdrop-blur-sm sm:px-6"
       >
         <div className="flex shrink-0 items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500/15">
@@ -89,14 +90,15 @@ export default function App() {
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`shrink-0 whitespace-nowrap rounded-card px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
-                  tab === t.id ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                  tab === t.id ? "bg-brand-500 text-white shadow-sm shadow-brand-500/30" : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }`}
               >
                 {t.label}
               </button>
             ))}
           </nav>
-          <button onClick={logout} title="Sair" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-white/5 hover:text-slate-200">
+          <ThemeToggle />
+          <button onClick={logout} title="Sair" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
             <LogOut className="h-3.5 w-3.5" />
           </button>
         </div>
