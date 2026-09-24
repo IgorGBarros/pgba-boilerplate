@@ -177,6 +177,19 @@ function KanbanColumn({
 
 // ─── Lead Form Dialog ─────────────────────────────────────────────────────────
 
+const ORIGEM_OPTIONS = [
+  { value: "outro", label: "Outro" },
+  { value: "site", label: "Site" },
+  { value: "indicacao", label: "Indicação" },
+  { value: "social", label: "Redes sociais" },
+  { value: "evento", label: "Evento" },
+  { value: "cold_outreach", label: "Cold outreach" },
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "telegram", label: "Telegram" },
+  { value: "landing_page", label: "Landing Page" },
+  { value: "meta_ads", label: "Meta Ads" },
+];
+
 function LeadFormDialog({
   initial, defaultStage, pipelineId, onClose, onSaved,
 }: {
@@ -186,6 +199,16 @@ function LeadFormDialog({
   onClose: () => void;
   onSaved: (lead: CRMLead) => void;
 }) {
+  const contextLabel = defaultStage?.main_stage === "deal"
+    ? "Deal"
+    : defaultStage?.main_stage === "project"
+    ? "Project"
+    : initial?.stage_main === "deal"
+    ? "Deal"
+    : initial?.stage_main === "project"
+    ? "Project"
+    : "Lead";
+
   const [form, setForm] = useState({
     nome: initial?.nome ?? "",
     empresa: initial?.empresa ?? "",
@@ -194,6 +217,7 @@ function LeadFormDialog({
     cargo: initial?.cargo ?? "",
     valor_estimado: initial?.valor_estimado ?? "",
     responsavel: initial?.responsavel ?? "",
+    origem: initial?.origem ?? "outro",
     observacoes: initial?.observacoes ?? "",
   });
   const [saving, setSaving] = useState(false);
@@ -213,20 +237,20 @@ function LeadFormDialog({
         ? await updateLead(initial.id, payload)
         : await createLead(payload);
       onSaved(saved);
-      toast.success(`Lead "${saved.nome}" ${initial ? "atualizado" : "criado"}.`);
+      toast.success(`${contextLabel} "${saved.nome}" ${initial ? "atualizado" : "criado"}.`);
       onClose();
     } catch {
-      toast.error("Erro ao salvar lead.");
+      toast.error(`Erro ao salvar ${contextLabel.toLowerCase()}.`);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-card border border-border rounded-xl w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="font-semibold text-foreground">{initial ? "Editar Lead" : "Novo Lead"}</h3>
+          <h3 className="font-semibold text-foreground">{initial ? `Editar ${contextLabel}` : `Novo ${contextLabel}`}</h3>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
         </div>
         <div className="px-5 py-4 space-y-3 max-h-[70vh] overflow-y-auto">
@@ -245,6 +269,16 @@ function LeadFormDialog({
             </div>
           ))}
           <div className="space-y-1">
+            <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Origem</label>
+            <select
+              value={form.origem}
+              onChange={e => set("origem", e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              {ORIGEM_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Observações</label>
             <textarea
               value={form.observacoes}
@@ -258,7 +292,7 @@ function LeadFormDialog({
           <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
           <Button size="sm" onClick={handleSave} disabled={saving} className="gap-2">
             {saving && <Loader2 className="size-3.5 animate-spin" />}
-            {initial ? "Salvar" : "Criar lead"}
+            {initial ? "Salvar" : `Criar ${contextLabel.toLowerCase()}`}
           </Button>
         </div>
       </div>
@@ -510,18 +544,26 @@ function LeadDetailModal({
 }) {
   const [tab, setTab] = useState<"info" | "conversa" | "agente">("conversa");
   const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [localLead, setLocalLead] = useState(lead);
 
-  useEffect(() => { setLocalLead(lead); }, [lead]);
+  useEffect(() => { setLocalLead(lead); setConfirmDelete(false); }, [lead]);
 
-  const handleDelete = async () => {
-    if (!confirm(`Excluir "${localLead.nome}"?`)) return;
+  const handleDeleteClick = () => setConfirmDelete(true);
+
+  const handleDeleteConfirm = async () => {
+    setDeleting(true);
     try {
       await deleteLead(localLead.id);
+      toast.success(`${localLead.stage_main === "deal" ? "Deal" : localLead.stage_main === "project" ? "Project" : "Lead"} "${localLead.nome}" excluído.`);
       onDeleted(localLead.id);
       onClose();
-      toast.success("Lead excluído.");
-    } catch { toast.error("Erro ao excluir."); }
+    } catch {
+      toast.error("Erro ao excluir.");
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
   };
 
   const handleUpdated = (updated: CRMLead) => {
@@ -559,12 +601,35 @@ function LeadDetailModal({
             {localLead.valor_estimado && (
               <span className="text-sm font-semibold text-emerald-400 mr-2">{fmtValue(localLead.valor_estimado)}</span>
             )}
-            <button onClick={() => setEditing(true)} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Editar">
-              <Pencil className="size-3.5" />
-            </button>
-            <button onClick={handleDelete} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Excluir">
-              <Trash2 className="size-3.5" />
-            </button>
+            {!confirmDelete ? (
+              <>
+                <button onClick={() => setEditing(true)} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Editar">
+                  <Pencil className="size-3.5" />
+                </button>
+                <button onClick={handleDeleteClick} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Excluir">
+                  <Trash2 className="size-3.5" />
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-1.5 mr-1">
+                <span className="text-xs text-muted-foreground">Excluir?</span>
+                <Button
+                  size="sm" variant="destructive"
+                  className="h-6 px-2 text-xs gap-1"
+                  onClick={handleDeleteConfirm}
+                  disabled={deleting}
+                >
+                  {deleting ? <Loader2 className="size-3 animate-spin" /> : null}
+                  Sim
+                </Button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="grid size-6 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors text-xs"
+                >
+                  Não
+                </button>
+              </div>
+            )}
             <button onClick={onClose} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Fechar">
               <X className="size-4" />
             </button>
