@@ -1790,3 +1790,46 @@ export async function fetchSchemaCatalog(): Promise<SchemaApp[]> {
 export async function listObsidianNotes(): Promise<ObsidianNote[]> {
   return request<ObsidianNote[]>("/api/v1/datalake/obsidian-notes/");
 }
+
+// ─── Scraping ─────────────────────────────────────────────────────────────────
+
+export interface ScrapingJobResult {
+  title: string;
+  phone?: string;
+  emails?: string[];
+  website?: string;
+  category?: string;
+  address?: string;
+  review_rating?: number | string;
+  review_count?: number;
+}
+
+export interface ScrapingJob {
+  id: number;
+  job_type: string;
+  status: "pending" | "running" | "done" | "failed";
+  query: string;
+  depth: number;
+  result_count: number;
+  results: ScrapingJobResult[];
+  error_message: string;
+  created_at: string;
+}
+
+export async function createGoogleMapsJob(query: string, depth: number, lat = "", lng = ""): Promise<ScrapingJob> {
+  return request<ScrapingJob>("/api/v1/scraping/jobs/google-maps/", {
+    method: "POST",
+    body: JSON.stringify({ query, depth, lat, lng }),
+  });
+}
+
+export async function getScrapingJob(id: number): Promise<ScrapingJob> {
+  return request<ScrapingJob>(`/api/v1/scraping/jobs/${id}/`);
+}
+
+export async function importScrapingJobToCRM(id: number, pipelineId?: number): Promise<{ imported: number }> {
+  return request<{ imported: number }>(`/api/v1/scraping/jobs/${id}/import/`, {
+    method: "POST",
+    body: JSON.stringify(pipelineId ? { pipeline_id: pipelineId } : {}),
+  });
+}
