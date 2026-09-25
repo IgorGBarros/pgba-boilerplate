@@ -153,13 +153,11 @@ services:
       redis:
         condition: service_healthy
 
-  # 🕷️ Google Maps Scraper (opcional — só sobe com --profile scraping)
+  # 🕷️ Google Maps Scraper
   # Baseado em gosom/google-maps-scraper (MIT) via google-maps-scraper-kit
-  # Uso: docker compose --profile scraping up -d gmaps-scraper
   # API disponível em http://localhost:8080 (bind local only)
   gmaps-scraper:
     image: gosom/google-maps-scraper:latest
-    profiles: ["scraping"]
     ports:
       - "127.0.0.1:8080:8080"
     environment:
