@@ -164,6 +164,39 @@ def chat_completion(
     raise ProviderConfigError(f"Provedor '{provider}' não suportado.")
 
 
+def chat_completion_with_usage(
+    tenant_id, provider: str, model: str | None, messages: list[dict],
+    temperature: float = 0.3, json_mode: bool = False, timeout: float | None = None,
+) -> tuple[str, int, int]:
+    """
+    Como chat_completion mas retorna (texto, tokens_in, tokens_out).
+    Útil para registrar consumo de tokens por chamada.
+    """
+    cred = get_credential(tenant_id, provider)
+    resolved_model = model or cred.default_model or getattr(settings, f"{provider.upper()}_CHAT_MODEL", "")
+    if not resolved_model:
+        raise ProviderConfigError(
+            f"Nenhum modelo configurado para '{provider}' — defina em "
+            f"`configure_ai_provider --provider {provider} --model ...` "
+            f"(recomendado) ou em {provider.upper()}_CHAT_MODEL no .env."
+        )
+    resolved_timeout = timeout if timeout is not None else getattr(settings, "CHAT_TIMEOUT_SECONDS", 120.0)
+
+    if provider == "ollama":
+        return _chat_ollama_with_usage(cred, resolved_model, messages, temperature, json_mode, resolved_timeout)
+    if provider in OPENAI_COMPATIBLE:
+        return _chat_openai_compatible_with_usage(cred, resolved_model, messages, temperature, json_mode, resolved_timeout)
+    if provider == "anthropic":
+        return _chat_anthropic_with_usage(cred, resolved_model, messages, temperature, resolved_timeout)
+
+    raise ProviderConfigError(f"Provedor '{provider}' não suportado.")
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimativa simples: ~4 chars por token."""
+    return max(1, len(text) // 4)
+
+
 def _chat_ollama(cred, model, messages, temperature, json_mode, timeout):
     try:
         resp = httpx.post(
@@ -221,11 +254,122 @@ def _chat_openai_compatible(cred, model, messages, temperature, json_mode, timeo
                 detail = resp.text
             logger.error("Erro %s chat (%s): %s", cred.provider, resp.status_code, detail)
             resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"].strip()
     except httpx.HTTPStatusError as exc:
         raise ProviderConfigError(str(exc)) from exc
     except (httpx.HTTPError, KeyError, IndexError) as exc:
         logger.error("Erro %s chat: %s", cred.provider, exc)
+        raise ProviderConfigError(str(exc)) from exc
+
+
+def _chat_openai_compatible_with_usage(cred, model, messages, temperature, json_mode, timeout):
+    """Como _chat_openai_compatible mas retorna (texto, tokens_in, tokens_out)."""
+    if not cred.api_key:
+        raise ProviderConfigError(f"Credencial sem api_key para '{cred.provider}'.")
+    try:
+        body = {"model": model, "messages": messages, "temperature": temperature}
+        if json_mode:
+            body["response_format"] = {"type": "json_object"}
+        resp = httpx.post(
+            f"{cred.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {cred.api_key}"},
+            json=body,
+            timeout=timeout,
+        )
+        if not resp.is_success:
+            try:
+                detail = resp.json()
+            except Exception:
+                detail = resp.text
+            logger.error("Erro %s chat (%s): %s", cred.provider, resp.status_code, detail)
+            resp.raise_for_status()
+        data = resp.json()
+        text = data["choices"][0]["message"]["content"].strip()
+        usage = data.get("usage", {})
+        tokens_in = usage.get("prompt_tokens", _estimate_tokens(str(messages)))
+        tokens_out = usage.get("completion_tokens", _estimate_tokens(text))
+        return text, tokens_in, tokens_out
+    except httpx.HTTPStatusError as exc:
+        raise ProviderConfigError(str(exc)) from exc
+    except (httpx.HTTPError, KeyError, IndexError) as exc:
+        logger.error("Erro %s chat: %s", cred.provider, exc)
+        raise ProviderConfigError(str(exc)) from exc
+
+
+def _chat_anthropic_with_usage(cred, model, messages, temperature, timeout):
+    """Como _chat_anthropic mas retorna (texto, tokens_in, tokens_out)."""
+    if not cred.api_key:
+        raise ProviderConfigError("Credencial sem api_key para 'anthropic'.")
+    system = "\n".join(m["content"] for m in messages if m["role"] == "system")
+    user_messages = [m for m in messages if m["role"] != "system"]
+    body: dict = {
+        "model": model,
+        "messages": user_messages,
+        "max_tokens": 4096,
+        "temperature": temperature,
+    }
+    if system:
+        body["system"] = system
+    try:
+        resp = httpx.post(
+            f"{cred.base_url}/messages",
+            headers={
+                "x-api-key": cred.api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json=body,
+            timeout=None,
+        )
+        if not resp.is_success:
+            try:
+                detail = resp.json()
+            except Exception:
+                detail = resp.text
+            logger.error("Erro Anthropic chat (%s): %s", resp.status_code, detail)
+            resp.raise_for_status()
+        data = resp.json()
+        blocks = data.get("content", [])
+        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+        usage = data.get("usage", {})
+        tokens_in = usage.get("input_tokens", _estimate_tokens(str(messages)))
+        tokens_out = usage.get("output_tokens", _estimate_tokens(text))
+        return text, tokens_in, tokens_out
+    except httpx.HTTPStatusError as exc:
+        raise ProviderConfigError(str(exc)) from exc
+    except (httpx.HTTPError, KeyError, IndexError) as exc:
+        logger.error("Erro Anthropic chat: %s", exc)
+        raise ProviderConfigError(str(exc)) from exc
+
+
+def _chat_ollama_with_usage(cred, model, messages, temperature, json_mode, timeout):
+    """Como _chat_ollama mas retorna (texto, tokens_in, tokens_out)."""
+    try:
+        resp = httpx.post(
+            f"{cred.base_url}/api/chat",
+            json={
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "format": "json" if json_mode else None,
+                "options": {"temperature": temperature},
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        text = data.get("message", {}).get("content", "").strip()
+        tokens_in = data.get("prompt_eval_count", _estimate_tokens(str(messages)))
+        tokens_out = data.get("eval_count", _estimate_tokens(text))
+        return text, tokens_in, tokens_out
+    except httpx.HTTPStatusError as exc:
+        try:
+            detail = exc.response.json().get("error", exc.response.text)
+        except Exception:
+            detail = exc.response.text or str(exc)
+        raise ProviderConfigError(detail) from exc
+    except httpx.HTTPError as exc:
         raise ProviderConfigError(str(exc)) from exc
 
 

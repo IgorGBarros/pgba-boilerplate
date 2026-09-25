@@ -144,6 +144,31 @@ class LeadViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
         deal = convert_lead_to_deal(lead.id, request.tenant_id, titulo=titulo, responsavel=responsavel, valor=valor)
         return Response(DealSerializer(deal).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["get"], url_path="token-usage")
+    def token_usage(self, request, pk=None):
+        """Retorna consumo de tokens e custo estimado das mensagens de IA deste lead."""
+        from django.db.models import Sum, Count
+        lead = self.get_object()
+        qs = LeadMessage.objects.filter(
+            lead=lead, tenant_id=request.tenant_id, role=LeadMessage.Role.AGENT
+        )
+        agg = qs.aggregate(
+            total_tokens_in=Sum("tokens_in"),
+            total_tokens_out=Sum("tokens_out"),
+            total_cost=Sum("cost_estimated_usd"),
+            messages=Count("id"),
+        )
+        return Response({
+            "lead_id": lead.id,
+            "nome": lead.nome,
+            "tokens_in": agg["total_tokens_in"] or 0,
+            "tokens_out": agg["total_tokens_out"] or 0,
+            "total_tokens": (agg["total_tokens_in"] or 0) + (agg["total_tokens_out"] or 0),
+            "cost_estimated_usd": float(agg["total_cost"] or 0),
+            "ai_messages": agg["messages"] or 0,
+        })
+
+
     @action(detail=True, methods=["get"], url_path="obsidian-note")
     def obsidian_note(self, request, pk=None):
         """Retorna o conteúdo da nota Obsidian do lead, se existir."""
@@ -267,3 +292,93 @@ class AtividadeCRMViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelV
     filterset_fields = ["tipo", "lead", "responsavel"]
     search_fields = ["titulo", "responsavel"]
     ordering_fields = ["data_hora", "created_at"]
+
+
+# ─── Token Usage Summary ──────────────────────────────────────────────────────
+
+class TokenUsageSummaryView(TenantContextMixin, APIView):
+    """
+    GET /api/v1/crm/token-usage/
+
+    Resumo agregado de tokens e custo estimado das interações de IA do CRM,
+    agrupado por canal de origem do lead.
+
+    Query params opcionais:
+      - days: janela em dias (padrão: 30)
+      - channel: filtrar por canal (whatsapp, telegram, landing_page, etc.)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Sum, Count, F
+        from django.utils import timezone as tz
+        import datetime
+
+        tenant_id = getattr(request, "tenant_id", None)
+        if not tenant_id:
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+
+        days = int(request.query_params.get("days", 30))
+        channel_filter = request.query_params.get("channel", "")
+        since = tz.now() - datetime.timedelta(days=days)
+
+        qs = LeadMessage.objects.filter(
+            tenant_id=tenant_id,
+            role=LeadMessage.Role.AGENT,
+            created_at__gte=since,
+        ).exclude(tokens_in=0, tokens_out=0)
+
+        if channel_filter:
+            qs = qs.filter(lead__origem=channel_filter)
+
+        # Totais gerais
+        totals = qs.aggregate(
+            total_tokens_in=Sum("tokens_in"),
+            total_tokens_out=Sum("tokens_out"),
+            total_cost=Sum("cost_estimated_usd"),
+            total_messages=Count("id"),
+            total_leads=Count("lead", distinct=True),
+        )
+
+        # Por canal de origem
+        by_channel = list(
+            qs.values(channel=F("lead__origem"))
+            .annotate(
+                tokens_in=Sum("tokens_in"),
+                tokens_out=Sum("tokens_out"),
+                cost_usd=Sum("cost_estimated_usd"),
+                messages=Count("id"),
+                leads=Count("lead", distinct=True),
+            )
+            .order_by("-cost_usd")
+        )
+        for row in by_channel:
+            row["total_tokens"] = (row["tokens_in"] or 0) + (row["tokens_out"] or 0)
+            row["cost_usd"] = float(row["cost_usd"] or 0)
+
+        # Top leads por consumo
+        top_leads = list(
+            qs.values("lead__id", "lead__nome", "lead__empresa", "lead__origem")
+            .annotate(
+                tokens=Sum("tokens_in") + Sum("tokens_out"),
+                cost_usd=Sum("cost_estimated_usd"),
+                messages=Count("id"),
+            )
+            .order_by("-cost_usd")[:10]
+        )
+        for row in top_leads:
+            row["cost_usd"] = float(row["cost_usd"] or 0)
+
+        return Response({
+            "period_days": days,
+            "totals": {
+                "tokens_in": totals["total_tokens_in"] or 0,
+                "tokens_out": totals["total_tokens_out"] or 0,
+                "total_tokens": (totals["total_tokens_in"] or 0) + (totals["total_tokens_out"] or 0),
+                "cost_estimated_usd": float(totals["total_cost"] or 0),
+                "ai_messages": totals["total_messages"] or 0,
+                "leads_with_ai": totals["total_leads"] or 0,
+            },
+            "by_channel": by_channel,
+            "top_leads": top_leads,
+        })

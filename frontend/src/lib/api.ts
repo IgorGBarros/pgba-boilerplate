@@ -959,6 +959,47 @@ export async function getLeadObsidianNote(leadId: number): Promise<LeadObsidianN
   return request<LeadObsidianNote>(`/api/v1/crm/leads/${leadId}/obsidian-note/`);
 }
 
+export interface TokenUsageByChannel {
+  channel: string;
+  tokens_in: number;
+  tokens_out: number;
+  total_tokens: number;
+  cost_usd: number;
+  messages: number;
+  leads: number;
+}
+
+export interface TokenUsageTopLead {
+  lead__id: number;
+  lead__nome: string;
+  lead__empresa: string;
+  lead__origem: string;
+  tokens: number;
+  cost_usd: number;
+  messages: number;
+}
+
+export interface TokenUsageSummary {
+  period_days: number;
+  totals: {
+    tokens_in: number;
+    tokens_out: number;
+    total_tokens: number;
+    cost_estimated_usd: number;
+    ai_messages: number;
+    leads_with_ai: number;
+  };
+  by_channel: TokenUsageByChannel[];
+  top_leads: TokenUsageTopLead[];
+}
+
+export async function getCRMTokenUsage(days = 30, channel?: string): Promise<TokenUsageSummary> {
+  const params = new URLSearchParams({ days: String(days) });
+  if (channel) params.set("channel", channel);
+  return request<TokenUsageSummary>(`/api/v1/crm/token-usage/?${params}`);
+}
+
+
 // ─── Deals ────────────────────────────────────────────────────────────────────
 
 export async function listDeals(params?: { stage?: number; pipeline?: number; search?: string; outcome?: string }): Promise<CRMDeal[]> {

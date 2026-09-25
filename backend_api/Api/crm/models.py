@@ -361,6 +361,9 @@ class LeadMessage(TenantMixin, models.Model):
     lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name="messages")
     role = models.CharField(max_length=10, choices=Role.choices)
     content = models.TextField()
+    tokens_in = models.PositiveIntegerField(default=0)
+    tokens_out = models.PositiveIntegerField(default=0)
+    cost_estimated_usd = models.DecimalField(max_digits=10, decimal_places=6, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
