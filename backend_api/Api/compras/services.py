@@ -4,6 +4,142 @@ from compras.models import Fornecedor, ItemNecessario, Orcamento, ItemOrcamento,
 from integrations.overpass import buscar_fornecedores_osm
 
 
+def recomendar_melhor_orcamento(deal_id: int, tenant_id: str) -> dict | None:
+    """
+    Compara orçamentos com resposta recebida para um deal e recomenda o melhor.
+    Score = preço×0.4 + prazo×0.3 + histórico_fornecedor×0.3
+    Retorna dict com orcamento_id, motivo e score, ou None se não houver dados.
+    """
+    candidatos = list(
+        Orcamento.objects.filter(
+            deal_id=deal_id,
+            tenant_id=tenant_id,
+            status__in=[Orcamento.Status.RECEBIDO, Orcamento.Status.RASCUNHO],
+        ).select_related("fornecedor").exclude(valor_total__isnull=True)
+    )
+    if not candidatos:
+        return None
+
+    precos = [float(o.valor_total) for o in candidatos]
+    prazos = [o.prazo_entrega_dias or 999 for o in candidatos]
+    p_min, p_max = min(precos), max(precos)
+    d_min, d_max = min(prazos), max(prazos)
+
+    scored = []
+    for orc, preco, prazo in zip(candidatos, precos, prazos):
+        price_score = 10 * (1 - (preco - p_min) / (p_max - p_min + 0.01))
+        prazo_score = 10 * (1 - (prazo - d_min) / (d_max - d_min + 0.01))
+        hist_score = float(orc.fornecedor.nota_media)
+        total = price_score * 0.4 + prazo_score * 0.3 + hist_score * 0.3
+        scored.append((total, orc, preco, prazo))
+
+    scored.sort(key=lambda x: -x[0])
+    best_score, best_orc, best_preco, best_prazo = scored[0]
+
+    motivo_parts = []
+    if len(scored) > 1:
+        segundo = scored[1]
+        if best_preco <= segundo[2]:
+            motivo_parts.append("melhor preço")
+        if best_prazo <= segundo[3]:
+            motivo_parts.append("prazo competitivo")
+    if best_orc.fornecedor.total_pedidos > 0:
+        taxa = best_orc.fornecedor.pedidos_no_prazo / best_orc.fornecedor.total_pedidos
+        if taxa >= 0.8:
+            motivo_parts.append(f"histórico confiável ({int(taxa*100)}% no prazo)")
+    if not motivo_parts:
+        motivo_parts = ["melhor equilíbrio entre preço, prazo e histórico"]
+    motivo = "Melhor equilíbrio: " + ", ".join(motivo_parts) + "."
+
+    # Persiste o score no próprio orçamento
+    best_orc.score_recomendacao = round(best_score, 3)
+    best_orc.recomendacao_motivo = motivo
+    best_orc.save(update_fields=["score_recomendacao", "recomendacao_motivo"])
+
+    return {
+        "orcamento_id": best_orc.id,
+        "fornecedor_nome": best_orc.fornecedor.nome,
+        "valor_total": float(best_orc.valor_total),
+        "prazo_entrega_dias": best_orc.prazo_entrega_dias,
+        "motivo": motivo,
+        "score": round(best_score, 3),
+    }
+
+
+# Progressão de status linear do PedidoCompra
+_STATUS_FLOW = [
+    PedidoCompra.Status.CRIADO,
+    PedidoCompra.Status.ENVIADO,
+    PedidoCompra.Status.CONFIRMADO,
+    PedidoCompra.Status.EM_TRANSITO,
+    PedidoCompra.Status.ENTREGUE,
+]
+
+
+def avancar_status_pedido(pedido_id: int, tenant_id: str) -> PedidoCompra:
+    """Avança o status do pedido para o próximo na progressão linear."""
+    pedido = PedidoCompra.objects.get(pk=pedido_id, tenant_id=tenant_id)
+    if pedido.status == PedidoCompra.Status.CANCELADO:
+        raise ValueError("Pedido cancelado não pode ser avançado.")
+    try:
+        idx = _STATUS_FLOW.index(pedido.status)
+    except ValueError:
+        raise ValueError(f"Status '{pedido.status}' não é avançável.")
+    if idx >= len(_STATUS_FLOW) - 1:
+        raise ValueError("Pedido já está no status final (Entregue).")
+
+    novo_status = _STATUS_FLOW[idx + 1]
+    agora = timezone.now()
+    update_fields = ["status"]
+
+    if novo_status == PedidoCompra.Status.CONFIRMADO:
+        pedido.confirmado_em = agora
+        update_fields.append("confirmado_em")
+    elif novo_status == PedidoCompra.Status.EM_TRANSITO:
+        pedido.em_transito_em = agora
+        update_fields.append("em_transito_em")
+    elif novo_status == PedidoCompra.Status.ENTREGUE:
+        pedido.entregue_em = agora
+        update_fields.append("entregue_em")
+
+    pedido.status = novo_status
+    pedido.save(update_fields=update_fields)
+
+    if novo_status == PedidoCompra.Status.ENTREGUE:
+        atualizar_score_fornecedor(pedido)
+
+    return pedido
+
+
+def atualizar_score_fornecedor(pedido: PedidoCompra) -> None:
+    """Atualiza nota_media e prazo_medio_dias do fornecedor com base na entrega."""
+    fornecedor = pedido.orcamento.fornecedor
+    fornecedor.total_pedidos += 1
+
+    no_prazo = False
+    if pedido.previsao_entrega and pedido.entregue_em:
+        no_prazo = pedido.entregue_em.date() <= pedido.previsao_entrega
+    if no_prazo:
+        fornecedor.pedidos_no_prazo += 1
+
+    # Prazo médio real (dias entre criado_em e entregue_em)
+    if pedido.entregue_em and pedido.created_at:
+        dias_real = (pedido.entregue_em.date() - pedido.created_at.date()).days
+        if fornecedor.prazo_medio_dias is None:
+            fornecedor.prazo_medio_dias = dias_real
+        else:
+            # Média exponencial simples
+            fornecedor.prazo_medio_dias = round(
+                0.7 * fornecedor.prazo_medio_dias + 0.3 * dias_real
+            )
+
+    # nota_media = taxa de entrega no prazo * 10
+    taxa = fornecedor.pedidos_no_prazo / fornecedor.total_pedidos
+    fornecedor.nota_media = round(taxa * 10, 2)
+
+    fornecedor.save(update_fields=["total_pedidos", "pedidos_no_prazo", "prazo_medio_dias", "nota_media"])
+
+
 def buscar_e_salvar_fornecedores(tenant_id: str, material: str, cidade: str, raio_km: int = 10) -> list[Fornecedor]:
     """
     Busca fornecedores via OpenStreetMap e salva os novos no banco.

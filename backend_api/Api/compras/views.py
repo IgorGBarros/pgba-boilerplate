@@ -1,3 +1,6 @@
+from decimal import Decimal
+from django.utils import timezone
+
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -18,6 +21,7 @@ from compras.serializers import (
     AprovarOrcamentoSerializer,
     RegistrarRespostaSerializer,
     GerarPedidoSerializer,
+    CentralSuprimentosSerializer,
 )
 from compras.services import (
     buscar_e_salvar_fornecedores,
@@ -27,6 +31,8 @@ from compras.services import (
     aprovar_orcamento,
     rejeitar_orcamento,
     gerar_pedido_compra,
+    recomendar_melhor_orcamento,
+    avancar_status_pedido,
 )
 
 
@@ -153,11 +159,25 @@ class OrcamentoViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelView
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(PedidoCompraSerializer(pedido).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=["get"], url_path="recomendar")
+    def recomendar(self, request):
+        """Recomenda o melhor orçamento para um deal comparando preço, prazo e histórico."""
+        deal_id = request.query_params.get("deal_id")
+        if not deal_id:
+            return Response({"detail": "deal_id é obrigatório."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            resultado = recomendar_melhor_orcamento(int(deal_id), request.tenant_id)
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if resultado is None:
+            return Response({"detail": "Nenhum orçamento com resposta para comparar."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(resultado)
+
 
 class PedidoCompraViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
     queryset = PedidoCompra.objects.select_related(
-        "orcamento__fornecedor", "orcamento__deal", "project"
-    ).filter(is_active=True)
+        "orcamento__fornecedor", "orcamento__deal", "orcamento__itens", "project"
+    ).prefetch_related("orcamento__itens").filter(is_active=True)
     serializer_class = PedidoCompraSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
@@ -165,3 +185,71 @@ class PedidoCompraViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelV
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.tenant_id)
+
+    @action(detail=True, methods=["post"], url_path="avancar-status")
+    def avancar_status(self, request, pk=None):
+        """Avança o pedido para o próximo status na progressão."""
+        try:
+            pedido = avancar_status_pedido(pk, request.tenant_id)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(PedidoCompraSerializer(pedido).data)
+
+    @action(detail=True, methods=["post"], url_path="cancelar")
+    def cancelar(self, request, pk=None):
+        try:
+            pedido = PedidoCompra.objects.get(pk=pk, tenant_id=request.tenant_id)
+        except PedidoCompra.DoesNotExist:
+            return Response({"detail": "Pedido não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        if pedido.status == PedidoCompra.Status.ENTREGUE:
+            return Response({"detail": "Pedido já entregue não pode ser cancelado."}, status=status.HTTP_400_BAD_REQUEST)
+        pedido.status = PedidoCompra.Status.CANCELADO
+        pedido.save(update_fields=["status"])
+        return Response(PedidoCompraSerializer(pedido).data)
+
+
+class CentralSuprimentosView(TenantContextMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        tid = request.tenant_id
+        hoje = timezone.now().date()
+        mes_inicio = hoje.replace(day=1)
+
+        base_qs = PedidoCompra.objects.select_related(
+            "orcamento__fornecedor", "orcamento__deal",
+        ).prefetch_related("orcamento__itens").filter(tenant_id=tid, is_active=True)
+
+        criticos = [p for p in base_qs.exclude(
+            status__in=[PedidoCompra.Status.ENTREGUE, PedidoCompra.Status.CANCELADO]
+        ) if p.previsao_entrega and p.previsao_entrega < hoje]
+
+        pendentes = list(base_qs.filter(status__in=[PedidoCompra.Status.CRIADO, PedidoCompra.Status.ENVIADO]))
+        em_transito = list(base_qs.filter(status=PedidoCompra.Status.EM_TRANSITO))
+        entregues_mes = base_qs.filter(
+            status=PedidoCompra.Status.ENTREGUE,
+            entregue_em__date__gte=mes_inicio,
+        ).count()
+
+        ativos = base_qs.exclude(status__in=[PedidoCompra.Status.ENTREGUE, PedidoCompra.Status.CANCELADO])
+        valor_em_andamento = Decimal("0")
+        for p in ativos:
+            if p.orcamento.valor_total:
+                valor_em_andamento += p.orcamento.valor_total
+
+        orcamentos_aguardando = list(
+            Orcamento.objects.filter(tenant_id=tid, status=Orcamento.Status.ENVIADO)
+            .select_related("fornecedor", "deal")
+            .prefetch_related("itens")
+        )
+
+        data = {
+            "criticos": criticos,
+            "pendentes_atencao": pendentes,
+            "em_transito": em_transito,
+            "entregues_mes": entregues_mes,
+            "valor_em_andamento": valor_em_andamento,
+            "orcamentos_aguardando_resposta": orcamentos_aguardando,
+        }
+        ser = CentralSuprimentosSerializer(data)
+        return Response(ser.data)
