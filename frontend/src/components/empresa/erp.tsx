@@ -20,7 +20,6 @@ import {
   FileText,
   Layers,
   Loader2,
-  MapPin,
   Package,
   Plus,
   Receipt,
@@ -37,6 +36,8 @@ import {
   X,
   XCircle,
   CheckCircle2,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,8 @@ import {
   listTodosOrcamentos,
   listFornecedoresCompras,
   createFornecedorCompras,
+  updateFornecedorCompras,
+  deleteFornecedorCompras,
   buscarFornecedoresOSM,
 } from "@/lib/api";
 
@@ -722,16 +725,110 @@ function ModalNovoFornecedor({
   );
 }
 
+function ModalEditarFornecedor({
+  fornecedor,
+  onClose,
+  onSaved,
+}: {
+  fornecedor: FornecedorCompras;
+  onClose: () => void;
+  onSaved: (f: FornecedorCompras) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [form, setForm] = useState({
+    nome: fornecedor.nome,
+    categoria: fornecedor.categoria ?? "",
+    telefone: fornecedor.telefone ?? "",
+    email: fornecedor.email ?? "",
+    endereco: fornecedor.endereco ?? "",
+    cidade: fornecedor.cidade ?? "",
+    observacoes: fornecedor.observacoes ?? "",
+  });
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  const save = async () => {
+    if (!form.nome.trim()) { setErr("Nome é obrigatório."); return; }
+    setSaving(true); setErr("");
+    try {
+      const updated = await updateFornecedorCompras(fornecedor.id, form);
+      onSaved(updated);
+      onClose();
+    } catch { setErr("Erro ao salvar fornecedor."); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-md rounded-xl bg-background shadow-2xl border border-border">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h3 className="font-semibold text-sm">Editar Fornecedor</h3>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}><X size={14} /></Button>
+        </div>
+        <div className="p-5 space-y-3">
+          {err && <p className="text-xs text-destructive">{err}</p>}
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Nome *</label>
+            <Input className="h-8 text-sm" value={form.nome} onChange={set("nome")} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Categoria</label>
+              <Input className="h-8 text-sm" value={form.categoria} onChange={set("categoria")} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Telefone</label>
+              <Input className="h-8 text-sm" value={form.telefone} onChange={set("telefone")} />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">E-mail</label>
+            <Input className="h-8 text-sm" value={form.email} onChange={set("email")} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Endereço</label>
+            <Input className="h-8 text-sm" value={form.endereco} onChange={set("endereco")} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Cidade</label>
+            <Input className="h-8 text-sm" value={form.cidade} onChange={set("cidade")} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Observações</label>
+            <Input className="h-8 text-sm" value={form.observacoes} onChange={set("observacoes")} />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onClose}>Cancelar</Button>
+          <Button size="sm" className="h-8 text-xs" onClick={save} disabled={saving}>
+            {saving ? <Loader2 size={13} className="animate-spin" /> : "Salvar"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TabCotacao() {
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
   const [fornecedores, setFornecedores] = useState<FornecedorCompras[]>([]);
   const [search, setSearch] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
   const [modalFornecedor, setModalFornecedor] = useState(false);
+  const [editFornecedor, setEditFornecedor] = useState<FornecedorCompras | null>(null);
 
   const loadFornecedores = useCallback(() => {
     listFornecedoresCompras().then(setFornecedores).catch(() => {});
   }, []);
+
+  const handleDeleteFornecedor = async (id: number) => {
+    if (!confirm("Excluir este fornecedor?")) return;
+    try {
+      await deleteFornecedorCompras(id);
+      setFornecedores((prev) => prev.filter((f) => f.id !== id));
+    } catch { /* silently fail */ }
+  };
 
   useEffect(() => {
     listTodosOrcamentos().then(setOrcamentos).catch(() => {});
@@ -761,14 +858,22 @@ function TabCotacao() {
     .sort((a, b) => b[1].total - a[1].total)
     .slice(0, 8);
 
-  const fornecedoresOsm = fornecedores.filter((f) => f.source === "openstreetmap");
-
   return (
     <>
       {modalFornecedor && (
         <ModalNovoFornecedor
           onClose={() => setModalFornecedor(false)}
           onSaved={(novo) => setFornecedores((prev) => [...prev, novo])}
+        />
+      )}
+      {editFornecedor && (
+        <ModalEditarFornecedor
+          fornecedor={editFornecedor}
+          onClose={() => setEditFornecedor(null)}
+          onSaved={(updated) => {
+            setFornecedores((prev) => prev.map((f) => f.id === updated.id ? updated : f));
+            setEditFornecedor(null);
+          }}
         />
       )}
 
@@ -878,65 +983,52 @@ function TabCotacao() {
                 </Button>
               </div>
 
-              {rankingFornecedores.length > 0 && (
-                <>
-                  <div className="px-4 pt-3 pb-1">
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Mais cotados</p>
-                  </div>
-                  <div className="divide-y divide-border">
-                    {rankingFornecedores.map(([, f]) => (
-                      <div key={f.nome} className="flex items-center justify-between gap-2 px-4 py-3 hover:bg-secondary/50 transition-colors">
-                        <div className="min-w-0">
+              <div className="divide-y divide-border max-h-80 overflow-y-auto">
+                {fornecedores.length === 0 && (
+                  <p className="px-4 py-5 text-xs text-muted-foreground text-center">
+                    Nenhum fornecedor ainda — adicione um acima.
+                  </p>
+                )}
+                {fornecedores.map((f) => {
+                  const rank = rankingFornecedores.find(([, r]) => r.nome === f.nome);
+                  return (
+                    <div key={f.id} className="flex items-start justify-between gap-2 px-4 py-3 hover:bg-secondary/50 transition-colors">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
                           <p className="text-sm font-medium truncate">{f.nome}</p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {f.total} cotaç{f.total === 1 ? "ão" : "ões"}
-                            {f.aprovados > 0 && ` · ${f.aprovados} aprovada${f.aprovados > 1 ? "s" : ""}`}
-                          </p>
+                          {f.source === "openstreetmap" && (
+                            <Badge className="text-[10px] bg-secondary text-muted-foreground border border-border shrink-0">OSM</Badge>
+                          )}
                         </div>
-                        {f.valor > 0 && (
-                          <span className="text-xs font-semibold text-success shrink-0 tabular-nums">
-                            {fmtBRL(f.valor)}
-                          </span>
+                        {(f.cidade || f.categoria) && (
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            {[f.categoria, f.cidade].filter(Boolean).join(" · ")}
+                          </p>
+                        )}
+                        {rank && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {rank[1].total} cotaç{rank[1].total === 1 ? "ão" : "ões"}
+                            {rank[1].aprovados > 0 && ` · ${rank[1].aprovados} aprovada${rank[1].aprovados > 1 ? "s" : ""}`}
+                          </p>
                         )}
                       </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {rankingFornecedores.length === 0 && (
-                <p className="px-4 py-5 text-xs text-muted-foreground text-center">
-                  Nenhum fornecedor ainda — adicione um acima.
-                </p>
-              )}
-            </div>
-
-            {/* Fornecedores via OSM */}
-            <div className="panel-elevated rounded-card overflow-hidden">
-              <div className="p-4 border-b border-border">
-                <div className="flex items-center gap-2">
-                  <MapPin size={14} className="text-muted-foreground" />
-                  <h3 className="text-sm font-semibold">Encontrados via OSM</h3>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {fornecedoresOsm.length} resultado{fornecedoresOsm.length !== 1 ? "s" : ""} — use "Busca OpenStreetMap" para pesquisar
-                </p>
-              </div>
-              <div className="divide-y divide-border max-h-60 overflow-y-auto">
-                {fornecedoresOsm.length === 0 ? (
-                  <p className="px-4 py-5 text-xs text-muted-foreground text-center">
-                    Clique em "Adicionar" e use a aba "Busca OpenStreetMap".
-                  </p>
-                ) : fornecedoresOsm.map((f) => (
-                  <div key={f.id} className="px-4 py-3 hover:bg-secondary/50 transition-colors">
-                    <p className="text-sm font-medium">{f.nome}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">{f.endereco}{f.cidade ? ` · ${f.cidade}` : ""}</p>
-                    {f.telefone && <p className="text-[11px] text-muted-foreground mt-0.5">{f.telefone}</p>}
-                    {f.categoria && (
-                      <Badge className="mt-1 text-[10px] bg-secondary text-muted-foreground border border-border">{f.categoria}</Badge>
-                    )}
-                  </div>
-                ))}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary"
+                          onClick={() => setEditFornecedor(f)}
+                        >
+                          <Pencil size={12} />
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleDeleteFornecedor(f.id)}
+                        >
+                          <Trash2 size={12} />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -1046,6 +1138,7 @@ function ModalMovimentacao({
   const [err, setErr] = useState("");
   const [tipo, setTipo] = useState<MovimentacaoEstoque["tipo"]>("entrada");
   const [quantidade, setQuantidade] = useState("1");
+  const [valorUnitario, setValorUnitario] = useState("");
   const [motivo, setMotivo] = useState("");
   const [referencia, setReferencia] = useState("");
 
@@ -1061,7 +1154,8 @@ function ModalMovimentacao({
     }
     setSaving(true); setErr("");
     try {
-      await registrarMovimentacao({ item_id: item.id, tipo, quantidade: qtd, motivo, referencia });
+      const vu = valorUnitario.trim() ? parseFloat(valorUnitario) : undefined;
+      await registrarMovimentacao({ item_id: item.id, tipo, quantidade: qtd, motivo, referencia, valor_unitario: vu });
       onSaved(); onClose();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Erro ao registrar movimentação.";
@@ -1110,6 +1204,12 @@ function ModalMovimentacao({
               </p>
             )}
           </div>
+          {tipo === "entrada" && (
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Valor Unitário (R$) <span className="text-muted-foreground/60">— atualiza custo médio</span></label>
+              <Input type="number" step="0.01" className="h-8 text-sm" value={valorUnitario} onChange={(e) => setValorUnitario(e.target.value)} placeholder="0,00" />
+            </div>
+          )}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">Motivo</label>
             <Input className="h-8 text-sm" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex: Compra fornecedor, Venda cliente…" />
@@ -1201,9 +1301,10 @@ function TabEstoque() {
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Categoria</th>
                 <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Qtd</th>
                 <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Mín</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Localização</th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Custo Médio</th>
                 <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor Unit.</th>
                 <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Total</th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Últ. Compra</th>
                 <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Ações</th>
               </tr>
             </thead>
@@ -1222,9 +1323,12 @@ function TabEstoque() {
                   </td>
                   <td className={`px-4 py-3 text-center tabular-nums font-bold ${row.abaixo_minimo ? "text-warning" : ""}`}>{row.quantidade} <span className="text-xs font-normal text-muted-foreground">{row.unidade}</span></td>
                   <td className="px-4 py-3 text-center tabular-nums text-muted-foreground">{row.quantidade_minima}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{row.localizacao || "—"}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-primary font-medium">{fmtBRL(parseFloat(row.custo_medio))}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{fmtBRL(parseFloat(row.custo_unitario))}</td>
                   <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(row.valor_total)}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                    {row.data_ultima_compra ? new Date(row.data_ultima_compra + "T00:00:00").toLocaleDateString("pt-BR") : "—"}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-1">
                       <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 text-success hover:text-success hover:bg-success/10" onClick={() => setMovItem(row)}>
@@ -1235,7 +1339,7 @@ function TabEstoque() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum item encontrado</td></tr>
+                <tr><td colSpan={11} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum item encontrado</td></tr>
               )}
             </tbody>
           </table>

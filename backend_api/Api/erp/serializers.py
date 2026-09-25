@@ -31,7 +31,7 @@ class ItemEstoqueSerializer(serializers.ModelSerializer):
         fields = [
             "id", "codigo", "nome", "categoria", "quantidade", "quantidade_minima",
             "unidade", "custo_unitario", "fornecedor", "fornecedor_nome",
-            "localizacao", "valor_total", "abaixo_minimo", "created_at",
+            "localizacao", "data_ultima_compra", "custo_medio", "valor_total", "abaixo_minimo", "created_at",
         ]
         read_only_fields = ["id", "fornecedor_nome", "valor_total", "abaixo_minimo", "created_at"]
 
@@ -52,7 +52,7 @@ class MovimentacaoEstoqueSerializer(serializers.ModelSerializer):
         fields = [
             "id", "item", "item_nome", "item_codigo", "tipo", "tipo_display",
             "quantidade", "quantidade_anterior", "quantidade_posterior",
-            "motivo", "referencia", "operador", "created_at",
+            "valor_unitario", "motivo", "referencia", "operador", "created_at",
         ]
         read_only_fields = ["id", "item_nome", "item_codigo", "tipo_display",
                             "quantidade_anterior", "quantidade_posterior", "created_at"]
@@ -62,6 +62,7 @@ class RegistrarMovimentacaoSerializer(serializers.Serializer):
     item_id = serializers.IntegerField()
     tipo = serializers.ChoiceField(choices=["entrada", "saida", "ajuste", "transferencia"])
     quantidade = serializers.IntegerField(min_value=1)
+    valor_unitario = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, allow_null=True)
     motivo = serializers.CharField(required=False, allow_blank=True, default="")
     referencia = serializers.CharField(required=False, allow_blank=True, default="")
     operador = serializers.CharField(required=False, allow_blank=True, default="")
