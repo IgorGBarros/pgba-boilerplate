@@ -399,4 +399,8 @@ def handle_incoming_message(
             countdown=config.session_timeout_minutes * 60,
         )
 
+    # Sincroniza histórico da conversa com o vault Obsidian
+    from crm.tasks import sync_lead_to_obsidian
+    sync_lead_to_obsidian.delay(lead.id, tenant_id)
+
     return lead
