@@ -176,7 +176,7 @@ class OrcamentoViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelView
 
 class PedidoCompraViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
     queryset = PedidoCompra.objects.select_related(
-        "orcamento__fornecedor", "orcamento__deal", "orcamento__itens", "project"
+        "orcamento__fornecedor", "orcamento__deal", "project"
     ).prefetch_related("orcamento__itens").filter(is_active=True)
     serializer_class = PedidoCompraSerializer
     permission_classes = [IsAuthenticated]
