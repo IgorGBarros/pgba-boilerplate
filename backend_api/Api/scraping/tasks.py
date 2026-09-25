@@ -56,8 +56,17 @@ def run_google_maps_job(self, scraping_job_id: int):
             elapsed += POLL_INTERVAL
 
             data = gmaps_get_job(ext_id)
-            ext_status = str(data.get("status", "")).lower()
-            logger.info("Google Maps job %s — status=%s elapsed=%ds", ext_id, ext_status, elapsed)
+            # Tenta múltiplos nomes de campo — a API gosom pode usar Status, state, etc.
+            ext_status = (
+                data.get("status") or data.get("Status") or
+                data.get("state") or data.get("State") or
+                (data.get("job") or {}).get("status") or ""
+            )
+            ext_status = str(ext_status).lower()
+            logger.info(
+                "Google Maps job %s — status=%r elapsed=%ds keys=%s",
+                ext_id, ext_status, elapsed, list(data.keys())[:10],
+            )
 
             # Salva resultados parciais para exibição progressiva
             raw = _extract_raw_results(data)
