@@ -198,34 +198,34 @@ const PEDIDO_STATUS_OPTIONS = [
 ] as const;
 
 function ModalNovoPedido({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [fornecedores, setFornecedores] = useState<FornecedorCompras[]>([]);
+  const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [form, setForm] = useState({
-    fornecedor_id: "" as string | number,
+    orcamento_id: "" as string | number,
     numero_pedido: "",
     status: "criado" as PedidoCompra["status"],
-    valor_total: "",
     previsao_entrega: "",
     observacoes: "",
   });
 
   useEffect(() => {
-    listFornecedoresCompras().then(setFornecedores).catch(() => {});
+    listTodosOrcamentos().then(setOrcamentos).catch(() => {});
   }, []);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
+  const orcSelecionado = orcamentos.find((o) => String(o.id) === String(form.orcamento_id));
+
   const handleSave = async () => {
-    if (!form.fornecedor_id) { setErro("Selecione um fornecedor."); return; }
+    if (!form.orcamento_id) { setErro("Selecione um orçamento."); return; }
     setSaving(true);
     setErro(null);
     try {
       await createPedidoCompra({
-        fornecedor_id: Number(form.fornecedor_id),
+        orcamento: Number(form.orcamento_id),
         numero_pedido: form.numero_pedido || undefined,
         status: form.status,
-        valor_total: form.valor_total || undefined,
         previsao_entrega: form.previsao_entrega || undefined,
         observacoes: form.observacoes || undefined,
       });
@@ -236,6 +236,13 @@ function ModalNovoPedido({ onClose, onSaved }: { onClose: () => void; onSaved: (
     } finally {
       setSaving(false);
     }
+  };
+
+  const fmtOrcLabel = (o: Orcamento) => {
+    const partes = [o.fornecedor_nome ?? `Orç. #${o.id}`];
+    if (o.valor_total != null) partes.push(`R$ ${Number(o.valor_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+    partes.push(`(${o.status})`);
+    return partes.join(" · ");
   };
 
   return (
@@ -252,27 +259,41 @@ function ModalNovoPedido({ onClose, onSaved }: { onClose: () => void; onSaved: (
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Fornecedor */}
+          {/* Orçamento (obrigatório — deriva fornecedor e valor) */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-foreground">Fornecedor *</label>
-            <Select value={String(form.fornecedor_id)} onValueChange={(v) => set("fornecedor_id", v)}>
+            <label className="text-xs font-medium text-foreground">Orçamento *</label>
+            <Select value={String(form.orcamento_id)} onValueChange={(v) => set("orcamento_id", v)}>
               <SelectTrigger className="h-9 text-sm">
-                <SelectValue placeholder="Selecione um fornecedor…" />
+                <SelectValue placeholder="Selecione um orçamento…" />
               </SelectTrigger>
               <SelectContent>
-                {fornecedores.map((f) => (
-                  <SelectItem key={f.id} value={String(f.id)} className="text-sm">
-                    {f.nome} {f.cidade ? `— ${f.cidade}` : ""}
+                {orcamentos.map((o) => (
+                  <SelectItem key={o.id} value={String(o.id)} className="text-sm">
+                    {fmtOrcLabel(o)}
                   </SelectItem>
                 ))}
-                {fornecedores.length === 0 && (
+                {orcamentos.length === 0 && (
                   <SelectItem value="__none" disabled className="text-xs text-muted-foreground">
-                    Nenhum fornecedor cadastrado
+                    Nenhum orçamento disponível
                   </SelectItem>
                 )}
               </SelectContent>
             </Select>
           </div>
+
+          {/* Resumo do orçamento selecionado */}
+          {orcSelecionado && (
+            <div className="rounded-lg bg-muted/40 border border-border px-3 py-2 text-xs space-y-0.5">
+              <p><span className="text-muted-foreground">Fornecedor:</span> <span className="font-medium text-foreground">{orcSelecionado.fornecedor_nome}</span></p>
+              {orcSelecionado.valor_total != null && (
+                <p><span className="text-muted-foreground">Valor:</span> <span className="font-semibold text-emerald-600 dark:text-emerald-400">R$ {Number(orcSelecionado.valor_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></p>
+              )}
+              {orcSelecionado.prazo_entrega_dias != null && (
+                <p><span className="text-muted-foreground">Prazo:</span> <span className="text-foreground">{orcSelecionado.prazo_entrega_dias} dias</span></p>
+              )}
+              <p><span className="text-muted-foreground">Status:</span> <span className="text-foreground">{orcSelecionado.status}</span></p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             {/* Nº Pedido */}
@@ -301,27 +322,15 @@ function ModalNovoPedido({ onClose, onSaved }: { onClose: () => void; onSaved: (
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            {/* Valor */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">Valor Total (R$)</label>
-              <Input
-                className="h-9 text-sm"
-                placeholder="0,00"
-                value={form.valor_total}
-                onChange={(e) => set("valor_total", e.target.value)}
-              />
-            </div>
-            {/* Previsão entrega */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">Previsão de Entrega</label>
-              <Input
-                type="date"
-                className="h-9 text-sm"
-                value={form.previsao_entrega}
-                onChange={(e) => set("previsao_entrega", e.target.value)}
-              />
-            </div>
+          {/* Previsão de entrega */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">Previsão de Entrega</label>
+            <Input
+              type="date"
+              className="h-9 text-sm"
+              value={form.previsao_entrega}
+              onChange={(e) => set("previsao_entrega", e.target.value)}
+            />
           </div>
 
           {/* Observações */}
