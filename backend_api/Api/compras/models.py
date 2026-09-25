@@ -86,7 +86,7 @@ class Orcamento(TenantMixin, AuditMixin, models.Model):
     resposta_em = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["-id"]
         verbose_name = "Orçamento"
         verbose_name_plural = "Orçamentos"
 
@@ -153,7 +153,7 @@ class PedidoCompra(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     entregue_em = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["-id"]
         verbose_name = "Pedido de Compra"
         verbose_name_plural = "Pedidos de Compra"
 
