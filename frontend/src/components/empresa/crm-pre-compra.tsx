@@ -358,11 +358,11 @@ export function CRMPreCompra({ dealId }: Props) {
                     </button>
                     <span className="flex-1 text-sm font-medium text-foreground">{item.nome}</span>
                     <span className="text-xs text-muted-foreground tabular-nums font-mono">
-                      {item.quantidade} {item.unidade}
+                      {Number(item.quantidade)} {item.unidade}
                     </span>
                     {!item.tem_estoque && (
                       <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
-                        −{item.quantidade_faltando} {item.unidade}
+                        −{Number(item.quantidade_faltando)} {item.unidade}
                       </span>
                     )}
                     <button
@@ -729,7 +729,7 @@ export function CRMPreCompra({ dealId }: Props) {
                                 <div key={it.id} className="flex items-center justify-between text-xs">
                                   <span className="text-foreground">{it.nome}</span>
                                   <div className="flex items-center gap-3 text-muted-foreground">
-                                    <span className="tabular-nums">{it.quantidade} {it.unidade}</span>
+                                    <span className="tabular-nums">{Number(it.quantidade)} {it.unidade}</span>
                                     {it.preco_unitario != null && (
                                       <span className="tabular-nums font-medium text-foreground">{fmtBRL(it.subtotal)}</span>
                                     )}
