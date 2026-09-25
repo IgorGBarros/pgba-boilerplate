@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Plus, X, Send, User,
   Mail, Phone, DollarSign, Briefcase, MessageSquare,
   CheckCircle2, XCircle, Settings, Pencil, Trash2, Bot,
   ArrowRight, Loader2, Radio, MessageCircle, Calendar, Package2,
-  ChevronRight, GripVertical,
+  ChevronRight, GripVertical, Palette,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,17 +29,105 @@ import { toast } from "sonner";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const TAB_META: { key: MainStage; label: string; bgClass: string }[] = [
-  { key: "lead",    label: "Leads",    bgClass: "bg-indigo-500/15 text-indigo-400 border-indigo-500/40" },
-  { key: "deal",    label: "Deals",    bgClass: "bg-amber-500/15  text-amber-400  border-amber-500/40"  },
-  { key: "project", label: "Projetos", bgClass: "bg-emerald-500/15 text-emerald-400 border-emerald-500/40" },
+// key + label only — color comes from palette state
+const TAB_META: { key: MainStage; label: string }[] = [
+  { key: "lead",    label: "Leads"    },
+  { key: "deal",    label: "Deals"    },
+  { key: "project", label: "Projetos" },
 ];
 
 const COLOR_MAP: Record<string, string> = {
-  blue: "#6366f1", indigo: "#818cf8", violet: "#a78bfa",
-  amber: "#f59e0b", orange: "#f97316", yellow: "#eab308", red: "#ef4444",
-  green: "#10b981", emerald: "#34d399", cyan: "#06b6d4", teal: "#14b8a6", sky: "#0ea5e9",
+  blue: "#3b82f6", indigo: "#6366f1", violet: "#8b5cf6",
+  pink: "#ec4899",  rose: "#f43f5e",  red: "#ef4444",
+  orange: "#f97316", amber: "#f59e0b", yellow: "#eab308",
+  green: "#22c55e", emerald: "#10b981", teal: "#14b8a6", cyan: "#06b6d4", sky: "#0ea5e9",
 };
+
+// Tailwind classes for each named color — theme-aware (darker in light, lighter in dark)
+const COLOR_CLASSES: Record<string, { text: string; bg: string; border: string }> = {
+  blue:    { text: "text-blue-600 dark:text-blue-400",    bg: "bg-blue-500/15",    border: "border-blue-500/40"    },
+  indigo:  { text: "text-indigo-600 dark:text-indigo-400",  bg: "bg-indigo-500/15",  border: "border-indigo-500/40"  },
+  violet:  { text: "text-violet-600 dark:text-violet-400",  bg: "bg-violet-500/15",  border: "border-violet-500/40"  },
+  pink:    { text: "text-pink-600 dark:text-pink-400",    bg: "bg-pink-500/15",    border: "border-pink-500/40"    },
+  rose:    { text: "text-rose-600 dark:text-rose-400",    bg: "bg-rose-500/15",    border: "border-rose-500/40"    },
+  red:     { text: "text-red-600 dark:text-red-400",      bg: "bg-red-500/15",     border: "border-red-500/40"     },
+  orange:  { text: "text-orange-600 dark:text-orange-400",  bg: "bg-orange-500/15",  border: "border-orange-500/40"  },
+  amber:   { text: "text-amber-700 dark:text-amber-400",   bg: "bg-amber-500/15",   border: "border-amber-500/40"   },
+  yellow:  { text: "text-yellow-700 dark:text-yellow-400",  bg: "bg-yellow-500/15",  border: "border-yellow-500/40"  },
+  green:   { text: "text-green-600 dark:text-green-400",   bg: "bg-green-500/15",   border: "border-green-500/40"   },
+  emerald: { text: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/15", border: "border-emerald-500/40" },
+  teal:    { text: "text-teal-600 dark:text-teal-400",    bg: "bg-teal-500/15",    border: "border-teal-500/40"    },
+  cyan:    { text: "text-cyan-600 dark:text-cyan-400",    bg: "bg-cyan-500/15",    border: "border-cyan-500/40"    },
+  sky:     { text: "text-sky-600 dark:text-sky-400",      bg: "bg-sky-500/15",     border: "border-sky-500/40"     },
+};
+
+const PALETTE_SWATCHES = [
+  "blue", "indigo", "violet", "pink", "rose", "red",
+  "orange", "amber", "yellow", "green", "emerald", "teal", "cyan", "sky",
+] as const;
+
+type KanbanPalette = { lead: string; deal: string; project: string };
+
+const DEFAULT_PALETTE: KanbanPalette = { lead: "indigo", deal: "amber", project: "emerald" };
+
+function loadPalette(): KanbanPalette {
+  try { const s = localStorage.getItem("crm_palette"); return s ? JSON.parse(s) : DEFAULT_PALETTE; }
+  catch { return DEFAULT_PALETTE; }
+}
+
+// ─── Palette Popover ──────────────────────────────────────────────────────────
+
+function PalettePopover({ palette, onChange, onClose }: {
+  palette: KanbanPalette;
+  onChange: (next: KanbanPalette) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  const sections: { key: keyof KanbanPalette; label: string }[] = [
+    { key: "lead", label: "Leads" },
+    { key: "deal", label: "Deals" },
+    { key: "project", label: "Projetos" },
+  ];
+
+  return (
+    <div ref={ref} className="absolute right-0 top-full mt-1.5 z-50 bg-card border border-border rounded-xl shadow-2xl p-4 w-64">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-semibold text-foreground">Paleta de Cores</span>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-3.5" /></button>
+      </div>
+      <div className="space-y-3">
+        {sections.map(s => (
+          <div key={s.key}>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1.5">{s.label}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {PALETTE_SWATCHES.map(sw => (
+                <button
+                  key={sw}
+                  title={sw}
+                  onClick={() => onChange({ ...palette, [s.key]: sw })}
+                  className={`size-5 rounded-full transition-transform hover:scale-110 ring-offset-card ${palette[s.key] === sw ? "ring-2 ring-offset-1 ring-foreground/50 scale-110" : ""}`}
+                  style={{ backgroundColor: COLOR_MAP[sw] }}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={() => onChange(DEFAULT_PALETTE)}
+        className="mt-3 w-full text-[10px] text-muted-foreground hover:text-foreground text-center transition-colors"
+      >
+        Restaurar padrão
+      </button>
+    </div>
+  );
+}
 
 function colorDot(color: string) {
   return <span className="inline-block size-2 rounded-full shrink-0" style={{ backgroundColor: COLOR_MAP[color] ?? "#94a3b8" }} />;
@@ -205,12 +293,14 @@ function CustomFieldsManager({
 // ─── Lead Card ────────────────────────────────────────────────────────────────
 
 function LeadCard({
-  lead, onDragStart, onClick,
+  lead, accentColor = "indigo", onDragStart, onClick,
 }: {
   lead: CRMLead;
+  accentColor?: string;
   onDragStart: (e: React.DragEvent) => void;
   onClick: () => void;
 }) {
+  const cc = COLOR_CLASSES[accentColor] ?? COLOR_CLASSES.indigo!;
   return (
     <div
       draggable
@@ -220,7 +310,7 @@ function LeadCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="shrink-0 grid size-7 place-items-center rounded-full bg-indigo-500/15 text-[11px] font-semibold text-indigo-400">
+          <span className={`shrink-0 grid size-7 place-items-center rounded-full text-[11px] font-semibold ${cc.bg} ${cc.text}`}>
             {initials(lead.nome)}
           </span>
           <div className="min-w-0">
@@ -233,7 +323,7 @@ function LeadCard({
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         {lead.valor_estimado
-          ? <span className="text-xs font-semibold text-emerald-400">{fmtCurrency(lead.valor_estimado)}</span>
+          ? <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">{fmtCurrency(lead.valor_estimado)}</span>
           : <span />}
         <div className="flex items-center gap-2 text-muted-foreground">
           {lead.messages_count > 0 && (
@@ -242,7 +332,7 @@ function LeadCard({
             </span>
           )}
           {lead.deals_count > 0 && (
-            <span className="flex items-center gap-0.5 text-[10px] text-amber-400">
+            <span className="flex items-center gap-0.5 text-[10px] text-amber-700 dark:text-amber-400">
               <ChevronRight className="size-3" />{lead.deals_count} deal{lead.deals_count > 1 ? "s" : ""}
             </span>
           )}
@@ -283,7 +373,7 @@ function DealCard({
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         {deal.valor
-          ? <span className="text-xs font-semibold text-emerald-400">{fmtCurrency(deal.valor, deal.moeda)}</span>
+          ? <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">{fmtCurrency(deal.valor, deal.moeda)}</span>
           : <span />}
         <div className="flex items-center gap-2 text-muted-foreground">
           {deal.data_fechamento_previsto && (
@@ -292,7 +382,7 @@ function DealCard({
             </span>
           )}
           {deal.projects_count > 0 && (
-            <span className="flex items-center gap-0.5 text-[10px] text-emerald-400">
+            <span className="flex items-center gap-0.5 text-[10px] text-emerald-600 dark:text-emerald-400">
               <Package2 className="size-3" />{deal.projects_count}
             </span>
           )}
@@ -339,7 +429,7 @@ function ProjectCard({
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-muted-foreground">
           {project.data_fim_previsto && (
-            <span className={`flex items-center gap-0.5 text-[10px] ${overdue ? "text-red-400" : ""}`}>
+            <span className={`flex items-center gap-0.5 text-[10px] ${overdue ? "text-red-600 dark:text-red-400" : ""}`}>
               <Calendar className="size-3" />{fmtDate(project.data_fim_previsto)}
             </span>
           )}
@@ -395,7 +485,7 @@ function KanbanColumn({
       </div>
       {totalValue != null && totalValue > 0 && (
         <div className="px-3 py-1 border-b border-border/50">
-          <span className="text-[10px] font-semibold text-emerald-400">{fmtCurrency(String(totalValue))}</span>
+          <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">{fmtCurrency(String(totalValue))}</span>
         </div>
       )}
       <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-[120px]">
@@ -972,13 +1062,13 @@ function LeadDetailModal({
       subtitle={local.empresa}
       badge={local.stage_name ?? undefined}
       icon={
-        <span className="grid size-10 place-items-center rounded-full bg-indigo-500/15 text-sm font-bold text-indigo-400 shrink-0">
+        <span className="grid size-10 place-items-center rounded-full bg-indigo-500/15 text-sm font-bold text-indigo-600 dark:text-indigo-400 shrink-0">
           {initials(local.nome)}
         </span>
       }
       extra={
         local.valor_estimado ? (
-          <span className="text-sm font-semibold text-emerald-400 mr-1">{fmtCurrency(local.valor_estimado)}</span>
+          <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mr-1">{fmtCurrency(local.valor_estimado)}</span>
         ) : null
       }
       onEdit={() => setEditing(true)}
@@ -995,7 +1085,7 @@ function LeadDetailModal({
             {local.outcome !== "convertido" && (
               <Button
                 size="sm" variant="outline"
-                className="gap-1.5 h-8 text-xs border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                className="gap-1.5 h-8 text-xs border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
                 onClick={handleConvert} disabled={busy}
               >
                 {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
@@ -1005,7 +1095,7 @@ function LeadDetailModal({
             {local.outcome !== "perdido" && (
               <Button
                 size="sm" variant="outline"
-                className="gap-1.5 h-8 text-xs border-red-500/40 text-red-400 hover:bg-red-500/10"
+                className="gap-1.5 h-8 text-xs border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10"
                 onClick={() => void handleOutcome("perdido")} disabled={busy}
               >
                 <XCircle className="size-3.5" /> Perdido
@@ -1142,13 +1232,13 @@ function DealDetailModal({
       subtitle={local.empresa}
       badge={local.stage_name ?? undefined}
       icon={
-        <span className="grid size-10 place-items-center rounded-full bg-amber-500/15 text-sm font-bold text-amber-400 shrink-0">
+        <span className="grid size-10 place-items-center rounded-full bg-amber-500/15 text-sm font-bold text-amber-700 dark:text-amber-400 shrink-0">
           <DollarSign className="size-5" />
         </span>
       }
       extra={
         local.valor ? (
-          <span className="text-sm font-semibold text-emerald-400 mr-1">{fmtCurrency(local.valor, local.moeda)}</span>
+          <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mr-1">{fmtCurrency(local.valor, local.moeda)}</span>
         ) : null
       }
       onEdit={() => setEditing(true)}
@@ -1164,7 +1254,7 @@ function DealDetailModal({
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm" variant="outline"
-              className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+              className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
               onClick={() => void handleOutcome("ganho")} disabled={busy || local.outcome === "ganho"}
             >
               {busy ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
@@ -1172,21 +1262,21 @@ function DealDetailModal({
             </Button>
             <Button
               size="sm" variant="outline"
-              className="gap-1.5 h-8 text-xs border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
+              className="gap-1.5 h-8 text-xs border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"
               onClick={() => void handleOutcome("contrato_assinado")} disabled={busy || local.outcome === "contrato_assinado"}
             >
               Contrato Assinado → Projeto
             </Button>
             <Button
               size="sm" variant="outline"
-              className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+              className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
               onClick={handleConvert} disabled={busy}
             >
               <ArrowRight className="size-3.5" /> Converter em Projeto
             </Button>
             <Button
               size="sm" variant="outline"
-              className="gap-1.5 h-8 text-xs border-red-500/40 text-red-400 hover:bg-red-500/10"
+              className="gap-1.5 h-8 text-xs border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10"
               onClick={() => void handleOutcome("perdido")} disabled={busy || local.outcome === "perdido"}
             >
               <XCircle className="size-3.5" /> Perdido
@@ -1274,7 +1364,7 @@ function ProjectDetailModal({
       subtitle={local.empresa}
       badge={local.stage_name ?? undefined}
       icon={
-        <span className="grid size-10 place-items-center rounded-full bg-emerald-500/15 text-sm font-bold text-emerald-400 shrink-0">
+        <span className="grid size-10 place-items-center rounded-full bg-emerald-500/15 text-sm font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
           <Package2 className="size-5" />
         </span>
       }
@@ -1291,7 +1381,7 @@ function ProjectDetailModal({
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm" variant="outline"
-              className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+              className="gap-1.5 h-8 text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
               onClick={() => void handleOutcome("concluido")} disabled={busy || local.outcome === "concluido"}
             >
               {busy ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
@@ -1299,14 +1389,14 @@ function ProjectDetailModal({
             </Button>
             <Button
               size="sm" variant="outline"
-              className="gap-1.5 h-8 text-xs border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10"
+              className="gap-1.5 h-8 text-xs border-yellow-500/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/10"
               onClick={() => void handleOutcome("pausado")} disabled={busy || local.outcome === "pausado"}
             >
               Pausado
             </Button>
             <Button
               size="sm" variant="outline"
-              className="gap-1.5 h-8 text-xs border-red-500/40 text-red-400 hover:bg-red-500/10"
+              className="gap-1.5 h-8 text-xs border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-500/10"
               onClick={() => void handleOutcome("cancelado")} disabled={busy || local.outcome === "cancelado"}
             >
               <XCircle className="size-3.5" /> Cancelado
@@ -1440,8 +1530,8 @@ function StageConfigDialog({
                     <GripVertical className="size-3.5 text-muted-foreground/40 shrink-0" />
                     {colorDot(s.color)}
                     <span className="flex-1 text-sm text-foreground">{s.name}</span>
-                    {s.is_won && <Badge className="text-[10px] h-4 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">Ganho</Badge>}
-                    {s.is_lost && <Badge className="text-[10px] h-4 bg-red-500/15 text-red-400 border-red-500/30">Perdido</Badge>}
+                    {s.is_won && <Badge className="text-[10px] h-4 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">Ganho</Badge>}
+                    {s.is_lost && <Badge className="text-[10px] h-4 bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30">Perdido</Badge>}
                     {!s.is_won && !s.is_lost && (
                       <button onClick={() => void handleDelete(s.id)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all">
                         <Trash2 className="size-3.5" />
@@ -1486,7 +1576,20 @@ export function CRMKanban() {
   const [selectedProject, setSelectedProject] = useState<CRMProject | null>(null);
   const [addingToStage, setAddingToStage] = useState<CRMStage | null>(null);
   const [showConfig, setShowConfig] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
   const [search, setSearch] = useState("");
+  const [palette, setPalette] = useState<KanbanPalette>(loadPalette);
+
+  const savePalette = (next: KanbanPalette) => {
+    setPalette(next);
+    try { localStorage.setItem("crm_palette", JSON.stringify(next)); } catch {}
+  };
+
+  const tabMeta = useMemo(() => TAB_META.map(ms => ({
+    ...ms,
+    color: palette[ms.key as keyof KanbanPalette],
+    ...(COLOR_CLASSES[palette[ms.key as keyof KanbanPalette]] ?? COLOR_CLASSES.indigo!),
+  })), [palette]);
 
   const load = useCallback(async () => {
     try {
@@ -1592,13 +1695,13 @@ export function CRMKanban() {
           {/* Top bar */}
           <div className="flex items-center justify-between px-1 pb-4 gap-3 shrink-0 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
-              {TAB_META.map(ms => {
+              {tabMeta.map(ms => {
                 const count = ms.key === "lead" ? leads.length : ms.key === "deal" ? deals.length : projects.length;
                 return (
                   <button
                     key={ms.key}
                     onClick={() => setActiveTab(ms.key)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${activeTab === ms.key ? `${ms.bgClass} border-current` : "text-muted-foreground border-transparent hover:bg-muted/40"}`}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all border ${activeTab === ms.key ? `${ms.bg} ${ms.text} ${ms.border}` : "text-muted-foreground border-transparent hover:bg-muted/40"}`}
                   >
                     {ms.label}
                     <span className="text-xs opacity-70">({count})</span>
@@ -1609,7 +1712,7 @@ export function CRMKanban() {
             <div className="flex items-center gap-2">
               {wonValue > 0 && (
                 <span className="text-xs text-muted-foreground hidden sm:block">
-                  Ganho: <span className="text-emerald-400 font-semibold">{fmtCurrency(String(wonValue))}</span>
+                  Ganho: <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{fmtCurrency(String(wonValue))}</span>
                 </span>
               )}
               <Input
@@ -1618,6 +1721,24 @@ export function CRMKanban() {
                 placeholder={`Buscar ${activeTab === "lead" ? "lead" : activeTab === "deal" ? "deal" : "projeto"}...`}
                 className="bg-background w-40 h-8 text-sm"
               />
+              <div className="relative">
+                <Button
+                  variant="outline" size="sm"
+                  onClick={() => setShowPalette(v => !v)}
+                  className={`gap-1.5 h-8 ${showPalette ? "bg-muted" : ""}`}
+                  title="Paleta de cores"
+                >
+                  <Palette className="size-3.5" />
+                  <span className="hidden sm:inline">Cores</span>
+                </Button>
+                {showPalette && (
+                  <PalettePopover
+                    palette={palette}
+                    onChange={savePalette}
+                    onClose={() => setShowPalette(false)}
+                  />
+                )}
+              </div>
               <Button variant="outline" size="sm" onClick={() => pipeline && setShowConfig(true)} className="gap-1.5 h-8">
                 <Settings className="size-3.5" />
                 <span className="hidden sm:inline">Etapas</span>
@@ -1650,6 +1771,7 @@ export function CRMKanban() {
                       <LeadCard
                         key={lead.id}
                         lead={lead}
+                        accentColor={palette.lead}
                         onDragStart={e => e.dataTransfer.setData("leadId", String(lead.id))}
                         onClick={() => setSelectedLead(lead)}
                       />
