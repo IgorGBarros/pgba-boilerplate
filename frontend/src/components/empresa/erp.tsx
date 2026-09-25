@@ -18,12 +18,13 @@ import {
   Edit2,
   Eye,
   FileText,
-  Filter,
   Layers,
+  MapPin,
   Package,
   Plus,
   Receipt,
   RefreshCw,
+  Scale,
   Search,
   ShoppingCart,
   Truck,
@@ -33,6 +34,7 @@ import {
   Users,
   Wallet,
   XCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,7 +49,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Metric, SectionHeader } from "@/components/empresa/shared";
 import {
-  type OrdemCompra,
   type ItemEstoque,
   type LancamentoFinanceiro,
   type Funcionario,
@@ -55,7 +56,9 @@ import {
   type ObrigacaoFiscal,
   type LinhaDRE,
   type BalancetePeriodo,
-  listOrdensCompra,
+  type PedidoCompra,
+  type Orcamento,
+  type FornecedorCompras,
   listEstoque,
   listLancamentosFinanceiros,
   listFuncionarios,
@@ -63,6 +66,9 @@ import {
   listObrigacoesFiscais,
   listLinhasDRE,
   listBalancete,
+  listPedidosCompra,
+  listTodosOrcamentos,
+  listFornecedoresCompras,
 } from "@/lib/api";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -81,24 +87,6 @@ function variacao(atual: number, anterior: number) {
 }
 
 // ─── Status badges ────────────────────────────────────────────────────────────
-
-function StatusBadgeCompra({ status }: { status: OrdemCompra["status"] }) {
-  const label: Record<OrdemCompra["status"], string> = {
-    rascunho: "Rascunho",
-    aprovado:  "Aprovado",
-    enviado:   "Em Trânsito",
-    recebido:  "Recebido",
-    cancelado: "Cancelado",
-  };
-  const map: Record<OrdemCompra["status"], string> = {
-    rascunho:  "bg-secondary text-muted-foreground border border-border",
-    aprovado:  "bg-primary text-primary-foreground",
-    enviado:   "bg-warning text-foreground",
-    recebido:  "bg-success text-foreground",
-    cancelado: "bg-destructive/20 text-destructive",
-  };
-  return <Badge className={map[status]}>{label[status]}</Badge>;
-}
 
 function StatusBadgeFinanceiro({ status }: { status: LancamentoFinanceiro["status"] }) {
   const label: Record<LancamentoFinanceiro["status"], string> = {
@@ -149,54 +137,114 @@ function StatusBadgeFiscal({ status }: { status: string }) {
   return <Badge className={map[status] ?? "bg-secondary text-muted-foreground"}>{label[status] ?? status}</Badge>;
 }
 
-// ─── Tab: Compras ─────────────────────────────────────────────────────────────
+// ─── Status badge PedidoCompra ────────────────────────────────────────────────
+
+function StatusBadgePedido({ status }: { status: PedidoCompra["status"] }) {
+  const label: Record<PedidoCompra["status"], string> = {
+    criado:      "Criado",
+    enviado:     "Enviado",
+    confirmado:  "Confirmado",
+    em_transito: "Em Trânsito",
+    entregue:    "Entregue",
+    cancelado:   "Cancelado",
+  };
+  const map: Record<PedidoCompra["status"], string> = {
+    criado:      "bg-secondary text-muted-foreground border border-border",
+    enviado:     "bg-primary/10 text-primary border border-primary/20",
+    confirmado:  "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20",
+    em_transito: "bg-warning/15 text-amber-700 dark:text-amber-400",
+    entregue:    "bg-success/15 text-foreground",
+    cancelado:   "bg-destructive/20 text-destructive",
+  };
+  return <Badge className={`text-[11px] ${map[status]}`}>{label[status]}</Badge>;
+}
+
+function StatusBadgeOrcamento({ status }: { status: Orcamento["status"] }) {
+  const label: Record<Orcamento["status"], string> = {
+    rascunho:  "Rascunho",
+    enviado:   "Enviado",
+    recebido:  "Recebido",
+    aprovado:  "Aprovado",
+    rejeitado: "Rejeitado",
+  };
+  const map: Record<Orcamento["status"], string> = {
+    rascunho:  "bg-secondary text-muted-foreground border border-border",
+    enviado:   "bg-primary/10 text-primary border border-primary/20",
+    recebido:  "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20",
+    aprovado:  "bg-success/15 text-foreground",
+    rejeitado: "bg-destructive/20 text-destructive",
+  };
+  return <Badge className={`text-[11px] ${map[status]}`}>{label[status]}</Badge>;
+}
+
+// ─── Tab: Compras (PedidoCompra do módulo Compras) ────────────────────────────
 
 function TabCompras() {
-  const [ordens, setOrdens] = useState<OrdemCompra[]>([]);
+  const [pedidos, setPedidos] = useState<PedidoCompra[]>([]);
   const [search, setSearch] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState<string>("todos");
 
   useEffect(() => {
-    listOrdensCompra().then(setOrdens).catch(() => {});
+    listPedidosCompra().then(setPedidos).catch(() => {});
   }, []);
 
-  const filtered = ordens.filter(
-    (c) =>
-      c.numero.toLowerCase().includes(search.toLowerCase()) ||
-      c.fornecedor_nome.toLowerCase().includes(search.toLowerCase())
-  );
-  const valorPendente = ordens
-    .filter((c) => c.status !== "recebido")
-    .reduce((acc, c) => acc + parseFloat(c.valor_total), 0);
-  const fornecedores = [...new Set(ordens.map((c) => c.fornecedor_nome))].length;
+  const filtered = pedidos.filter((p) => {
+    const matchSearch =
+      (p.numero_pedido ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      p.fornecedor_nome.toLowerCase().includes(search.toLowerCase()) ||
+      (p.deal_titulo ?? "").toLowerCase().includes(search.toLowerCase());
+    const matchStatus = filtroStatus === "todos" || p.status === filtroStatus;
+    return matchSearch && matchStatus;
+  });
+
+  const valorTotal = pedidos
+    .filter((p) => p.status !== "cancelado")
+    .reduce((acc, p) => acc + (p.valor_total ? parseFloat(p.valor_total) : 0), 0);
+  const entregues   = pedidos.filter((p) => p.status === "entregue").length;
+  const emTransito  = pedidos.filter((p) => p.status === "em_transito").length;
+  const pendentes   = pedidos.filter((p) => ["criado", "enviado", "confirmado"].includes(p.status)).length;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Pedidos Abertos" value={String(ordens.filter((c) => c.status !== "recebido").length)} icon={<ClipboardList size={16} />} />
-        <Metric label="Valor Total Pendente" value={fmtBRL(valorPendente)} icon={<DollarSign size={16} />} tone="warning" />
-        <Metric label="Fornecedores Ativos" value={String(fornecedores)} icon={<Truck size={16} />} />
-        <Metric label="Pedidos Recebidos" value={String(ordens.filter((c) => c.status === "recebido").length)} icon={<TrendingDown size={16} />} tone="success" />
+        <Metric label="Pedidos Pendentes"  value={String(pendentes)}   icon={<ClipboardList size={16} />} tone="warning" />
+        <Metric label="Em Trânsito"        value={String(emTransito)}  icon={<Truck size={16} />} />
+        <Metric label="Entregues"          value={String(entregues)}   icon={<CheckCircle2 size={16} />} tone="success" />
+        <Metric label="Valor Comprometido" value={fmtBRL(valorTotal)}  icon={<DollarSign size={16} />} />
       </div>
 
       <div className="panel-elevated rounded-card overflow-hidden">
         <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-border">
-          <SectionHeader title="Pedidos de Compra" description="Gestão de ordens de compra e fornecedores" />
-          <div className="flex gap-2">
+          <SectionHeader
+            title="Pedidos de Compra"
+            description="Gerados a partir de orçamentos aprovados no CRM → Pré-Compra"
+          />
+          <div className="flex flex-wrap gap-2">
             <div className="relative">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="pl-8 h-8 w-48 text-sm"
-                placeholder="Buscar pedido…"
+                placeholder="Pedido / Fornecedor / Deal…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
-              <Filter size={13} /> Filtrar
-            </Button>
-            <Button size="sm" className="h-8 gap-1.5 text-xs bg-primary text-primary-foreground">
-              <Plus size={13} /> Novo Pedido
-            </Button>
+            <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+              <SelectTrigger className="h-8 w-36 text-xs">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                {[
+                  { v: "todos",      l: "Todos" },
+                  { v: "criado",     l: "Criado" },
+                  { v: "enviado",    l: "Enviado" },
+                  { v: "confirmado", l: "Confirmado" },
+                  { v: "em_transito",l: "Em Trânsito" },
+                  { v: "entregue",   l: "Entregue" },
+                  { v: "cancelado",  l: "Cancelado" },
+                ].map((o) => <SelectItem key={o.v} value={o.v} className="text-xs">{o.l}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -204,43 +252,243 @@ function TabCompras() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-secondary">
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Pedido #</th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Nº Pedido</th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Fornecedor</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor Total</th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Deal / Projeto</th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor</th>
                 <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Status</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Data Prevista</th>
-                <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Ações</th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Previsão Entrega</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {filtered.map((row) => (
                 <tr key={row.id} className="hover:bg-secondary/50 transition-colors">
-                  <td className="px-4 py-3 font-mono text-xs font-medium">{row.numero}</td>
-                  <td className="px-4 py-3">{row.fornecedor_nome}</td>
-                  <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(parseFloat(row.valor_total))}</td>
-                  <td className="px-4 py-3 text-center">
-                    <StatusBadgeCompra status={row.status} />
+                  <td className="px-4 py-3 font-mono text-xs font-medium text-muted-foreground">
+                    {row.numero_pedido || `#${row.id}`}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{row.data_entrega_prevista ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                        <Eye size={13} />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                        <Edit2 size={13} />
-                      </Button>
-                    </div>
+                  <td className="px-4 py-3 font-medium text-sm">{row.fornecedor_nome}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{row.deal_titulo ?? "—"}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-medium">
+                    {row.valor_total ? fmtBRL(parseFloat(row.valor_total)) : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <StatusBadgePedido status={row.status} />
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                    {row.previsao_entrega
+                      ? new Date(row.previsao_entrega).toLocaleDateString("pt-BR")
+                      : "—"}
                   </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum pedido encontrado</td>
+                  <td colSpan={6} className="px-4 py-6 text-center text-sm text-muted-foreground">
+                    {pedidos.length === 0
+                      ? "Nenhum pedido ainda — aprove orçamentos no CRM para gerar pedidos aqui."
+                      : "Nenhum pedido encontrado com os filtros aplicados."}
+                  </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab: Cotação & Pesquisa de Mercado ───────────────────────────────────────
+
+function TabCotacao() {
+  const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
+  const [fornecedores, setFornecedores] = useState<FornecedorCompras[]>([]);
+  const [search, setSearch] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState<string>("todos");
+
+  useEffect(() => {
+    listTodosOrcamentos().then(setOrcamentos).catch(() => {});
+    listFornecedoresCompras().then(setFornecedores).catch(() => {});
+  }, []);
+
+  const filtered = orcamentos.filter((o) => {
+    const matchSearch = o.fornecedor_nome.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = filtroStatus === "todos" || o.status === filtroStatus;
+    return matchSearch && matchStatus;
+  });
+
+  const aprovados  = orcamentos.filter((o) => o.status === "aprovado");
+  const recebidos  = orcamentos.filter((o) => o.status === "recebido");
+  const pendentes  = orcamentos.filter((o) => ["rascunho", "enviado"].includes(o.status));
+  const valorAprov = aprovados.reduce((acc, o) => acc + (o.valor_total ?? 0), 0);
+
+  // Ranking de fornecedores por nº de cotações
+  const rankingFornecedores = Object.entries(
+    orcamentos.reduce<Record<string, { nome: string; total: number; aprovados: number; valor: number }>>((acc, o) => {
+      const k = String(o.fornecedor);
+      if (!acc[k]) acc[k] = { nome: o.fornecedor_nome, total: 0, aprovados: 0, valor: 0 };
+      acc[k].total++;
+      if (o.status === "aprovado") { acc[k].aprovados++; acc[k].valor += (o.valor_total ?? 0); }
+      return acc;
+    }, {})
+  )
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 8);
+
+  // Fornecedores OSM ainda sem cotação
+  const fornecedoresOsm = fornecedores.filter((f) => f.source === "openstreetmap");
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Metric label="Cotações Enviadas"    value={String(pendentes.length + recebidos.length)}  icon={<ClipboardList size={16} />} />
+        <Metric label="Respostas Recebidas"  value={String(recebidos.length)}  icon={<Scale size={16} />} tone="success" />
+        <Metric label="Aprovadas"            value={String(aprovados.length)}   icon={<CheckCircle2 size={16} />} tone="success" />
+        <Metric label="Valor Aprovado"       value={fmtBRL(valorAprov)}        icon={<DollarSign size={16} />} tone="warning" />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Tabela de orçamentos */}
+        <div className="lg:col-span-2 panel-elevated rounded-card overflow-hidden">
+          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-border">
+            <SectionHeader title="Orçamentos Recebidos" description="Comparativo de preços por fornecedor e deal" />
+            <div className="flex flex-wrap gap-2">
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-8 h-8 w-40 text-sm"
+                  placeholder="Fornecedor…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+                <SelectTrigger className="h-8 w-32 text-xs">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[
+                    { v: "todos",     l: "Todos" },
+                    { v: "rascunho",  l: "Rascunho" },
+                    { v: "enviado",   l: "Enviado" },
+                    { v: "recebido",  l: "Recebido" },
+                    { v: "aprovado",  l: "Aprovado" },
+                    { v: "rejeitado", l: "Rejeitado" },
+                  ].map((o) => <SelectItem key={o.v} value={o.v} className="text-xs">{o.l}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-secondary">
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Fornecedor</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor Total</th>
+                  <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Prazo (dias)</th>
+                  <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Status</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Criado em</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map((row) => (
+                  <tr key={row.id} className={`transition-colors ${row.status === "aprovado" ? "bg-success/5 hover:bg-success/10" : "hover:bg-secondary/50"}`}>
+                    <td className="px-4 py-3 font-medium text-sm">
+                      <div className="flex items-center gap-2">
+                        {row.status === "aprovado" && <CheckCircle2 size={12} className="text-success shrink-0" />}
+                        {row.fornecedor_nome}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums font-medium">
+                      {row.valor_total != null ? fmtBRL(row.valor_total) : <span className="text-muted-foreground">Aguardando</span>}
+                    </td>
+                    <td className="px-4 py-3 text-center tabular-nums text-muted-foreground">
+                      {row.prazo_entrega_dias ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <StatusBadgeOrcamento status={row.status} />
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {new Date(row.created_at).toLocaleDateString("pt-BR")}
+                    </td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-center text-sm text-muted-foreground">
+                      {orcamentos.length === 0
+                        ? "Nenhum orçamento ainda — busque fornecedores no CRM → Pré-Compra."
+                        : "Nenhum orçamento com esses filtros."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Painel lateral */}
+        <div className="flex flex-col gap-4">
+          {/* Ranking fornecedores */}
+          <div className="panel-elevated rounded-card overflow-hidden">
+            <div className="p-4 border-b border-border">
+              <h3 className="text-sm font-semibold">Fornecedores Mais Cotados</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Histórico de participação em orçamentos</p>
+            </div>
+            <div className="divide-y divide-border">
+              {rankingFornecedores.length === 0 ? (
+                <p className="px-4 py-5 text-xs text-muted-foreground text-center">Sem cotações ainda</p>
+              ) : rankingFornecedores.map(([, f]) => (
+                <div key={f.nome} className="flex items-center justify-between gap-2 px-4 py-3 hover:bg-secondary/50 transition-colors">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{f.nome}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {f.total} cotaç{f.total === 1 ? "ão" : "ões"}
+                      {f.aprovados > 0 && ` · ${f.aprovados} aprovada${f.aprovados > 1 ? "s" : ""}`}
+                    </p>
+                  </div>
+                  {f.valor > 0 && (
+                    <span className="text-xs font-semibold text-success shrink-0 tabular-nums">
+                      {fmtBRL(f.valor)}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Fornecedores encontrados via OSM */}
+          <div className="panel-elevated rounded-card overflow-hidden">
+            <div className="p-4 border-b border-border">
+              <div className="flex items-center gap-2">
+                <MapPin size={14} className="text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Mapa de Fornecedores</h3>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {fornecedoresOsm.length} encontrado{fornecedoresOsm.length !== 1 ? "s" : ""} via OpenStreetMap
+              </p>
+            </div>
+            <div className="divide-y divide-border max-h-64 overflow-y-auto">
+              {fornecedoresOsm.length === 0 ? (
+                <p className="px-4 py-5 text-xs text-muted-foreground text-center">
+                  Faça uma busca OSM no CRM para popular este painel.
+                </p>
+              ) : fornecedoresOsm.map((f) => (
+                <div key={f.id} className="px-4 py-3 hover:bg-secondary/50 transition-colors">
+                  <p className="text-sm font-medium">{f.nome}</p>
+                  <p className="text-[11px] text-muted-foreground truncate">{f.endereco} · {f.cidade}</p>
+                  {f.telefone && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{f.telefone}</p>
+                  )}
+                  {f.categoria && (
+                    <Badge className="mt-1 text-[10px] bg-secondary text-muted-foreground border border-border">
+                      {f.categoria}
+                    </Badge>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -890,6 +1138,7 @@ export function ERPView({ onBack, defaultTab = "compras" }: { onBack: () => void
       <Tabs defaultValue={defaultTab} className="space-y-6">
         <TabsList className="h-9 gap-1 bg-secondary p-1 rounded-md flex-wrap">
           <TabsTrigger value="compras"       className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><ShoppingCart size={13} /> Compras</TabsTrigger>
+          <TabsTrigger value="cotacao"       className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><Scale size={13} /> Cotação</TabsTrigger>
           <TabsTrigger value="estoque"       className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><Box size={13} /> Estoque</TabsTrigger>
           <TabsTrigger value="financeiro"    className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><Wallet size={13} /> Financeiro</TabsTrigger>
           <TabsTrigger value="contabilidade" className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><BookOpen size={13} /> Contabilidade</TabsTrigger>
@@ -898,6 +1147,7 @@ export function ERPView({ onBack, defaultTab = "compras" }: { onBack: () => void
         </TabsList>
 
         <TabsContent value="compras">       <TabCompras /> </TabsContent>
+        <TabsContent value="cotacao">       <TabCotacao /> </TabsContent>
         <TabsContent value="estoque">       <TabEstoque /> </TabsContent>
         <TabsContent value="financeiro">    <TabFinanceiro /> </TabsContent>
         <TabsContent value="contabilidade"> <TabContabilidade /> </TabsContent>

@@ -2032,6 +2032,12 @@ export async function listOrcamentos(dealId: number): Promise<Orcamento[]> {
   return requestList<Orcamento>(`/api/v1/compras/orcamentos/?deal=${dealId}`);
 }
 
+export async function listTodosOrcamentos(params?: { status?: string }): Promise<Orcamento[]> {
+  const q = new URLSearchParams();
+  if (params?.status) q.set("status", params.status);
+  return requestList<Orcamento>(`/api/v1/compras/orcamentos/${q.toString() ? `?${q}` : ""}`);
+}
+
 export async function criarOrcamentoCompleto(dealId: number, fornecedorId: number, itens: object[]): Promise<Orcamento> {
   return request<Orcamento>("/api/v1/compras/orcamentos/criar-completo/", {
     method: "POST",
