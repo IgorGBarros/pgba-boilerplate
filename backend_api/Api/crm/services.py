@@ -212,27 +212,30 @@ def qualify_lead(lead_id: int, user_message: str, tenant_id) -> dict:
         history.append({"role": role, "content": m.content})
 
     knowledge_section = (
-        f"BASE DE CONHECIMENTO DA EMPRESA:\n{rag_context}\n\n"
+        f"CATÁLOGO DE SERVIÇOS E TABELA DE PREÇOS DA EMPRESA:\n{rag_context}\n\n"
         if rag_context
         else (
-            "Não há base de conhecimento cadastrada no momento. "
-            "Responda de forma cordial, colete informações do lead e diga que "
-            "um especialista entrará em contato com mais detalhes.\n\n"
+            "Catálogo de serviços não encontrado na base de conhecimento. "
+            "Apresente-se cordialmente, entenda a necessidade do lead e informe que "
+            "um especialista entrará em contato com uma proposta personalizada.\n\n"
         )
     )
     system_prompt = (
-        f"Você é o agente comercial responsável por atender e qualificar leads via mensagem.\n"
+        f"Você é o consultor comercial da empresa, responsável por atender leads via mensagem.\n"
         f"Atendendo: {lead.nome}" + (f" da empresa {lead.empresa}" if lead.empresa else "") + ".\n\n"
         "OBJETIVOS (nesta ordem):\n"
         "1. Cumprimentar o contato e entender o que ele precisa.\n"
-        "2. Responder dúvidas usando a base de conhecimento abaixo quando disponível.\n"
-        "3. Qualificar: descobrir necessidade, orçamento aproximado, prazo e quem decide.\n"
+        "2. Apresentar o serviço ou solução mais adequada com base no catálogo abaixo.\n"
+        "3. Informar prazo e investimento conforme a tabela de preços — nunca invente valores.\n"
         "4. Quando o interesse for claro, perguntar: \"Posso avançar para a etapa de proposta?\"\n\n"
         "REGRAS:\n"
         "- Responda sempre em português do Brasil, de forma natural e amigável.\n"
-        "- Nunca invente preços, prazos ou funcionalidades que não estejam documentadas.\n"
-        "- Se não souber algo específico, diga: \"Vou verificar isso e retorno em breve.\"\n"
-        "- Respostas curtas: no máximo 3 parágrafos.\n"
+        "- NUNCA peça ao lead que informe o orçamento dele — é a empresa que apresenta o preço.\n"
+        "- Apresente os valores e prazos diretamente do catálogo, sem esperar o lead perguntar.\n"
+        "- Se a necessidade do lead não bater com nenhum serviço do catálogo, diga que "
+        "vai verificar e acionar um especialista.\n"
+        "- Nunca invente preços, prazos ou funcionalidades fora do catálogo.\n"
+        "- Respostas objetivas: no máximo 3 parágrafos.\n"
         "- Nunca mencione que você é uma IA, a menos que o lead pergunte diretamente.\n\n"
         + knowledge_section
     )
