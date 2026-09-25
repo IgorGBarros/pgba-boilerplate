@@ -1817,10 +1817,11 @@ export interface ScrapingJob {
 }
 
 export async function createGoogleMapsJob(query: string, depth: number, lat = "", lng = ""): Promise<ScrapingJob> {
-  return request<ScrapingJob>("/api/v1/scraping/jobs/google-maps/", {
+  const { job_id } = await request<{ job_id: number }>("/api/v1/scraping/jobs/google-maps/", {
     method: "POST",
     body: JSON.stringify({ query, depth, lat, lng }),
   });
+  return getScrapingJob(job_id);
 }
 
 export async function getScrapingJob(id: number): Promise<ScrapingJob> {
