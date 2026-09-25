@@ -30,10 +30,17 @@ class TenantMixin(models.Model):
 
 
 class AuditMixin(models.Model):
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    updated_at = models.DateTimeField(default=timezone.now, editable=False)
     history = HistoricalRecords(inherit=True)
-    
+
     class Meta:
         abstract = True
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            self.updated_at = timezone.now()
+        super().save(*args, **kwargs)
 
 
 class TenantContextMixin:
