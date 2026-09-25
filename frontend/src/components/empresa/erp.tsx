@@ -52,6 +52,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Metric, SectionHeader } from "@/components/empresa/shared";
 import {
   type ItemEstoque,
+  type MovimentacaoEstoque,
   type LancamentoFinanceiro,
   type Funcionario,
   type NotaFiscal,
@@ -62,6 +63,9 @@ import {
   type Orcamento,
   type FornecedorCompras,
   listEstoque,
+  createItemEstoque,
+  listMovimentacoesEstoque,
+  registrarMovimentacao,
   listLancamentosFinanceiros,
   listFuncionarios,
   listNotasFiscais,
@@ -935,57 +939,250 @@ function TabCotacao() {
 
 // ─── Tab: Estoque ─────────────────────────────────────────────────────────────
 
+function ModalNovoProduto({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [form, setForm] = useState({
+    codigo: "", nome: "", categoria: "", unidade: "un",
+    quantidade: "0", quantidade_minima: "0", custo_unitario: "0", localizacao: "",
+  });
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  const save = async () => {
+    if (!form.codigo.trim() || !form.nome.trim()) { setErr("Código e nome são obrigatórios."); return; }
+    setSaving(true); setErr("");
+    try {
+      await createItemEstoque({
+        codigo: form.codigo.trim(),
+        nome: form.nome.trim(),
+        categoria: form.categoria.trim(),
+        unidade: form.unidade,
+        quantidade: parseInt(form.quantidade) || 0,
+        quantidade_minima: parseInt(form.quantidade_minima) || 0,
+        custo_unitario: form.custo_unitario,
+        localizacao: form.localizacao.trim(),
+      });
+      onSaved(); onClose();
+    } catch { setErr("Erro ao salvar produto."); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-md rounded-xl bg-background shadow-2xl border border-border">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h3 className="font-semibold text-sm">Novo Produto</h3>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}><X size={14} /></Button>
+        </div>
+        <div className="p-5 space-y-3">
+          {err && <p className="text-xs text-destructive">{err}</p>}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Código *</label>
+              <Input className="h-8 text-sm" value={form.codigo} onChange={set("codigo")} placeholder="SKU-001" />
+            </div>
+            <div className="space-y-1 col-span-1">
+              <label className="text-xs text-muted-foreground">Nome *</label>
+              <Input className="h-8 text-sm" value={form.nome} onChange={set("nome")} placeholder="Nome do produto" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Categoria</label>
+              <Input className="h-8 text-sm" value={form.categoria} onChange={set("categoria")} placeholder="Ex: Eletrônicos" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Unidade</label>
+              <select className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm" value={form.unidade} onChange={set("unidade")}>
+                {[["un","Unidade"],["kg","Kg"],["m","Metro"],["l","Litro"],["cx","Caixa"],["pc","Peça"]].map(([v,l]) =>
+                  <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Qtd Inicial</label>
+              <Input type="number" className="h-8 text-sm" value={form.quantidade} onChange={set("quantidade")} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Qtd Mínima</label>
+              <Input type="number" className="h-8 text-sm" value={form.quantidade_minima} onChange={set("quantidade_minima")} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Custo Unit. (R$)</label>
+              <Input type="number" step="0.01" className="h-8 text-sm" value={form.custo_unitario} onChange={set("custo_unitario")} />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Localização</label>
+            <Input className="h-8 text-sm" value={form.localizacao} onChange={set("localizacao")} placeholder="Ex: Prateleira A3" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onClose}>Cancelar</Button>
+          <Button size="sm" className="h-8 text-xs" onClick={save} disabled={saving}>
+            {saving ? <Loader2 size={13} className="animate-spin" /> : "Salvar"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalMovimentacao({
+  item, onClose, onSaved,
+}: { item: ItemEstoque; onClose: () => void; onSaved: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [tipo, setTipo] = useState<MovimentacaoEstoque["tipo"]>("entrada");
+  const [quantidade, setQuantidade] = useState("1");
+  const [motivo, setMotivo] = useState("");
+  const [referencia, setReferencia] = useState("");
+
+  const TIPO_LABELS: Record<MovimentacaoEstoque["tipo"], string> = {
+    entrada: "Entrada", saida: "Saída", ajuste: "Ajuste de Inventário", transferencia: "Transferência",
+  };
+
+  const save = async () => {
+    const qtd = parseInt(quantidade);
+    if (!qtd || qtd <= 0) { setErr("Quantidade deve ser maior que zero."); return; }
+    if (tipo === "saida" && qtd > item.quantidade) {
+      setErr(`Estoque insuficiente. Disponível: ${item.quantidade}.`); return;
+    }
+    setSaving(true); setErr("");
+    try {
+      await registrarMovimentacao({ item_id: item.id, tipo, quantidade: qtd, motivo, referencia });
+      onSaved(); onClose();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Erro ao registrar movimentação.";
+      setErr(msg);
+    }
+    finally { setSaving(false); }
+  };
+
+  const tipoColor = { entrada: "text-success", saida: "text-destructive", ajuste: "text-primary", transferencia: "text-warning" };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-sm rounded-xl bg-background shadow-2xl border border-border">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <h3 className="font-semibold text-sm">Registrar Movimentação</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">{item.nome} · {item.codigo}</p>
+          </div>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}><X size={14} /></Button>
+        </div>
+        <div className="p-5 space-y-3">
+          {err && <p className="text-xs text-destructive">{err}</p>}
+          <div className="rounded-lg bg-secondary p-3 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">Saldo atual</span>
+            <span className={`font-bold tabular-nums ${item.abaixo_minimo ? "text-warning" : "text-foreground"}`}>{item.quantidade} {item.unidade}</span>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Tipo</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(["entrada","saida","ajuste","transferencia"] as const).map((t) => (
+                <button key={t} onClick={() => setTipo(t)}
+                  className={`rounded-md border px-3 py-2 text-xs font-medium transition-colors ${tipo === t ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-secondary"}`}>
+                  {TIPO_LABELS[t]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">
+              {tipo === "ajuste" ? "Nova quantidade total" : "Quantidade"}
+            </label>
+            <Input type="number" className="h-8 text-sm" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} min="1" />
+            {tipo !== "ajuste" && (
+              <p className={`text-xs ${tipoColor[tipo]}`}>
+                Saldo após: {tipo === "entrada" ? item.quantidade + (parseInt(quantidade) || 0) : item.quantidade - (parseInt(quantidade) || 0)} {item.unidade}
+              </p>
+            )}
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Motivo</label>
+            <Input className="h-8 text-sm" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex: Compra fornecedor, Venda cliente…" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Referência (NF, PO, OC…)</label>
+            <Input className="h-8 text-sm" value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Ex: NF-001" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onClose}>Cancelar</Button>
+          <Button size="sm" className="h-8 text-xs" onClick={save} disabled={saving}>
+            {saving ? <Loader2 size={13} className="animate-spin" /> : "Registrar"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TabEstoque() {
   const [itens, setItens] = useState<ItemEstoque[]>([]);
+  const [movs, setMovs] = useState<MovimentacaoEstoque[]>([]);
   const [search, setSearch] = useState("");
   const [categoria, setCategoria] = useState("Todas");
+  const [modalNovo, setModalNovo] = useState(false);
+  const [movItem, setMovItem] = useState<ItemEstoque | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     listEstoque().then(setItens).catch(() => {});
+    listMovimentacoesEstoque().then((m) => setMovs(m.slice(0, 20))).catch(() => {});
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const abaixoMin = itens.filter((e) => e.abaixo_minimo).length;
   const valorTotal = itens.reduce((acc, e) => acc + e.valor_total, 0);
-  const categorias = ["Todas", ...new Set(itens.map((e) => e.categoria))];
+  const categorias = ["Todas", ...new Set(itens.map((e) => e.categoria).filter(Boolean))];
   const filtered = itens.filter(
     (e) =>
       (categoria === "Todas" || e.categoria === categoria) &&
       (e.nome.toLowerCase().includes(search.toLowerCase()) || e.codigo.toLowerCase().includes(search.toLowerCase()))
   );
 
+  const tipoMovIcon = {
+    entrada: <ArrowUpCircle size={13} className="text-success shrink-0" />,
+    saida: <ArrowDownCircle size={13} className="text-destructive shrink-0" />,
+    ajuste: <Edit2 size={13} className="text-primary shrink-0" />,
+    transferencia: <Truck size={13} className="text-warning shrink-0" />,
+  };
+
   return (
     <div className="space-y-6">
+      {modalNovo && <ModalNovoProduto onClose={() => setModalNovo(false)} onSaved={load} />}
+      {movItem && <ModalMovimentacao item={movItem} onClose={() => setMovItem(null)} onSaved={load} />}
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Metric label="Itens em Estoque" value={String(itens.length)} icon={<Package size={16} />} />
         <Metric label="Valor Total" value={fmtBRL(valorTotal)} icon={<DollarSign size={16} />} />
-        <Metric label="Itens Abaixo do Mínimo" value={String(abaixoMin)} icon={<AlertTriangle size={16} />} tone="warning" />
+        <Metric label="Abaixo do Mínimo" value={String(abaixoMin)} icon={<AlertTriangle size={16} />} tone="warning" />
         <Metric label="Categorias" value={String(new Set(itens.map((e) => e.categoria)).size)} icon={<RefreshCw size={16} />} tone="success" />
       </div>
 
       <div className="panel-elevated rounded-card overflow-hidden">
         <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-border">
-          <SectionHeader title="Controle de Estoque" description="Posição atual, limites e localização" />
+          <SectionHeader title="Produtos em Estoque" description="Posição atual, limites e localização" />
           <div className="flex flex-wrap gap-2">
             <div className="relative">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input className="pl-8 h-8 w-44 text-sm" placeholder="Produto / Código…" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <Select value={categoria} onValueChange={setCategoria}>
-              <SelectTrigger className="h-8 w-36 text-xs">
-                <SelectValue placeholder="Categoria" />
-              </SelectTrigger>
+              <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Categoria" /></SelectTrigger>
               <SelectContent>
-                {categorias.map((c) => (
-                  <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-                ))}
+                {categorias.map((c) => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Button size="sm" className="h-8 gap-1.5 text-xs bg-primary text-primary-foreground">
-              <Upload size={13} /> Entrada
+            <Button size="sm" className="h-8 gap-1.5 text-xs" variant="outline" onClick={() => setModalNovo(true)}>
+              <Plus size={13} /> Novo Produto
             </Button>
           </div>
         </div>
-
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -997,6 +1194,7 @@ function TabEstoque() {
                 <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Mín</th>
                 <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Localização</th>
                 <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor Unit.</th>
+                <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Total</th>
                 <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Ações</th>
               </tr>
             </thead>
@@ -1011,29 +1209,59 @@ function TabEstoque() {
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{row.codigo}</td>
                   <td className="px-4 py-3">
-                    <Badge className="bg-secondary text-muted-foreground border border-border text-xs">{row.categoria}</Badge>
+                    <Badge className="bg-secondary text-muted-foreground border border-border text-xs">{row.categoria || "—"}</Badge>
                   </td>
-                  <td className={`px-4 py-3 text-center tabular-nums font-bold ${row.abaixo_minimo ? "text-warning" : ""}`}>{row.quantidade}</td>
+                  <td className={`px-4 py-3 text-center tabular-nums font-bold ${row.abaixo_minimo ? "text-warning" : ""}`}>{row.quantidade} <span className="text-xs font-normal text-muted-foreground">{row.unidade}</span></td>
                   <td className="px-4 py-3 text-center tabular-nums text-muted-foreground">{row.quantidade_minima}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{row.localizacao}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{row.localizacao || "—"}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{fmtBRL(parseFloat(row.custo_unitario))}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(row.valor_total)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                        <Edit2 size={13} />
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 text-success hover:text-success hover:bg-success/10" onClick={() => setMovItem(row)}>
+                        <Upload size={12} /> Mov.
                       </Button>
                     </div>
                   </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum item encontrado</td>
-                </tr>
+                <tr><td colSpan={9} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum item encontrado</td></tr>
               )}
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Histórico de movimentações */}
+      <div className="panel-elevated rounded-card overflow-hidden">
+        <div className="p-4 border-b border-border">
+          <SectionHeader title="Últimas Movimentações" description="Entradas, saídas e ajustes recentes" />
+        </div>
+        {movs.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhuma movimentação registrada</p>
+        ) : (
+          <div className="divide-y divide-border">
+            {movs.map((m) => (
+              <div key={m.id} className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors">
+                {tipoMovIcon[m.tipo]}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{m.item_nome} <span className="font-mono text-xs text-muted-foreground">({m.item_codigo})</span></p>
+                  <p className="text-xs text-muted-foreground">{m.motivo || m.tipo_display}{m.referencia ? ` · ${m.referencia}` : ""}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className={`text-sm font-bold tabular-nums ${m.tipo === "entrada" ? "text-success" : m.tipo === "saida" ? "text-destructive" : "text-primary"}`}>
+                    {m.tipo === "entrada" ? "+" : m.tipo === "saida" ? "−" : "="}{m.quantidade}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{m.quantidade_anterior} → {m.quantidade_posterior}</p>
+                </div>
+                <div className="text-xs text-muted-foreground shrink-0 w-24 text-right">
+                  {new Date(m.created_at).toLocaleDateString("pt-BR")}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

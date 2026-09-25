@@ -1442,6 +1442,41 @@ export async function updateItemEstoque(id: number, data: Partial<ItemEstoque>):
   return request<ItemEstoque>(`/api/v1/erp/estoque/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
 }
 
+export interface MovimentacaoEstoque {
+  id: number;
+  item: number;
+  item_nome: string;
+  item_codigo: string;
+  tipo: "entrada" | "saida" | "ajuste" | "transferencia";
+  tipo_display: string;
+  quantidade: number;
+  quantidade_anterior: number;
+  quantidade_posterior: number;
+  motivo: string;
+  referencia: string;
+  operador: string;
+  created_at: string;
+}
+
+export async function listMovimentacoesEstoque(params?: Record<string, string>): Promise<MovimentacaoEstoque[]> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return requestList<MovimentacaoEstoque>(`/api/v1/erp/movimentacoes-estoque/${qs}`);
+}
+
+export async function registrarMovimentacao(data: {
+  item_id: number;
+  tipo: MovimentacaoEstoque["tipo"];
+  quantidade: number;
+  motivo?: string;
+  referencia?: string;
+  operador?: string;
+}): Promise<MovimentacaoEstoque> {
+  return request<MovimentacaoEstoque>("/api/v1/erp/movimentacoes-estoque/registrar/", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 export async function listLancamentosFinanceiros(params?: Record<string, string>): Promise<LancamentoFinanceiro[]> {
   const qs = params ? "?" + new URLSearchParams(params).toString() : "";
   return requestList<LancamentoFinanceiro>(`/api/v1/erp/financeiro/${qs}`);

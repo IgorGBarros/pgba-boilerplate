@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from erp.models import Fornecedor, OrdemCompra, ItemEstoque, LancamentoFinanceiro, Funcionario, NotaFiscal, ObrigacaoFiscal, LinhaDRE, BalancetePeriodo
+from erp.models import Fornecedor, OrdemCompra, ItemEstoque, MovimentacaoEstoque, LancamentoFinanceiro, Funcionario, NotaFiscal, ObrigacaoFiscal, LinhaDRE, BalancetePeriodo
 
 
 class FornecedorSerializer(serializers.ModelSerializer):
@@ -40,6 +40,31 @@ class ItemEstoqueSerializer(serializers.ModelSerializer):
 
     def get_abaixo_minimo(self, obj):
         return obj.quantidade < obj.quantidade_minima
+
+
+class MovimentacaoEstoqueSerializer(serializers.ModelSerializer):
+    item_nome = serializers.CharField(source="item.nome", read_only=True)
+    item_codigo = serializers.CharField(source="item.codigo", read_only=True)
+    tipo_display = serializers.CharField(source="get_tipo_display", read_only=True)
+
+    class Meta:
+        model = MovimentacaoEstoque
+        fields = [
+            "id", "item", "item_nome", "item_codigo", "tipo", "tipo_display",
+            "quantidade", "quantidade_anterior", "quantidade_posterior",
+            "motivo", "referencia", "operador", "created_at",
+        ]
+        read_only_fields = ["id", "item_nome", "item_codigo", "tipo_display",
+                            "quantidade_anterior", "quantidade_posterior", "created_at"]
+
+
+class RegistrarMovimentacaoSerializer(serializers.Serializer):
+    item_id = serializers.IntegerField()
+    tipo = serializers.ChoiceField(choices=["entrada", "saida", "ajuste", "transferencia"])
+    quantidade = serializers.IntegerField(min_value=1)
+    motivo = serializers.CharField(required=False, allow_blank=True, default="")
+    referencia = serializers.CharField(required=False, allow_blank=True, default="")
+    operador = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class LancamentoFinanceiroSerializer(serializers.ModelSerializer):

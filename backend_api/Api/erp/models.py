@@ -91,6 +91,36 @@ class ItemEstoque(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         return f"{self.codigo} — {self.nome}"
 
 
+class MovimentacaoEstoque(TenantMixin, AuditMixin, models.Model):
+    TIPO_CHOICES = [
+        ("entrada", "Entrada"),
+        ("saida", "Saída"),
+        ("ajuste", "Ajuste"),
+        ("transferencia", "Transferência"),
+    ]
+
+    item = models.ForeignKey(
+        ItemEstoque, on_delete=models.PROTECT, related_name="movimentacoes"
+    )
+    tipo = models.CharField(max_length=15, choices=TIPO_CHOICES)
+    quantidade = models.IntegerField()
+    quantidade_anterior = models.IntegerField()
+    quantidade_posterior = models.IntegerField()
+    motivo = models.CharField(max_length=255, blank=True)
+    referencia = models.CharField(max_length=100, blank=True)
+    operador = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant_id", "item"]),
+            models.Index(fields=["tenant_id", "tipo"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} {self.quantidade}x {self.item.nome}"
+
+
 class LancamentoFinanceiro(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     TIPO_CHOICES = [
         ("receita", "Receita"),
