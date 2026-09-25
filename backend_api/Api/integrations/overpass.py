@@ -19,7 +19,21 @@ _OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 # Mapeia palavras-chave de materiais para tags OSM relevantes
 _CATEGORY_OSM_MAP: dict[str, list[str]] = {
-    # Elétrica
+    # Eletrônicos / Informática
+    "eletrônic": ["shop=electronics", "shop=computer"],
+    "eletronico": ["shop=electronics", "shop=computer"],
+    "eletronic": ["shop=electronics", "shop=computer"],
+    "informátic": ["shop=computer", "shop=electronics"],
+    "informatica": ["shop=computer", "shop=electronics"],
+    "computador": ["shop=computer"],
+    "notebook": ["shop=computer"],
+    "celular": ["shop=mobile_phone"],
+    "smartphone": ["shop=mobile_phone"],
+    "telefon": ["shop=mobile_phone", "shop=electronics"],
+    "component": ["shop=electronics"],
+    "semicondutor": ["shop=electronics"],
+    "placa": ["shop=electronics", "shop=computer"],
+    # Elétrica (instalação / cabos)
     "elétric": ["shop=electrical", "craft=electrician"],
     "eletric": ["shop=electrical", "craft=electrician"],
     "fio": ["shop=electrical"],
