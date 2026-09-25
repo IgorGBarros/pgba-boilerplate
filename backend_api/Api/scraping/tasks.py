@@ -56,16 +56,27 @@ def run_google_maps_job(self, scraping_job_id: int):
             elapsed += POLL_INTERVAL
 
             data = gmaps_get_job(ext_id)
-            # Tenta múltiplos nomes de campo — a API gosom pode usar Status, state, etc.
+
+            # Log completo do JSON na primeira e a cada 60s para descobrir a estrutura
+            if elapsed <= POLL_INTERVAL or elapsed % 60 == 0:
+                import json as _json
+                logger.info("Google Maps job %s — raw=%s", ext_id, _json.dumps(data)[:800])
+
+            # Tenta string status em múltiplos nomes de campo
             ext_status = (
                 data.get("status") or data.get("Status") or
                 data.get("state") or data.get("State") or
                 (data.get("job") or {}).get("status") or ""
             )
             ext_status = str(ext_status).lower()
+
+            # Gosom pode usar booleanos em vez de string status
+            is_done_bool = bool(data.get("is_done") or data.get("isDone") or data.get("finished"))
+            is_fail_bool = bool(data.get("is_failed") or data.get("isFailed") or data.get("error"))
+
             logger.info(
-                "Google Maps job %s — status=%r elapsed=%ds keys=%s",
-                ext_id, ext_status, elapsed, list(data.keys())[:10],
+                "Google Maps job %s — status=%r is_done=%s is_fail=%s elapsed=%ds",
+                ext_id, ext_status, is_done_bool, is_fail_bool, elapsed,
             )
 
             # Salva resultados parciais para exibição progressiva
@@ -78,7 +89,7 @@ def run_google_maps_job(self, scraping_job_id: int):
                     job.save(update_fields=["results", "result_count", "updated_at"])
                     logger.info("Google Maps job %s — %d resultados parciais salvos", ext_id, len(normalized))
 
-            if ext_status in DONE_STATUSES:
+            if ext_status in DONE_STATUSES or is_done_bool:
                 # Garante que salvamos os resultados finais mesmo que já tenham sido parciais
                 if not raw:
                     raw = _extract_raw_results(data)
@@ -90,7 +101,7 @@ def run_google_maps_job(self, scraping_job_id: int):
                 logger.info("Google Maps job %s concluído: %d resultados", ext_id, len(normalized))
                 return
 
-            if ext_status in FAIL_STATUSES:
+            if ext_status in FAIL_STATUSES or is_fail_bool:
                 job.status = ScrapingJob.Status.FAILED
                 job.error_message = data.get("error") or f"Status externo: {ext_status}"
                 job.save(update_fields=["status", "error_message", "updated_at"])
