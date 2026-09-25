@@ -16,13 +16,15 @@ logger = logging.getLogger(__name__)
 POLL_INTERVAL = 5   # segundos entre verificações de status
 MAX_WAIT = 600       # timeout máximo de 10 minutos
 
-DONE_STATUSES = {"completed", "done", "finished", "complete", "success", "succeeded"}
+DONE_STATUSES = {"completed", "done", "finished", "complete", "success", "succeeded", "ok"}
 FAIL_STATUSES = {"failed", "error", "cancelled", "canceled"}
 
 
 def _extract_raw_results(data: dict) -> list:
-    """Extrai lista de resultados de qualquer formato de resposta do scraper."""
-    for key in ("data", "results", "places", "items"):
+    """Extrai lista de resultados de qualquer formato de resposta do scraper.
+    O gosom usa chaves maiúsculas (Results, Data) na resposta individual do job.
+    """
+    for key in ("Results", "results", "Places", "places", "Data", "data", "items", "Items"):
         val = data.get(key)
         if val and isinstance(val, list):
             return val
