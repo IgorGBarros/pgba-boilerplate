@@ -1035,10 +1035,31 @@ export async function setProjectOutcome(projectId: number, outcome: ProjectOutco
 
 export type ChannelType = "whatsapp" | "telegram" | "landing_page" | "meta_ads";
 
+export interface BusinessHoursDay {
+  open: boolean;
+  start: string;  // "HH:MM"
+  end: string;    // "HH:MM"
+}
+
+export interface BusinessHours {
+  enabled: boolean;
+  timezone: string;
+  schedule: {
+    sun: BusinessHoursDay;
+    mon: BusinessHoursDay;
+    tue: BusinessHoursDay;
+    wed: BusinessHoursDay;
+    thu: BusinessHoursDay;
+    fri: BusinessHoursDay;
+    sat: BusinessHoursDay;
+  };
+}
+
 export interface ChannelConfig {
   id: number;
   channel: ChannelType;
   is_active: boolean;
+  is_paused: boolean;
   config: Record<string, string>;
   webhook_secret: string;
   welcome_message: string;
@@ -1048,6 +1069,10 @@ export interface ChannelConfig {
   api_key?: string;
   api_key_masked: string;
   webhook_url: string;
+  session_timeout_minutes: number;
+  session_timeout_message: string;
+  business_hours: BusinessHours | Record<string, never>;
+  out_of_hours_message: string;
   created_at: string;
   updated_at: string;
 }

@@ -91,6 +91,66 @@ def sync_lead_to_obsidian(self, lead_id: int, tenant_id):
         _index_lead_note(lead, tenant_id)
 
 
+@shared_task
+def close_inactive_session(lead_id: int, config_id: int) -> None:
+    """
+    Encerra a sessão de um lead por inatividade.
+
+    Só envia a mensagem de encerramento se o lead de fato não respondeu
+    desde que a task foi agendada — compara o timestamp da última mensagem
+    do tipo USER com o countdown configurado para evitar falsos disparos
+    quando o lead envia uma nova mensagem antes do timer expirar.
+    """
+    from crm.models import ChannelConfig, Lead, LeadMessage
+    from crm.channels import send_whatsapp_reply, send_telegram_reply
+
+    try:
+        config = ChannelConfig.objects.get(id=config_id)
+        lead = Lead.objects.get(id=lead_id)
+    except (ChannelConfig.DoesNotExist, Lead.DoesNotExist):
+        return
+
+    if not config.session_timeout_minutes:
+        return
+
+    threshold = timezone.now() - timezone.timedelta(minutes=config.session_timeout_minutes)
+    last_user_msg = (
+        LeadMessage.objects.filter(lead=lead, role=LeadMessage.Role.USER)
+        .order_by("-created_at")
+        .first()
+    )
+
+    # Se houve mensagem recente, o usuário já respondeu — não encerra
+    if last_user_msg and last_user_msg.created_at > threshold:
+        return
+
+    timeout_msg = config.session_timeout_message
+    if not timeout_msg:
+        return
+
+    channel = config.channel
+    channel_ref = lead.channel_ref
+    if not channel_ref:
+        return
+
+    try:
+        if channel == "whatsapp":
+            send_whatsapp_reply(config, channel_ref, timeout_msg)
+        elif channel == "telegram":
+            send_telegram_reply(config, channel_ref, timeout_msg)
+    except Exception as exc:
+        logger.warning("close_inactive_session: falha ao enviar msg para lead #%s: %s", lead_id, exc)
+        return
+
+    LeadMessage.objects.create(
+        tenant_id=lead.tenant_id,
+        lead=lead,
+        role=LeadMessage.Role.SYSTEM,
+        content="[Sessão encerrada por inatividade]",
+    )
+    logger.info("close_inactive_session: sessão do lead #%s encerrada.", lead_id)
+
+
 def _index_lead_note(lead, tenant_id):
     """
     Reindexação imediata da nota do lead no vector store via ingestion.

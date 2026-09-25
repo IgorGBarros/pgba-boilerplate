@@ -19,7 +19,9 @@ Segue o padrão do boilerplate:
 import hashlib
 import hmac
 import logging
+from datetime import datetime, time
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
@@ -278,6 +280,44 @@ def _matches_trigger_phrases(texto: str, phrases: list) -> bool:
     return any(phrase.lower() in texto_lower for phrase in phrases if phrase.strip())
 
 
+_DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+
+
+def _is_within_business_hours(config: ChannelConfig) -> bool:
+    """Retorna True se estiver dentro do horário de funcionamento configurado."""
+    bh = config.business_hours
+    if not bh or not bh.get("enabled"):
+        return True  # sem configuração = sempre aberto
+
+    tz_name = bh.get("timezone", "America/Sao_Paulo")
+    try:
+        tz = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, KeyError):
+        tz = ZoneInfo("America/Sao_Paulo")
+
+    now = datetime.now(tz)
+    day_key = _DAY_KEYS[now.weekday() % 7]  # weekday() 0=mon; _DAY_KEYS[0]="sun"
+    # Adjust: Python weekday 0=Monday, but _DAY_KEYS[0]="sun"; map correctly
+    # weekday(): Mon=0 → index 1 in _DAY_KEYS; Sun=6 → index 0
+    day_key = _DAY_KEYS[(now.weekday() + 1) % 7]
+
+    schedule = bh.get("schedule", {})
+    day_config = schedule.get(day_key, {})
+    if not day_config.get("open", True):
+        return False
+
+    start_str = day_config.get("start", "00:00")
+    end_str = day_config.get("end", "23:59")
+    try:
+        start_h, start_m = (int(x) for x in start_str.split(":"))
+        end_h, end_m = (int(x) for x in end_str.split(":"))
+    except (ValueError, AttributeError):
+        return True
+
+    current_time = now.time()
+    return time(start_h, start_m) <= current_time <= time(end_h, end_m)
+
+
 def handle_incoming_message(
     tenant_id,
     channel: str,
@@ -290,14 +330,31 @@ def handle_incoming_message(
 ) -> Optional[Lead]:
     """
     Processa mensagem recebida de qualquer canal:
-    1. Se trigger_phrases configuradas e contato não existe ainda, só cria lead
+    1. Verifica se o canal está pausado.
+    2. Verifica horário de funcionamento — responde fora do horário e encerra.
+    3. Se trigger_phrases configuradas e contato não existe ainda, só cria lead
        se a mensagem contiver alguma dessas frases.
-    2. Qualifica via agente
-    3. Envia resposta de volta (se auto_reply e canal suportar)
+    4. Qualifica via agente.
+    5. Envia resposta de volta (se auto_reply e canal suportar).
+    6. Agenda task de encerramento de sessão por inatividade.
 
-    Retorna None quando a mensagem foi ignorada por não bater com nenhuma
-    trigger phrase (contato ainda não é lead).
+    Retorna None quando a mensagem foi ignorada.
     """
+    # Canal pausado — ignora silenciosamente
+    if config and config.is_paused:
+        logger.info("handle_incoming_message: canal %s pausado, mensagem de %s ignorada.", channel, channel_ref)
+        return None
+
+    # Fora do horário de funcionamento
+    if config and not _is_within_business_hours(config):
+        if auto_reply and config.out_of_hours_message:
+            if channel == "whatsapp":
+                send_whatsapp_reply(config, channel_ref, config.out_of_hours_message)
+            elif channel == "telegram":
+                send_telegram_reply(config, channel_ref, config.out_of_hours_message)
+        logger.info("handle_incoming_message: fora do horário de funcionamento, mensagem de %s ignorada.", channel_ref)
+        return None
+
     # Verifica se o contato já é lead antes de aplicar o filtro
     trigger_phrases = (config.trigger_phrases or []) if config else []
     if trigger_phrases:
@@ -333,5 +390,13 @@ def handle_incoming_message(
             send_whatsapp_reply(config, channel_ref, reply_text)
         elif channel == "telegram":
             send_telegram_reply(config, channel_ref, reply_text)
+
+    # Agenda encerramento de sessão por inatividade
+    if config and config.session_timeout_minutes > 0:
+        from crm.tasks import close_inactive_session
+        close_inactive_session.apply_async(
+            args=[lead.id, config.id],
+            countdown=config.session_timeout_minutes * 60,
+        )
 
     return lead

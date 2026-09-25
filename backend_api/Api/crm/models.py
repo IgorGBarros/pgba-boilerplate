@@ -394,6 +394,24 @@ class ChannelConfig(TenantMixin, models.Model):
         Pipeline, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="channel_configs",
     )
+    # Pausar/retomar execução sem remover a config
+    is_paused = models.BooleanField(default=False)
+    # Encerramento de sessão por inatividade
+    session_timeout_minutes = models.PositiveIntegerField(
+        default=20,
+        help_text="Minutos sem resposta para encerrar a sessão. 0 = desativado.",
+    )
+    session_timeout_message = models.TextField(
+        blank=True,
+        default="Sua sessão foi encerrada por inatividade. Se precisar de ajuda, é só enviar uma mensagem!",
+    )
+    # Horário de funcionamento: {"enabled": true, "timezone": "America/Sao_Paulo",
+    #   "schedule": {"mon": {"open": true, "start": "09:00", "end": "18:00"}, ...}}
+    business_hours = models.JSONField(default=dict, blank=True)
+    out_of_hours_message = models.TextField(
+        blank=True,
+        default="Olá! Nosso atendimento funciona em horário comercial. Em breve retornaremos!",
+    )
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 

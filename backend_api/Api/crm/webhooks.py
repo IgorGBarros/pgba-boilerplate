@@ -303,9 +303,11 @@ class ChannelConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChannelConfig
         fields = [
-            "id", "channel", "is_active", "config", "webhook_secret",
+            "id", "channel", "is_active", "is_paused", "config", "webhook_secret",
             "welcome_message", "quick_replies", "trigger_phrases",
             "target_pipeline", "api_key", "api_key_masked", "webhook_url",
+            "session_timeout_minutes", "session_timeout_message",
+            "business_hours", "out_of_hours_message",
             "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
