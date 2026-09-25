@@ -36,22 +36,24 @@ def _gmaps_headers() -> dict:
 
 def gmaps_create_job(query: str, lat: str, lng: str, depth: int = 5) -> str:
     """Cria um job no container do Google Maps scraper. Retorna o job ID externo."""
-    payload = {
-        "keyword": query,
-        "lat": lat or "0",
-        "lng": lng or "0",
-        "zoom": 15,
-        "depth": depth,
-        "lang": "pt",
-        "max_time": SCRAPER_TIMEOUT,
-    }
+    payload: dict = {"keyword": query, "zoom": 15, "depth": depth, "lang": "pt"}
+    if lat and lat not in ("", "0"):
+        payload["lat"] = lat
+    if lng and lng not in ("", "0"):
+        payload["lng"] = lng
     r = httpx.post(
         f"{GMAPS_BASE}/api/v1/jobs",
         json=payload,
         headers=_gmaps_headers(),
         timeout=30,
     )
-    r.raise_for_status()
+    if not r.is_success:
+        logger.error("gmaps_create_job %s — payload=%s — body=%s", r.status_code, payload, r.text)
+        raise httpx.HTTPStatusError(
+            f"{r.status_code} — {r.text[:400]}",
+            request=r.request,
+            response=r,
+        )
     data = r.json()
     # API retorna o job ID diretamente ou dentro de um objeto
     if isinstance(data, str):
