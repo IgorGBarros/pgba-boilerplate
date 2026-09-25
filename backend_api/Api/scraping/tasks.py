@@ -8,7 +8,7 @@ from celery import shared_task
 
 from scraping.models import ScrapingJob
 from scraping.services import (
-    gmaps_create_job, gmaps_get_job, gmaps_normalize_results, url_scrape,
+    gmaps_create_job, gmaps_download_results, gmaps_get_job, gmaps_normalize_results, url_scrape,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,8 +81,12 @@ def run_google_maps_job(self, scraping_job_id: int):
                 ext_id, ext_status, is_done_bool, is_fail_bool, elapsed,
             )
 
-            # Salva resultados parciais para exibição progressiva
-            raw = _extract_raw_results(data)
+            # Tenta resultados parciais via download endpoint (preferência) ou JSON inline
+            raw = []
+            try:
+                raw = gmaps_download_results(ext_id)
+            except Exception:
+                raw = _extract_raw_results(data)
             if raw:
                 normalized = gmaps_normalize_results(raw)
                 if len(normalized) != job.result_count:
@@ -92,10 +96,13 @@ def run_google_maps_job(self, scraping_job_id: int):
                     logger.info("Google Maps job %s — %d resultados parciais salvos", ext_id, len(normalized))
 
             if ext_status in DONE_STATUSES or is_done_bool:
-                # Garante que salvamos os resultados finais mesmo que já tenham sido parciais
-                if not raw:
-                    raw = _extract_raw_results(data)
-                normalized = gmaps_normalize_results(raw if isinstance(raw, list) else [raw])
+                # Busca resultados finais via download endpoint
+                try:
+                    final_raw = gmaps_download_results(ext_id)
+                except Exception as dl_exc:
+                    logger.warning("Fallback para JSON inline: %s", dl_exc)
+                    final_raw = raw or _extract_raw_results(data)
+                normalized = gmaps_normalize_results(final_raw)
                 job.results = normalized
                 job.result_count = len(normalized)
                 job.status = ScrapingJob.Status.DONE

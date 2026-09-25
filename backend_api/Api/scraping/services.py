@@ -7,6 +7,8 @@ Dois tipos:
 
 Exige GMAPS_SCRAPER_URL no settings/env (default: http://localhost:8080).
 """
+import csv
+import io
 import json
 import re
 import logging
@@ -78,21 +80,55 @@ def gmaps_list_jobs() -> list:
     return r.json()
 
 
+def gmaps_download_results(job_id: str) -> list[dict]:
+    """Baixa resultados do job como CSV e retorna lista de dicts."""
+    r = httpx.get(
+        f"{GMAPS_BASE}/api/v1/jobs/{job_id}/download",
+        headers=_gmaps_headers(),
+        timeout=60,
+    )
+    r.raise_for_status()
+    content_type = r.headers.get("content-type", "")
+    if "json" in content_type:
+        data = r.json()
+        if isinstance(data, list):
+            return data
+        return []
+    # Assume CSV
+    reader = csv.DictReader(io.StringIO(r.text))
+    return [row for row in reader]
+
+
 LEAD_FIELDS = ["title", "phone", "emails", "website", "category", "address",
                "review_rating", "review_count"]
 
+# CSV field name → our canonical field name
+_CSV_FIELD_MAP = {
+    "title": "title",
+    "phone": "phone",
+    "emails": "emails",
+    "website": "website",
+    "category": "category",
+    "address": "address",
+    "review_rating": "review_rating",
+    "review_count": "review_count",
+}
+
 
 def gmaps_normalize_results(raw: list) -> list[dict]:
-    """Extrai apenas os campos úteis de cada resultado do scraper."""
+    """Extrai apenas os campos úteis de cada resultado do scraper (JSON ou CSV)."""
     out = []
     for item in raw:
         if not isinstance(item, dict):
             continue
         row = {}
-        for f in LEAD_FIELDS:
-            v = item.get(f)
+        for csv_field, our_field in _CSV_FIELD_MAP.items():
+            v = item.get(csv_field)
             if v is not None and v != "" and v != [] and v != {}:
-                row[f] = v
+                # CSV emails may be a semicolon-separated string
+                if our_field == "emails" and isinstance(v, str) and v:
+                    v = [e.strip() for e in v.split(";") if e.strip()]
+                row[our_field] = v
         if row.get("title"):
             out.append(row)
     return out
