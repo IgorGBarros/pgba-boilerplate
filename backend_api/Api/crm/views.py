@@ -168,6 +168,7 @@ class LeadViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
             "ai_messages": agg["messages"] or 0,
         })
 
+
     @action(detail=True, methods=["get"], url_path="obsidian-note")
     def obsidian_note(self, request, pk=None):
         """Retorna o conteúdo da nota Obsidian do lead, se existir."""
