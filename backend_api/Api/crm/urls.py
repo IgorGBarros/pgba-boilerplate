@@ -10,6 +10,7 @@ from crm.views import (
     AtividadeCRMViewSet,
     CustomFieldDefinitionViewSet,
     CustomFieldValueViewSet,
+    TokenUsageSummaryView,
 )
 from crm.webhooks import (
     ChannelConfigViewSet,
@@ -33,6 +34,8 @@ router.register("channels", ChannelConfigViewSet, basename="channel")
 
 urlpatterns = [
     path("", include(router.urls)),
+
+    path("token-usage/", TokenUsageSummaryView.as_view(), name="crm-token-usage"),
 
     # Webhooks públicos — sem autenticação JWT
     path("webhook/whatsapp/<str:tenant_id>/", WhatsAppWebhookView.as_view(), name="crm-webhook-whatsapp"),

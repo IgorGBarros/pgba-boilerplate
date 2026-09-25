@@ -5,7 +5,7 @@ Segue o padrão do boilerplate: harness/providers.py para o LLM, nunca HTTP dire
 import logging
 from django.db import transaction
 
-from harness.providers import chat_completion, get_active_provider, get_credential
+from harness.providers import chat_completion, chat_completion_with_usage, get_active_provider, get_credential
 from crm.models import Lead, Deal, Project, LeadMessage, Pipeline, Stage
 
 logger = logging.getLogger(__name__)
@@ -251,15 +251,21 @@ def qualify_lead(lead_id: int, user_message: str, tenant_id) -> dict:
         + knowledge_section
     )
 
+    tokens_in = tokens_out = 0
+    cost_usd = 0
     try:
         provider = get_active_provider(tenant_id)
         cred = get_credential(tenant_id, provider)
         model = cred.default_model or None
-        response_text = chat_completion(
+        response_text, tokens_in, tokens_out = chat_completion_with_usage(
             tenant_id, provider, model,
             messages=[{"role": "system", "content": system_prompt}] + history,
             temperature=0.4,
         )
+        from decimal import Decimal
+        _PRICE_PER_1K = {"ollama": "0", "openai": "0.002", "anthropic": "0.003", "groq": "0.0002", "openrouter": "0.001"}
+        price = Decimal(_PRICE_PER_1K.get(provider, "0.001"))
+        cost_usd = float((Decimal(tokens_in + tokens_out) / Decimal(1000)) * price)
     except Exception as exc:
         logger.error("CRM qualify_lead: provedor falhou (%s).", exc)
         response_text = "Desculpe, houve um problema técnico. Tente novamente em instantes."
@@ -267,6 +273,7 @@ def qualify_lead(lead_id: int, user_message: str, tenant_id) -> dict:
     LeadMessage.objects.create(
         tenant_id=tenant_id, lead=lead,
         role=LeadMessage.Role.AGENT, content=response_text,
+        tokens_in=tokens_in, tokens_out=tokens_out, cost_estimated_usd=cost_usd,
     )
 
     closing_suggested = any(

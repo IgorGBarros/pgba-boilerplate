@@ -12,6 +12,7 @@ import {
   listChannels, createChannel, updateChannel, deleteChannel, testChannel,
 } from "@/lib/api";
 import { toast } from "sonner";
+import { CRMTokenUsage } from "@/components/empresa/crm-token-usage";
 
 // ─── Metadata por canal ────────────────────────────────────────────────────────
 
@@ -678,6 +679,11 @@ export function CRMChannels() {
           imediatamente e responde de volta pelo mesmo canal (WhatsApp e Telegram). Leads de Landing Page
           e Meta Ads ficam na primeira etapa aguardando contato.
         </p>
+      </div>
+
+      {/* Consumo de tokens */}
+      <div className="rounded-xl border border-border bg-card p-5">
+        <CRMTokenUsage />
       </div>
     </div>
   );
