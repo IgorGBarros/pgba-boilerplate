@@ -36,7 +36,7 @@ def _gmaps_headers() -> dict:
 
 def gmaps_create_job(query: str, lat: str, lng: str, depth: int = 5) -> str:
     """Cria um job no container do Google Maps scraper. Retorna o job ID externo."""
-    payload: dict = {"keywords": [query], "zoom": 15, "depth": depth, "lang": "pt"}
+    payload: dict = {"name": query, "keywords": [query], "zoom": 15, "depth": depth, "lang": "pt"}
     if lat and lat not in ("", "0"):
         payload["lat"] = lat
     if lng and lng not in ("", "0"):
