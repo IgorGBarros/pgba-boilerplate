@@ -37,13 +37,13 @@ def _gmaps_headers() -> dict:
 def gmaps_create_job(query: str, lat: str, lng: str, depth: int = 5) -> str:
     """Cria um job no container do Google Maps scraper. Retorna o job ID externo."""
     payload = {
-        "keywords": [query],
-        "lat": lat,
-        "lon": lng,
+        "keyword": query,
+        "lat": lat or "0",
+        "lng": lng or "0",
         "zoom": 15,
         "depth": depth,
+        "lang": "pt",
         "max_time": SCRAPER_TIMEOUT,
-        "language": "pt",
     }
     r = httpx.post(
         f"{GMAPS_BASE}/api/v1/jobs",
