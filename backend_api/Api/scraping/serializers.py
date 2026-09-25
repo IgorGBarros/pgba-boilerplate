@@ -24,11 +24,11 @@ class GoogleMapsJobCreateSerializer(serializers.Serializer):
         help_text='Ex: "padarias em Salvador BA"',
     )
     lat = serializers.CharField(
-        max_length=30, required=False, default="",
+        max_length=30, required=False, default="", allow_blank=True,
         help_text="Latitude (opcional — preenchida automaticamente por geocode se omitida)",
     )
     lng = serializers.CharField(
-        max_length=30, required=False, default="",
+        max_length=30, required=False, default="", allow_blank=True,
         help_text="Longitude (opcional)",
     )
     depth = serializers.IntegerField(
