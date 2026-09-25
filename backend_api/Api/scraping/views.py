@@ -95,9 +95,15 @@ class ScrapingJobViewSet(TenantContextMixin, ModelViewSet):
     def import_to_crm(self, request, pk=None):
         job = self.get_object()
 
-        if job.status != ScrapingJob.Status.DONE:
+        if job.status not in (ScrapingJob.Status.DONE, ScrapingJob.Status.RUNNING):
             return Response(
-                {"error": f"Job ainda não concluído (status: {job.status})."},
+                {"error": f"Job ainda não tem resultados (status: {job.status})."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not job.results:
+            return Response(
+                {"error": "Nenhum resultado disponível para importar ainda."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
