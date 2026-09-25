@@ -5,8 +5,10 @@ import {
   CheckCircle2, XCircle, Settings, Pencil, Trash2, Bot,
   ArrowRight, Loader2, Radio, MessageCircle, Calendar, Package2,
   ChevronRight, GripVertical, Palette, MapPin, Download, RefreshCw,
-  BookOpen, RefreshCcw, FileText,
+  BookOpen, RefreshCcw, FileText, ShoppingCart,
 } from "lucide-react";
+import { CRMPreCompra } from "./crm-pre-compra";
+import { CRMCompra } from "./crm-compra";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -1312,6 +1314,7 @@ function DealDetailModal({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [local, setLocal] = useState(deal);
+  const [dealTab, setDealTab] = useState<"info" | "pre-compra">("info");
   useEffect(() => { setLocal(deal); }, [deal]);
 
   const handleConvert = async () => {
@@ -1409,32 +1412,53 @@ function DealDetailModal({
         </div>
       }
     >
+      {/* Tab bar */}
+      <div className="flex border-b border-border shrink-0">
+        {[
+          { key: "info" as const, label: "Informações" },
+          { key: "pre-compra" as const, label: "Pré-Compra", icon: <ShoppingCart className="size-3.5" /> },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setDealTab(t.key)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${dealTab === t.key ? "text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            {t.icon}{t.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-y-auto">
-        <div className="p-5 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { icon: <User className="size-4" />, label: "Responsável", value: local.responsavel },
-              { icon: <DollarSign className="size-4" />, label: "Valor", value: local.valor ? fmtCurrency(local.valor, local.moeda) : null },
-              { icon: <Calendar className="size-4" />, label: "Previsão de fechamento", value: local.data_fechamento_previsto ? fmtDate(local.data_fechamento_previsto) : null },
-              { icon: <MessageSquare className="size-4" />, label: "Lead de origem", value: local.lead_nome },
-            ].filter(r => r.value).map(r => (
-              <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
-                <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
-                  <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
+        {dealTab === "info" && (
+          <div className="p-5 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { icon: <User className="size-4" />, label: "Responsável", value: local.responsavel },
+                { icon: <DollarSign className="size-4" />, label: "Valor", value: local.valor ? fmtCurrency(local.valor, local.moeda) : null },
+                { icon: <Calendar className="size-4" />, label: "Previsão de fechamento", value: local.data_fechamento_previsto ? fmtDate(local.data_fechamento_previsto) : null },
+                { icon: <MessageSquare className="size-4" />, label: "Lead de origem", value: local.lead_nome },
+              ].filter(r => r.value).map(r => (
+                <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
+                  <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
+                    <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-          {local.observacoes && (
-            <div className="p-3 rounded-lg bg-muted/30">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
-              <p className="text-sm text-foreground/80 leading-relaxed">{local.observacoes}</p>
+              ))}
             </div>
-          )}
-          <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
-        </div>
+            {local.observacoes && (
+              <div className="p-3 rounded-lg bg-muted/30">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
+                <p className="text-sm text-foreground/80 leading-relaxed">{local.observacoes}</p>
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
+          </div>
+        )}
+        {dealTab === "pre-compra" && (
+          <CRMPreCompra dealId={local.id} dealTitulo={local.titulo} />
+        )}
       </div>
 
       {editing && (
@@ -1461,6 +1485,7 @@ function ProjectDetailModal({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [local, setLocal] = useState(project);
+  const [projectTab, setProjectTab] = useState<"info" | "compra">("info");
   useEffect(() => { setLocal(project); }, [project]);
 
   const handleOutcome = async (outcome: ProjectOutcome) => {
@@ -1529,34 +1554,55 @@ function ProjectDetailModal({
         </div>
       }
     >
+      {/* Tab bar */}
+      <div className="flex border-b border-border shrink-0">
+        {[
+          { key: "info" as const, label: "Informações" },
+          { key: "compra" as const, label: "Compras", icon: <ShoppingCart className="size-3.5" /> },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setProjectTab(t.key)}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors ${projectTab === t.key ? "text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            {t.icon}{t.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-y-auto">
-        <div className="p-5 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { icon: <User className="size-4" />, label: "Responsável", value: local.responsavel },
-              { icon: <Calendar className="size-4" />, label: "Início", value: local.data_inicio ? fmtDate(local.data_inicio) : null },
-              { icon: <Calendar className="size-4" />, label: "Previsão de entrega", value: local.data_fim_previsto ? fmtDate(local.data_fim_previsto) : null },
-              { icon: <CheckCircle2 className="size-4" />, label: "Entregue em", value: local.data_fim_realizado ? fmtDate(local.data_fim_realizado) : null },
-              { icon: <DollarSign className="size-4" />, label: "Deal de origem", value: local.deal_titulo },
-              { icon: <MessageSquare className="size-4" />, label: "Lead de origem", value: local.lead_nome },
-            ].filter(r => r.value).map(r => (
-              <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
-                <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
-                  <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
+        {projectTab === "info" && (
+          <div className="p-5 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { icon: <User className="size-4" />, label: "Responsável", value: local.responsavel },
+                { icon: <Calendar className="size-4" />, label: "Início", value: local.data_inicio ? fmtDate(local.data_inicio) : null },
+                { icon: <Calendar className="size-4" />, label: "Previsão de entrega", value: local.data_fim_previsto ? fmtDate(local.data_fim_previsto) : null },
+                { icon: <CheckCircle2 className="size-4" />, label: "Entregue em", value: local.data_fim_realizado ? fmtDate(local.data_fim_realizado) : null },
+                { icon: <DollarSign className="size-4" />, label: "Deal de origem", value: local.deal_titulo },
+                { icon: <MessageSquare className="size-4" />, label: "Lead de origem", value: local.lead_nome },
+              ].filter(r => r.value).map(r => (
+                <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
+                  <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{r.label}</p>
+                    <p className="text-sm text-foreground mt-0.5 truncate">{r.value}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-          {local.observacoes && (
-            <div className="p-3 rounded-lg bg-muted/30">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
-              <p className="text-sm text-foreground/80 leading-relaxed">{local.observacoes}</p>
+              ))}
             </div>
-          )}
-          <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
-        </div>
+            {local.observacoes && (
+              <div className="p-3 rounded-lg bg-muted/30">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observações</p>
+                <p className="text-sm text-foreground/80 leading-relaxed">{local.observacoes}</p>
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">Criado em {new Date(local.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</p>
+          </div>
+        )}
+        {projectTab === "compra" && (
+          <CRMCompra projectId={local.id} projectTitulo={local.titulo} />
+        )}
       </div>
 
       {editing && (

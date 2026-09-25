@@ -1916,3 +1916,164 @@ export async function retryScrapingJob(id: number): Promise<ScrapingJob> {
   const res = await request<{ job_id: number }>(`/api/v1/scraping/jobs/${id}/retry/`, { method: "POST" });
   return getScrapingJob(res.job_id);
 }
+
+// ─── Compras ──────────────────────────────────────────────────────────────────
+
+export interface FornecedorCompras {
+  id: number;
+  nome: string;
+  categoria: string;
+  telefone: string;
+  email: string;
+  endereco: string;
+  cidade: string;
+  estado: string;
+  latitude: number | null;
+  longitude: number | null;
+  source: "manual" | "openstreetmap" | "indicado";
+  osm_id: string;
+  website: string;
+  observacoes: string;
+  created_at: string;
+}
+
+export interface ItemNecessario {
+  id: number;
+  deal: number;
+  nome: string;
+  descricao: string;
+  quantidade: number;
+  unidade: string;
+  tem_estoque: boolean;
+  quantidade_estoque: number;
+  categoria: string;
+  quantidade_faltando: number;
+}
+
+export interface ItemOrcamento {
+  id: number;
+  orcamento: number;
+  item_necessario: number | null;
+  nome: string;
+  quantidade: number;
+  unidade: string;
+  preco_unitario: number | null;
+  subtotal: number;
+}
+
+export interface Orcamento {
+  id: number;
+  deal: number;
+  fornecedor: number;
+  fornecedor_nome: string;
+  status: "rascunho" | "enviado" | "recebido" | "aprovado" | "rejeitado";
+  valor_total: number | null;
+  prazo_entrega_dias: number | null;
+  observacoes: string;
+  aprovado_em: string | null;
+  aprovado_por: string;
+  enviado_em: string | null;
+  resposta_em: string | null;
+  itens: ItemOrcamento[];
+  created_at: string;
+}
+
+export interface PedidoCompra {
+  id: number;
+  orcamento: number;
+  project: number | null;
+  status: "criado" | "enviado" | "confirmado" | "em_transito" | "entregue" | "cancelado";
+  numero_pedido: string;
+  previsao_entrega: string | null;
+  observacoes: string;
+  entregue_em: string | null;
+  fornecedor_nome: string;
+  deal_titulo: string;
+  valor_total: string | null;
+  itens?: Array<{ nome: string; quantidade: number; unidade: string; preco_unitario: string | null; subtotal: number | null }>;
+  created_at: string;
+}
+
+export async function listFornecedoresCompras(params?: { cidade?: string; search?: string }): Promise<FornecedorCompras[]> {
+  const q = new URLSearchParams();
+  if (params?.cidade) q.set("cidade", params.cidade);
+  if (params?.search) q.set("search", params.search);
+  return requestList<FornecedorCompras>(`/api/v1/compras/fornecedores/${q.toString() ? `?${q}` : ""}`);
+}
+
+export async function createFornecedorCompras(data: Partial<FornecedorCompras>): Promise<FornecedorCompras> {
+  return request<FornecedorCompras>("/api/v1/compras/fornecedores/", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function buscarFornecedoresOSM(material: string, cidade: string, raio_km = 10): Promise<FornecedorCompras[]> {
+  return request<FornecedorCompras[]>("/api/v1/compras/fornecedores/buscar-osm/", {
+    method: "POST",
+    body: JSON.stringify({ material, cidade, raio_km }),
+  });
+}
+
+export async function listItensNecessarios(dealId: number): Promise<ItemNecessario[]> {
+  return requestList<ItemNecessario>(`/api/v1/compras/itens-necessarios/?deal=${dealId}`);
+}
+
+export async function createItemNecessario(data: Partial<ItemNecessario>): Promise<ItemNecessario> {
+  return request<ItemNecessario>("/api/v1/compras/itens-necessarios/", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateItemNecessario(id: number, data: Partial<ItemNecessario>): Promise<ItemNecessario> {
+  return request<ItemNecessario>(`/api/v1/compras/itens-necessarios/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteItemNecessario(id: number): Promise<void> {
+  await request<void>(`/api/v1/compras/itens-necessarios/${id}/`, { method: "DELETE" });
+}
+
+export async function listOrcamentos(dealId: number): Promise<Orcamento[]> {
+  return requestList<Orcamento>(`/api/v1/compras/orcamentos/?deal=${dealId}`);
+}
+
+export async function criarOrcamentoCompleto(dealId: number, fornecedorId: number, itens: object[]): Promise<Orcamento> {
+  return request<Orcamento>("/api/v1/compras/orcamentos/criar-completo/", {
+    method: "POST",
+    body: JSON.stringify({ deal_id: dealId, fornecedor_id: fornecedorId, itens }),
+  });
+}
+
+export async function enviarOrcamento(id: number): Promise<Orcamento> {
+  return request<Orcamento>(`/api/v1/compras/orcamentos/${id}/enviar/`, { method: "POST" });
+}
+
+export async function aprovarOrcamento(id: number, aprovado_por: string): Promise<Orcamento> {
+  return request<Orcamento>(`/api/v1/compras/orcamentos/${id}/aprovar/`, {
+    method: "POST",
+    body: JSON.stringify({ aprovado_por }),
+  });
+}
+
+export async function rejeitarOrcamento(id: number): Promise<Orcamento> {
+  return request<Orcamento>(`/api/v1/compras/orcamentos/${id}/rejeitar/`, { method: "POST" });
+}
+
+export async function registrarRespostaOrcamento(
+  id: number,
+  data: { valor_total: number; prazo_entrega_dias: number; itens_precos?: object[]; observacoes?: string }
+): Promise<Orcamento> {
+  return request<Orcamento>(`/api/v1/compras/orcamentos/${id}/registrar-resposta/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function gerarPedidoCompra(orcamentoId: number, projectId?: number): Promise<PedidoCompra> {
+  return request<PedidoCompra>(`/api/v1/compras/orcamentos/${orcamentoId}/gerar-pedido/`, {
+    method: "POST",
+    body: JSON.stringify({ project_id: projectId ?? null }),
+  });
+}
+
+export async function listPedidosCompra(params?: { project?: number; status?: string }): Promise<PedidoCompra[]> {
+  const q = new URLSearchParams();
+  if (params?.project) q.set("project", String(params.project));
+  if (params?.status) q.set("status", params.status);
+  return requestList<PedidoCompra>(`/api/v1/compras/pedidos/${q.toString() ? `?${q}` : ""}`);
+}

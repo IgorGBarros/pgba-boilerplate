@@ -22,6 +22,7 @@ urlpatterns = [
     path('api/v1/controladoria/', include('controladoria.urls')),
     path('api/v1/datalake/', include('datalake.urls')),
     path('api/v1/scraping/', include('scraping.urls')),
+    path('api/v1/compras/', include('compras.urls')),
 
     # 📌 Descomente conforme for implementando:
     # path('api/v1/payments/', include('payments.urls')),

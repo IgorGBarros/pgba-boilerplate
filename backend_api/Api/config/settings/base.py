@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "controladoria",
     "datalake",
     "scraping",
+    "compras",
 ]
 
 # 🔄 Middleware
