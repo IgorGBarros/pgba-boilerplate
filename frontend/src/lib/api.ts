@@ -1377,6 +1377,8 @@ export interface ItemEstoque {
   fornecedor: number | null;
   fornecedor_nome: string;
   localizacao: string;
+  data_ultima_compra: string | null;
+  custo_medio: string;
   valor_total: number;
   abaixo_minimo: boolean;
   created_at: string;
@@ -1452,6 +1454,7 @@ export interface MovimentacaoEstoque {
   quantidade: number;
   quantidade_anterior: number;
   quantidade_posterior: number;
+  valor_unitario: string | null;
   motivo: string;
   referencia: string;
   operador: string;
@@ -1467,6 +1470,7 @@ export async function registrarMovimentacao(data: {
   item_id: number;
   tipo: MovimentacaoEstoque["tipo"];
   quantidade: number;
+  valor_unitario?: number;
   motivo?: string;
   referencia?: string;
   operador?: string;
@@ -2070,6 +2074,14 @@ export async function createFornecedorCompras(data: Partial<FornecedorCompras>):
   return request<FornecedorCompras>("/api/v1/compras/fornecedores/", { method: "POST", body: JSON.stringify(data) });
 }
 
+export async function updateFornecedorCompras(id: number, data: Partial<FornecedorCompras>): Promise<FornecedorCompras> {
+  return request<FornecedorCompras>(`/api/v1/compras/fornecedores/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteFornecedorCompras(id: number): Promise<void> {
+  await request<void>(`/api/v1/compras/fornecedores/${id}/`, { method: "DELETE" });
+}
+
 export async function buscarFornecedoresOSM(material: string, cidade: string, raio_km = 10): Promise<FornecedorCompras[]> {
   return request<FornecedorCompras[]>("/api/v1/compras/fornecedores/buscar-osm/", {
     method: "POST",
@@ -2108,6 +2120,14 @@ export async function criarOrcamentoCompleto(dealId: number, fornecedorId: numbe
     method: "POST",
     body: JSON.stringify({ deal_id: dealId, fornecedor_id: fornecedorId, itens }),
   });
+}
+
+export async function updateOrcamento(id: number, data: Partial<Pick<Orcamento, "status" | "valor_total" | "prazo_entrega_dias" | "observacoes">>): Promise<Orcamento> {
+  return request<Orcamento>(`/api/v1/compras/orcamentos/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteOrcamento(id: number): Promise<void> {
+  await request<void>(`/api/v1/compras/orcamentos/${id}/`, { method: "DELETE" });
 }
 
 export async function enviarOrcamento(id: number): Promise<Orcamento> {

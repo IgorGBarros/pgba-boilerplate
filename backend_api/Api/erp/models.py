@@ -75,6 +75,8 @@ class ItemEstoque(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         Fornecedor, on_delete=models.SET_NULL, null=True, blank=True, related_name="itens_estoque"
     )
     localizacao = models.CharField(max_length=100, blank=True)
+    data_ultima_compra = models.DateField(null=True, blank=True)
+    custo_medio = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -106,6 +108,7 @@ class MovimentacaoEstoque(TenantMixin, AuditMixin, models.Model):
     quantidade = models.IntegerField()
     quantidade_anterior = models.IntegerField()
     quantidade_posterior = models.IntegerField()
+    valor_unitario = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     motivo = models.CharField(max_length=255, blank=True)
     referencia = models.CharField(max_length=100, blank=True)
     operador = models.CharField(max_length=200, blank=True)

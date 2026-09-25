@@ -93,11 +93,20 @@ class MovimentacaoEstoqueViewSet(TenantContextMixin, TenantScopedMixin, viewsets
         except ItemEstoque.DoesNotExist:
             return Response({"detail": "Item não encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
+        from decimal import Decimal
+        from django.utils import timezone as tz
+
         tipo = ser.validated_data["tipo"]
         qtd = ser.validated_data["quantidade"]
+        valor_unitario = ser.validated_data.get("valor_unitario")
         qtd_anterior = item.quantidade
 
         if tipo == "entrada":
+            if valor_unitario is not None and qtd_anterior >= 0:
+                total_anterior = Decimal(qtd_anterior) * item.custo_medio
+                total_novo = Decimal(qtd) * valor_unitario
+                item.custo_medio = (total_anterior + total_novo) / Decimal(qtd_anterior + qtd)
+                item.data_ultima_compra = tz.now().date()
             item.quantidade += qtd
         elif tipo == "saida":
             if item.quantidade < qtd:
@@ -120,6 +129,7 @@ class MovimentacaoEstoqueViewSet(TenantContextMixin, TenantScopedMixin, viewsets
             quantidade=qtd,
             quantidade_anterior=qtd_anterior,
             quantidade_posterior=item.quantidade,
+            valor_unitario=valor_unitario,
             motivo=ser.validated_data["motivo"],
             referencia=ser.validated_data["referencia"],
             operador=ser.validated_data.get("operador", ""),
