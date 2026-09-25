@@ -10,7 +10,7 @@ import logging
 import time
 from typing import Optional
 
-import requests
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ _TIMEOUT = 15
 def _geocode_cidade(cidade: str) -> Optional[tuple[float, float]]:
     """Retorna (lat, lon) para a cidade via Nominatim."""
     try:
-        resp = requests.get(
+        resp = httpx.get(
             _NOMINATIM_URL,
             params={"q": cidade, "format": "json", "limit": 1, "countrycodes": "br"},
             headers=_HEADERS,
@@ -96,7 +96,7 @@ def _overpass_query(lat: float, lon: float, raio_m: int, tags: list[str]) -> lis
 out body;
 """
     try:
-        resp = requests.post(
+        resp = httpx.post(
             _OVERPASS_URL,
             data={"data": query},
             headers=_HEADERS,
