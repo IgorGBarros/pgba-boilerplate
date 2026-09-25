@@ -4,7 +4,7 @@ import {
   Mail, Phone, DollarSign, Briefcase, MessageSquare,
   CheckCircle2, XCircle, Settings, Pencil, Trash2, Bot,
   ArrowRight, Loader2, Radio, MessageCircle, Calendar, Package2,
-  ChevronRight, GripVertical, Palette, MapPin, Download,
+  ChevronRight, GripVertical, Palette, MapPin, Download, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import {
   LeadMessage, MainStage, LeadOutcome, DealOutcome, ProjectOutcome,
   CustomFieldValue, CustomFieldDefinition,
   listCRMPipelines, seedDefaultPipeline,
-  createGoogleMapsJob, getScrapingJob, importScrapingJobToCRM, ScrapingJob as ScrapingJobType,
+  createGoogleMapsJob, getScrapingJob, importScrapingJobToCRM, retryScrapingJob, ScrapingJob as ScrapingJobType,
   listLeads, createLead, updateLead, deleteLead, moveLead,
   setLeadOutcome, convertLeadToDeal,
   listDeals, createDeal, updateDeal, deleteDeal, moveDeal,
@@ -1638,6 +1638,23 @@ function ScraperModal({
     }
   };
 
+  const handleRetry = async () => {
+    if (!job) return;
+    setLoading(true);
+    try {
+      stopPoll();
+      setPaused(false);
+      const updated = await retryScrapingJob(job.id);
+      setJob(updated);
+      jobIdRef.current = updated.id;
+      startPoll(updated.id);
+    } catch {
+      toast.error("Erro ao reiniciar o job.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const isRunning = job?.status === "pending" || job?.status === "running";
   const isDone = job?.status === "done";
   const isFailed = job?.status === "failed";
@@ -1727,7 +1744,13 @@ function ScraperModal({
 
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-border shrink-0">
           <Button variant="ghost" size="sm" onClick={onClose}>Fechar</Button>
-          {!isDone && !paused && (
+          {isFailed && (
+            <Button size="sm" variant="outline" onClick={() => void handleRetry()} disabled={loading} className="gap-1.5">
+              {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+              Tentar novamente
+            </Button>
+          )}
+          {!isDone && !paused && !isFailed && (
             <Button size="sm" onClick={() => void handleStart()} disabled={loading || isRunning || !query.trim()} className="gap-1.5">
               {loading || isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <MapPin className="size-3.5" />}
               {isRunning ? "Buscando..." : "Iniciar busca"}

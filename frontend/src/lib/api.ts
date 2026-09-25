@@ -1834,3 +1834,8 @@ export async function importScrapingJobToCRM(id: number, pipelineId?: number): P
     body: JSON.stringify(pipelineId ? { pipeline_id: pipelineId } : {}),
   });
 }
+
+export async function retryScrapingJob(id: number): Promise<ScrapingJob> {
+  const res = await request<{ job_id: number }>(`/api/v1/scraping/jobs/${id}/retry/`, { method: "POST" });
+  return getScrapingJob(res.job_id);
+}

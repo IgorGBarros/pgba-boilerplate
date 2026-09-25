@@ -113,6 +113,27 @@ class ScrapingJobViewSet(TenantContextMixin, ModelViewSet):
         count = import_results_to_crm(job, pipeline_id=ser.validated_data.get("pipeline_id"))
         return Response({"imported": count, "message": f"{count} leads importados para o CRM."})
 
+    @action(detail=True, methods=["post"], url_path="retry")
+    def retry(self, request, pk=None):
+        """Reinicia um job travado em running ou failed."""
+        job = self.get_object()
+
+        if job.status == ScrapingJob.Status.DONE:
+            return Response(
+                {"error": "Job já concluído."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        job.status = ScrapingJob.Status.PENDING
+        job.error_message = ""
+        job.external_job_id = None
+        job.results = []
+        job.result_count = 0
+        job.save(update_fields=["status", "error_message", "external_job_id", "results", "result_count", "updated_at"])
+
+        run_google_maps_job.delay(job.id)
+        return Response({"job_id": job.id, "status": job.status, "message": "Job reiniciado."})
+
     @action(detail=False, methods=["get"], url_path="google-maps-status")
     def google_maps_status(self, request):
         try:
