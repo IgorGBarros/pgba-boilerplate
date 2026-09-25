@@ -190,7 +190,7 @@ OBSIDIAN_VAULT_PATH = os.environ.get("OBSIDIAN_VAULT_PATH", "")
 # 🕷️ Scraping — Google Maps (container gosom/google-maps-scraper)
 # Suba com: docker compose up -d gmaps-scraper
 # Repo de referência: https://github.com/Mahanaicoach/google-maps-scraper-kit
-GMAPS_SCRAPER_URL = os.environ.get("GMAPS_SCRAPER_URL", "http://localhost:8080")
+GMAPS_SCRAPER_URL = os.environ.get("GMAPS_SCRAPER_URL", "http://localhost:8181")
 GMAPS_SCRAPER_API_KEY = os.environ.get("GMAPS_SCRAPER_API_KEY", "")
 SCRAPING_TIMEOUT = int(os.environ.get("SCRAPING_TIMEOUT", "120"))
 
