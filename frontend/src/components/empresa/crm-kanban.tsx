@@ -4,7 +4,7 @@ import {
   Mail, Phone, DollarSign, Briefcase, MessageSquare,
   CheckCircle2, XCircle, Settings, Pencil, Trash2, Bot,
   ArrowRight, Loader2, Radio, MessageCircle, Calendar, Package2,
-  ChevronRight, GripVertical, Palette,
+  ChevronRight, GripVertical, Palette, MapPin, Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
   LeadMessage, MainStage, LeadOutcome, DealOutcome, ProjectOutcome,
   CustomFieldValue, CustomFieldDefinition,
   listCRMPipelines, seedDefaultPipeline,
+  createGoogleMapsJob, getScrapingJob, importScrapingJobToCRM, ScrapingJob as ScrapingJobType,
   listLeads, createLead, updateLead, deleteLead, moveLead,
   setLeadOutcome, convertLeadToDeal,
   listDeals, createDeal, updateDeal, deleteDeal, moveDeal,
@@ -1561,6 +1562,153 @@ function StageConfigDialog({
   );
 }
 
+// ─── Google Maps Scraper Modal ────────────────────────────────────────────────
+
+function ScraperModal({
+  pipelineId, onClose, onImported,
+}: {
+  pipelineId?: number;
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [depth, setDepth] = useState(5);
+  const [job, setJob] = useState<ScrapingJobType | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+
+  useEffect(() => () => stopPoll(), []);
+
+  const handleStart = async () => {
+    if (!query.trim()) { toast.error("Digite uma busca."); return; }
+    setLoading(true);
+    setJob(null);
+    try {
+      const created = await createGoogleMapsJob(query.trim(), depth);
+      setJob(created);
+      stopPoll();
+      pollRef.current = setInterval(async () => {
+        try {
+          const updated = await getScrapingJob(created.id);
+          setJob(updated);
+          if (updated.status === "done" || updated.status === "failed") stopPoll();
+        } catch {}
+      }, 4000);
+    } catch {
+      toast.error("Erro ao iniciar scrape. Verifique se o container gmaps-scraper está ativo.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!job) return;
+    setImporting(true);
+    try {
+      const { imported } = await importScrapingJobToCRM(job.id, pipelineId);
+      toast.success(`${imported} lead(s) importado(s) para o CRM.`);
+      onImported();
+      onClose();
+    } catch {
+      toast.error("Erro ao importar leads.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const isRunning = job?.status === "pending" || job?.status === "running";
+  const isDone = job?.status === "done";
+  const isFailed = job?.status === "failed";
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-card border border-border rounded-xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <div className="flex items-center gap-2">
+            <MapPin className="size-4 text-primary" />
+            <h3 className="font-semibold text-foreground">Google Maps Scraper</h3>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4 flex-1 overflow-y-auto">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Busca *</label>
+            <Input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="academias em Salvador BA"
+              className="bg-background"
+              onKeyDown={e => e.key === "Enter" && !loading && void handleStart()}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Profundidade</label>
+              <span className="text-xs font-semibold text-foreground tabular-nums">{depth}</span>
+            </div>
+            <input
+              type="range" min={1} max={20} value={depth}
+              onChange={e => setDepth(Number(e.target.value))}
+              className="w-full accent-primary"
+            />
+            <p className="text-[10px] text-muted-foreground">Valores maiores retornam mais resultados mas levam mais tempo.</p>
+          </div>
+
+          {job && (
+            <div className={`rounded-lg border p-3 space-y-2 ${isDone ? "border-emerald-500/30 bg-emerald-500/5" : isFailed ? "border-red-500/30 bg-red-500/5" : "border-primary/20 bg-primary/5"}`}>
+              <div className="flex items-center gap-2">
+                {isRunning && <Loader2 className="size-3.5 animate-spin text-primary shrink-0" />}
+                {isDone && <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />}
+                {isFailed && <XCircle className="size-3.5 text-red-400 shrink-0" />}
+                <span className="text-xs font-medium text-foreground capitalize">
+                  {isRunning ? "Buscando..." : isDone ? `${job.result_count} resultado(s) encontrado(s)` : `Falhou: ${job.error_message || "erro desconhecido"}`}
+                </span>
+              </div>
+
+              {isDone && job.results.length > 0 && (
+                <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                  {job.results.slice(0, 10).map((r, i) => (
+                    <div key={i} className="text-xs text-foreground/80 flex items-start gap-1.5 py-0.5 border-b border-border/30 last:border-0">
+                      <span className="text-muted-foreground shrink-0 tabular-nums w-4">{i + 1}.</span>
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{r.title}</p>
+                        <p className="text-muted-foreground truncate text-[10px]">{[r.phone, r.address].filter(Boolean).join(" · ")}</p>
+                      </div>
+                    </div>
+                  ))}
+                  {job.results.length > 10 && (
+                    <p className="text-[10px] text-muted-foreground text-center pt-1">... e mais {job.results.length - 10} resultado(s)</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-border shrink-0">
+          <Button variant="ghost" size="sm" onClick={onClose}>Fechar</Button>
+          {!isDone && (
+            <Button size="sm" onClick={() => void handleStart()} disabled={loading || isRunning || !query.trim()} className="gap-1.5">
+              {loading || isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <MapPin className="size-3.5" />}
+              {isRunning ? "Buscando..." : "Iniciar busca"}
+            </Button>
+          )}
+          {isDone && job.result_count > 0 && (
+            <Button size="sm" onClick={() => void handleImport()} disabled={importing} className="gap-1.5">
+              {importing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+              Importar {job.result_count} lead(s)
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Export ──────────────────────────────────────────────────────────────
 
 export function CRMKanban() {
@@ -1577,6 +1725,7 @@ export function CRMKanban() {
   const [addingToStage, setAddingToStage] = useState<CRMStage | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
+  const [showScraper, setShowScraper] = useState(false);
   const [search, setSearch] = useState("");
   const [palette, setPalette] = useState<KanbanPalette>(loadPalette);
 
@@ -1739,6 +1888,10 @@ export function CRMKanban() {
                   />
                 )}
               </div>
+              <Button variant="outline" size="sm" onClick={() => setShowScraper(true)} className="gap-1.5 h-8" title="Google Maps Scraper">
+                <MapPin className="size-3.5" />
+                <span className="hidden sm:inline">Scraper</span>
+              </Button>
               <Button variant="outline" size="sm" onClick={() => pipeline && setShowConfig(true)} className="gap-1.5 h-8">
                 <Settings className="size-3.5" />
                 <span className="hidden sm:inline">Etapas</span>
@@ -1902,6 +2055,14 @@ export function CRMKanban() {
           pipeline={pipeline}
           onClose={() => setShowConfig(false)}
           onSaved={() => void load()}
+        />
+      )}
+
+      {showScraper && (
+        <ScraperModal
+          pipelineId={pipeline?.id}
+          onClose={() => setShowScraper(false)}
+          onImported={() => void load()}
         />
       )}
     </div>
