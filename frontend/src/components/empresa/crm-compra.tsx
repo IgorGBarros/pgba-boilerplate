@@ -2,17 +2,25 @@ import { useState, useEffect, useCallback } from "react";
 import {
   ShoppingCart, Package, Truck, CheckCircle2, XCircle,
   Clock, ChevronDown, ChevronRight, Loader2, AlertCircle,
+  AlertTriangle, ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { listPedidosCompra, type PedidoCompra } from "@/lib/api";
+import { listPedidosCompra, avancarStatusPedido, type PedidoCompra } from "@/lib/api";
 
 const STATUS_CONFIG: Record<PedidoCompra["status"], { label: string; color: string; icon: React.ReactNode }> = {
-  criado:       { label: "Criado",       color: "bg-slate-500/10 text-slate-600 dark:text-slate-400",   icon: <ShoppingCart className="size-3.5" /> },
-  enviado:      { label: "Enviado",      color: "bg-blue-500/10 text-blue-600 dark:text-blue-400",     icon: <Package className="size-3.5" /> },
-  confirmado:   { label: "Confirmado",   color: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400", icon: <CheckCircle2 className="size-3.5" /> },
-  em_transito:  { label: "Em Trânsito",  color: "bg-amber-500/10 text-amber-700 dark:text-amber-400",  icon: <Truck className="size-3.5" /> },
+  criado:       { label: "Criado",       color: "bg-slate-500/10 text-slate-600 dark:text-slate-400",     icon: <ShoppingCart className="size-3.5" /> },
+  enviado:      { label: "Enviado",      color: "bg-blue-500/10 text-blue-600 dark:text-blue-400",        icon: <Package className="size-3.5" /> },
+  confirmado:   { label: "Confirmado",   color: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",  icon: <CheckCircle2 className="size-3.5" /> },
+  em_transito:  { label: "Em Trânsito",  color: "bg-amber-500/10 text-amber-700 dark:text-amber-400",    icon: <Truck className="size-3.5" /> },
   entregue:     { label: "Entregue",     color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", icon: <CheckCircle2 className="size-3.5" /> },
-  cancelado:    { label: "Cancelado",    color: "bg-red-500/10 text-red-600 dark:text-red-400",        icon: <XCircle className="size-3.5" /> },
+  cancelado:    { label: "Cancelado",    color: "bg-red-500/10 text-red-600 dark:text-red-400",           icon: <XCircle className="size-3.5" /> },
+};
+
+const PROXIMO_LABEL: Record<string, string> = {
+  enviado: "Marcar Enviado",
+  confirmado: "Marcar Confirmado",
+  em_transito: "Em Trânsito",
+  entregue: "Marcar Entregue",
 };
 
 function fmtDate(s: string) {
@@ -23,17 +31,31 @@ function fmtCurrency(v: string | number) {
   return Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function PedidoCard({ pedido }: { pedido: PedidoCompra }) {
+function PedidoCard({ pedido, onUpdate }: { pedido: PedidoCompra; onUpdate: (p: PedidoCompra) => void }) {
   const [open, setOpen] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
   const cfg = STATUS_CONFIG[pedido.status];
 
+  async function handleAvancar(e: React.MouseEvent) {
+    e.stopPropagation();
+    setAdvancing(true);
+    try {
+      const updated = await avancarStatusPedido(pedido.id);
+      onUpdate(updated);
+    } catch {
+      // silent — user sees no change
+    } finally {
+      setAdvancing(false);
+    }
+  }
+
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
+    <div className={`border rounded-lg overflow-hidden ${pedido.em_atraso ? "border-red-400/60" : "border-border"}`}>
       <button
         className="w-full flex items-center gap-3 px-4 py-3 bg-muted/20 hover:bg-muted/40 transition-colors text-left"
         onClick={() => setOpen(v => !v)}
       >
-        <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${cfg.color}`}>
+        <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0 ${cfg.color}`}>
           {cfg.icon}
           {cfg.label}
         </span>
@@ -41,12 +63,18 @@ function PedidoCard({ pedido }: { pedido: PedidoCompra }) {
           <p className="text-sm font-medium text-foreground truncate">
             {pedido.fornecedor_nome ?? `Pedido #${pedido.id}`}
           </p>
-          {pedido.numero_pedido && (
-            <p className="text-[11px] text-muted-foreground">Nº {pedido.numero_pedido}</p>
+          {pedido.deal_titulo && (
+            <p className="text-[11px] text-muted-foreground truncate">{pedido.deal_titulo}</p>
           )}
         </div>
+        {pedido.em_atraso && (
+          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 text-[11px] font-medium shrink-0">
+            <AlertTriangle className="size-3" />
+            Atrasado
+          </span>
+        )}
         {pedido.valor_total && (
-          <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
+          <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 shrink-0 tabular-nums">
             {fmtCurrency(pedido.valor_total)}
           </span>
         )}
@@ -55,6 +83,16 @@ function PedidoCard({ pedido }: { pedido: PedidoCompra }) {
 
       {open && (
         <div className="px-4 py-3 border-t border-border space-y-3">
+          {/* Atraso alert */}
+          {pedido.em_atraso && (
+            <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-500/10 border border-red-400/30">
+              <AlertTriangle className="size-4 text-red-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-600 dark:text-red-400">
+                Este pedido ultrapassou a data prevista de entrega e pode comprometer a produção.
+              </p>
+            </div>
+          )}
+
           {/* Items */}
           {pedido.itens && pedido.itens.length > 0 && (
             <div>
@@ -76,12 +114,24 @@ function PedidoCard({ pedido }: { pedido: PedidoCompra }) {
             </div>
           )}
 
-          {/* Meta */}
+          {/* Timeline */}
           <div className="grid grid-cols-2 gap-2 text-xs">
             {pedido.previsao_entrega && (
-              <div className="flex items-center gap-1.5 text-muted-foreground">
+              <div className={`flex items-center gap-1.5 ${pedido.em_atraso ? "text-red-500" : "text-muted-foreground"}`}>
                 <Clock className="size-3.5 shrink-0" />
                 <span>Previsão: {fmtDate(pedido.previsao_entrega)}</span>
+              </div>
+            )}
+            {pedido.confirmado_em && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <CheckCircle2 className="size-3.5 shrink-0" />
+                <span>Confirmado: {fmtDate(pedido.confirmado_em)}</span>
+              </div>
+            )}
+            {pedido.em_transito_em && (
+              <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                <Truck className="size-3.5 shrink-0" />
+                <span>Trânsito: {fmtDate(pedido.em_transito_em)}</span>
               </div>
             )}
             {pedido.entregue_em && (
@@ -94,6 +144,20 @@ function PedidoCard({ pedido }: { pedido: PedidoCompra }) {
 
           {pedido.observacoes && (
             <p className="text-xs text-muted-foreground italic">{pedido.observacoes}</p>
+          )}
+
+          {/* Advance status button */}
+          {pedido.proximo_status && pedido.status !== "cancelado" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full gap-2"
+              onClick={handleAvancar}
+              disabled={advancing}
+            >
+              {advancing ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
+              {PROXIMO_LABEL[pedido.proximo_status] ?? `Avançar para ${pedido.proximo_status}`}
+            </Button>
           )}
         </div>
       )}
@@ -121,11 +185,16 @@ export function CRMCompra({ projectId, projectTitulo }: { projectId: number; pro
 
   useEffect(() => { void load(); }, [load]);
 
+  function handleUpdate(updated: PedidoCompra) {
+    setPedidos(prev => prev.map(p => p.id === updated.id ? updated : p));
+  }
+
   const resumo = {
     total: pedidos.length,
     entregues: pedidos.filter(p => p.status === "entregue").length,
     emTransito: pedidos.filter(p => p.status === "em_transito").length,
     pendentes: pedidos.filter(p => ["criado", "enviado", "confirmado"].includes(p.status)).length,
+    emAtraso: pedidos.filter(p => p.em_atraso).length,
     valorTotal: pedidos.reduce((acc, p) => acc + (p.valor_total ? Number(p.valor_total) : 0), 0),
   };
 
@@ -166,6 +235,18 @@ export function CRMCompra({ projectId, projectTitulo }: { projectId: number; pro
 
   return (
     <div className="p-4 space-y-4">
+      {/* Alerta de atrasos */}
+      {resumo.emAtraso > 0 && (
+        <div className="flex items-center gap-2.5 p-3 rounded-lg bg-red-500/10 border border-red-400/30">
+          <AlertTriangle className="size-4 text-red-500 shrink-0" />
+          <p className="text-sm text-red-600 dark:text-red-400 font-medium">
+            {resumo.emAtraso === 1
+              ? "1 pedido está em atraso e pode comprometer a produção."
+              : `${resumo.emAtraso} pedidos estão em atraso e podem comprometer a produção.`}
+          </p>
+        </div>
+      )}
+
       {/* Summary */}
       <div className="grid grid-cols-2 gap-2">
         <div className="p-3 rounded-lg bg-muted/30 text-center">
@@ -188,21 +269,24 @@ export function CRMCompra({ projectId, projectTitulo }: { projectId: number; pro
 
       {resumo.valorTotal > 0 && (
         <div className="p-3 rounded-lg bg-muted/30 flex items-center justify-between">
-          <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Valor total</span>
+          <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Valor total em andamento</span>
           <span className="text-sm font-semibold text-foreground tabular-nums">
             {resumo.valorTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
           </span>
         </div>
       )}
 
-      {/* Pedidos list */}
+      {/* Pedidos list — atrasados primeiro */}
       <div className="space-y-2">
-        {pedidos.map(p => <PedidoCard key={p.id} pedido={p} />)}
+        {[...pedidos]
+          .sort((a, b) => (b.em_atraso ? 1 : 0) - (a.em_atraso ? 1 : 0))
+          .map(p => <PedidoCard key={p.id} pedido={p} onUpdate={handleUpdate} />)
+        }
       </div>
 
-      <p className="text-[11px] text-muted-foreground text-center">
-        {projectTitulo ? `Projeto: ${projectTitulo}` : ""} · Acompanhamento de entregas em breve
-      </p>
+      {projectTitulo && (
+        <p className="text-[11px] text-muted-foreground text-center">Projeto: {projectTitulo}</p>
+      )}
     </div>
   );
 }

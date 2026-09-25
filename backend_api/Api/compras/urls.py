@@ -5,6 +5,7 @@ from compras.views import (
     ItemNecessarioViewSet,
     OrcamentoViewSet,
     PedidoCompraViewSet,
+    CentralSuprimentosView,
 )
 
 router = DefaultRouter()
@@ -15,4 +16,5 @@ router.register("pedidos", PedidoCompraViewSet, basename="pedido-compra")
 
 urlpatterns = [
     path("", include(router.urls)),
+    path("central-suprimentos/", CentralSuprimentosView.as_view(), name="central-suprimentos"),
 ]

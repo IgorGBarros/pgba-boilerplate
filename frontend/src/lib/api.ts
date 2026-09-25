@@ -1969,6 +1969,11 @@ export interface FornecedorCompras {
   osm_id: string;
   website: string;
   observacoes: string;
+  nota_media: number;
+  prazo_medio_dias: number | null;
+  total_pedidos: number;
+  pedidos_no_prazo: number;
+  taxa_entrega_prazo: number | null;
   created_at: string;
 }
 
@@ -2001,6 +2006,7 @@ export interface Orcamento {
   deal: number;
   fornecedor: number;
   fornecedor_nome: string;
+  fornecedor_nota: number;
   status: "rascunho" | "enviado" | "recebido" | "aprovado" | "rejeitado";
   valor_total: number | null;
   prazo_entrega_dias: number | null;
@@ -2009,8 +2015,28 @@ export interface Orcamento {
   aprovado_por: string;
   enviado_em: string | null;
   resposta_em: string | null;
+  recomendacao_motivo: string;
+  score_recomendacao: number | null;
   itens: ItemOrcamento[];
   created_at: string;
+}
+
+export interface RecomendacaoOrcamento {
+  orcamento_id: number;
+  fornecedor_nome: string;
+  valor_total: number;
+  prazo_entrega_dias: number | null;
+  motivo: string;
+  score: number;
+}
+
+export interface CentralSuprimentosData {
+  criticos: PedidoCompra[];
+  pendentes_atencao: PedidoCompra[];
+  em_transito: PedidoCompra[];
+  entregues_mes: number;
+  valor_em_andamento: number;
+  orcamentos_aguardando_resposta: Orcamento[];
 }
 
 export interface PedidoCompra {
@@ -2021,11 +2047,15 @@ export interface PedidoCompra {
   numero_pedido: string;
   previsao_entrega: string | null;
   observacoes: string;
+  confirmado_em: string | null;
+  em_transito_em: string | null;
   entregue_em: string | null;
   fornecedor_nome: string;
   deal_titulo: string;
   valor_total: string | null;
   itens?: Array<{ nome: string; quantidade: number; unidade: string; preco_unitario: string | null; subtotal: number | null }>;
+  em_atraso: boolean;
+  proximo_status: string | null;
   created_at: string;
 }
 
@@ -2130,4 +2160,20 @@ export async function createPedidoCompra(data: {
   project?: number;
 }): Promise<PedidoCompra> {
   return request<PedidoCompra>("/api/v1/compras/pedidos/", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function avancarStatusPedido(id: number): Promise<PedidoCompra> {
+  return request<PedidoCompra>(`/api/v1/compras/pedidos/${id}/avancar-status/`, { method: "POST" });
+}
+
+export async function cancelarPedido(id: number): Promise<PedidoCompra> {
+  return request<PedidoCompra>(`/api/v1/compras/pedidos/${id}/cancelar/`, { method: "POST" });
+}
+
+export async function recomendarFornecedor(dealId: number): Promise<RecomendacaoOrcamento> {
+  return request<RecomendacaoOrcamento>(`/api/v1/compras/orcamentos/recomendar/?deal_id=${dealId}`);
+}
+
+export async function getCentralSuprimentos(): Promise<CentralSuprimentosData> {
+  return request<CentralSuprimentosData>("/api/v1/compras/central-suprimentos/");
 }

@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Package, Plus, Trash2, Search, CheckCircle2, XCircle,
   SendHorizonal, ThumbsUp, ThumbsDown, RefreshCw, ShoppingCart,
-  MapPin, Phone, Globe, AlertTriangle,
+  MapPin, Phone, Globe, AlertTriangle, Sparkles, Star,
 } from "lucide-react";
 import {
   listItensNecessarios, createItemNecessario, updateItemNecessario, deleteItemNecessario,
   listOrcamentos, buscarFornecedoresOSM, criarOrcamentoCompleto,
   enviarOrcamento, aprovarOrcamento, rejeitarOrcamento, gerarPedidoCompra,
-  ItemNecessario, Orcamento, FornecedorCompras,
+  recomendarFornecedor,
+  ItemNecessario, Orcamento, FornecedorCompras, RecomendacaoOrcamento,
 } from "@/lib/api";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -58,6 +59,10 @@ export function CRMPreCompra({ dealId }: Props) {
 
   // Aprovação
   const [aprovandoPor, setAprovandoPor] = useState("");
+
+  // Recomendação de fornecedor
+  const [recomendacao, setRecomendacao] = useState<RecomendacaoOrcamento | null>(null);
+  const [carregandoRec, setCarregandoRec] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -159,6 +164,19 @@ export function CRMPreCompra({ dealId }: Props) {
   async function gerarPedido(orcId: number) {
     await gerarPedidoCompra(orcId);
     void load();
+  }
+
+  async function buscarRecomendacao() {
+    setCarregandoRec(true);
+    setRecomendacao(null);
+    try {
+      const rec = await recomendarFornecedor(dealId);
+      setRecomendacao(rec);
+    } catch {
+      // silent
+    } finally {
+      setCarregandoRec(false);
+    }
   }
 
   if (loading) {
@@ -324,7 +342,51 @@ export function CRMPreCompra({ dealId }: Props) {
           <div className="flex items-center gap-2 mb-3">
             <ShoppingCart className="size-4 text-emerald-500" />
             <h3 className="text-sm font-semibold text-foreground">Orçamentos</h3>
+            {orcamentos.filter(o => o.status === "recebido").length >= 2 && (
+              <button
+                onClick={() => void buscarRecomendacao()}
+                disabled={carregandoRec}
+                className="ml-auto flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-50 transition-colors"
+              >
+                {carregandoRec ? <RefreshCw className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+                Recomendar
+              </button>
+            )}
           </div>
+
+          {/* Painel de recomendação */}
+          {recomendacao && (
+            <div className="mb-3 rounded-xl border border-violet-400/40 bg-violet-500/10 p-3">
+              <div className="flex items-start gap-2">
+                <Sparkles className="size-4 text-violet-500 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-violet-700 dark:text-violet-300 mb-1">Nossa recomendação</p>
+                  <p className="text-sm font-bold text-foreground">{recomendacao.fornecedor_nome}</p>
+                  <div className="flex items-center gap-3 mt-1">
+                    {recomendacao.valor_total != null && (
+                      <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                        {Number(recomendacao.valor_total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </span>
+                    )}
+                    {recomendacao.prazo_entrega_dias != null && (
+                      <span className="text-xs text-muted-foreground">{recomendacao.prazo_entrega_dias} dias</span>
+                    )}
+                    {recomendacao.score != null && (
+                      <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                        <Star className="size-3" />
+                        {Number(recomendacao.score).toFixed(1)}/10
+                      </span>
+                    )}
+                  </div>
+                  {recomendacao.motivo && (
+                    <p className="mt-1.5 text-[11px] text-muted-foreground italic">{recomendacao.motivo}</p>
+                  )}
+                </div>
+                <button onClick={() => setRecomendacao(null)} className="text-muted-foreground hover:text-foreground text-xs shrink-0">✕</button>
+              </div>
+            </div>
+          )}
+
 
           {/* Aprovado por (CEO) — exibido quando há orçamento em recebido/rascunho */}
           {orcamentos.some(o => ["rascunho", "recebido"].includes(o.status)) && (

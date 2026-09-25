@@ -23,6 +23,11 @@ class Fornecedor(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     osm_id = models.CharField(max_length=50, blank=True)
     website = models.URLField(blank=True)
     observacoes = models.TextField(blank=True)
+    # Histórico e score acumulado por entrega real
+    nota_media = models.DecimalField(max_digits=4, decimal_places=2, default=5.0)
+    prazo_medio_dias = models.PositiveIntegerField(null=True, blank=True)
+    total_pedidos = models.PositiveIntegerField(default=0)
+    pedidos_no_prazo = models.PositiveIntegerField(default=0)
 
     class Meta:
         ordering = ["nome"]
@@ -84,6 +89,9 @@ class Orcamento(TenantMixin, AuditMixin, models.Model):
     aprovado_por = models.CharField(max_length=200, blank=True)
     enviado_em = models.DateTimeField(null=True, blank=True)
     resposta_em = models.DateTimeField(null=True, blank=True)
+    # Recomendação do sistema após comparação de cotações
+    recomendacao_motivo = models.TextField(blank=True)
+    score_recomendacao = models.DecimalField(max_digits=5, decimal_places=3, null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -124,8 +132,6 @@ class ItemOrcamento(TenantMixin, AuditMixin, models.Model):
 
 
 class PedidoCompra(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
-    """Stub — lógica de diligenciamento a ser implementada."""
-
     class Status(models.TextChoices):
         CRIADO = "criado", "Criado"
         ENVIADO = "enviado", "Enviado ao Fornecedor"
@@ -133,6 +139,8 @@ class PedidoCompra(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         EM_TRANSITO = "em_transito", "Em Trânsito"
         ENTREGUE = "entregue", "Entregue"
         CANCELADO = "cancelado", "Cancelado"
+
+    _STATUS_FLOW = [Status.CRIADO, Status.ENVIADO, Status.CONFIRMADO, Status.EM_TRANSITO, Status.ENTREGUE]
 
     orcamento = models.OneToOneField(
         Orcamento, on_delete=models.PROTECT, related_name="pedido"
@@ -150,7 +158,18 @@ class PedidoCompra(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     numero_pedido = models.CharField(max_length=50, blank=True)
     previsao_entrega = models.DateField(null=True, blank=True)
     observacoes = models.TextField(blank=True)
+    confirmado_em = models.DateTimeField(null=True, blank=True)
+    em_transito_em = models.DateTimeField(null=True, blank=True)
     entregue_em = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def em_atraso(self) -> bool:
+        if self.status in (self.Status.ENTREGUE, self.Status.CANCELADO):
+            return False
+        if self.previsao_entrega is None:
+            return False
+        from django.utils import timezone
+        return self.previsao_entrega < timezone.now().date()
 
     class Meta:
         ordering = ["-created_at"]
