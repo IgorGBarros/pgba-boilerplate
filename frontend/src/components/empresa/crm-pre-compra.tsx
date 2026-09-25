@@ -99,7 +99,11 @@ export function CRMPreCompra({ dealId }: Props) {
 
   function estoqueParaItem(nome: string): ItemEstoque | undefined {
     const n = nome.trim().toLowerCase();
-    return estoque.find(e => e.nome.trim().toLowerCase() === n);
+    // Exact match first, then partial match
+    return (
+      estoque.find(e => e.nome.trim().toLowerCase() === n) ??
+      estoque.find(e => e.nome.trim().toLowerCase().includes(n) || n.includes(e.nome.trim().toLowerCase()))
+    );
   }
 
   async function adicionarItem() {
@@ -321,24 +325,37 @@ export function CRMPreCompra({ dealId }: Props) {
                     <Trash2 className="size-3.5" />
                   </button>
                 </div>
-                {/* Informações de estoque cruzado */}
-                {emEstoque && (
-                  <div className="mt-1.5 ml-7 flex flex-wrap gap-x-4 gap-y-0.5">
-                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-                      Em estoque: {emEstoque.quantidade} {emEstoque.unidade}
-                    </span>
-                    {Number(emEstoque.custo_medio) > 0 && (
-                      <span className="text-[11px] text-muted-foreground">
-                        Custo médio: {Number(emEstoque.custo_medio).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                {/* Informações de estoque cruzado — sempre visível */}
+                <div className="mt-1.5 ml-7">
+                  {emEstoque ? (
+                    <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+                      <span className={`text-[11px] font-medium ${emEstoque.quantidade > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                        {emEstoque.quantidade > 0
+                          ? `✓ Em estoque: ${emEstoque.quantidade} ${emEstoque.unidade}`
+                          : `⚠ Estoque zerado (${emEstoque.unidade})`}
                       </span>
-                    )}
-                    {emEstoque.data_ultima_compra && (
-                      <span className="text-[11px] text-muted-foreground">
-                        Última compra: {fmtDate(emEstoque.data_ultima_compra)}
-                      </span>
-                    )}
-                  </div>
-                )}
+                      {Number(emEstoque.custo_medio) > 0 && (
+                        <span className="text-[11px] text-muted-foreground">
+                          Custo médio: {Number(emEstoque.custo_medio).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                      )}
+                      {Number(emEstoque.custo_unitario) > 0 && Number(emEstoque.custo_medio) === 0 && (
+                        <span className="text-[11px] text-muted-foreground">
+                          Valor unit.: {Number(emEstoque.custo_unitario).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                      )}
+                      {emEstoque.data_ultima_compra ? (
+                        <span className="text-[11px] text-muted-foreground">
+                          Última compra: {fmtDate(emEstoque.data_ultima_compra)}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground/60">Sem compra registrada</span>
+                      )}
+                    </div>
+                  ) : estoque.length > 0 ? (
+                    <span className="text-[11px] text-muted-foreground/60">Não encontrado no estoque</span>
+                  ) : null}
+                </div>
               </div>
             );
           })}
