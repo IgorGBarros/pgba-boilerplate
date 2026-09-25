@@ -948,6 +948,17 @@ export async function convertLeadToDeal(leadId: number, data?: { titulo?: string
   });
 }
 
+export interface LeadObsidianNote {
+  content: string | null;
+  exists: boolean;
+  path?: string;
+  detail?: string;
+}
+
+export async function getLeadObsidianNote(leadId: number): Promise<LeadObsidianNote> {
+  return request<LeadObsidianNote>(`/api/v1/crm/leads/${leadId}/obsidian-note/`);
+}
+
 // ─── Deals ────────────────────────────────────────────────────────────────────
 
 export async function listDeals(params?: { stage?: number; pipeline?: number; search?: string; outcome?: string }): Promise<CRMDeal[]> {

@@ -144,6 +144,25 @@ class LeadViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
         deal = convert_lead_to_deal(lead.id, request.tenant_id, titulo=titulo, responsavel=responsavel, valor=valor)
         return Response(DealSerializer(deal).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["get"], url_path="obsidian-note")
+    def obsidian_note(self, request, pk=None):
+        """Retorna o conteúdo da nota Obsidian do lead, se existir."""
+        lead = self.get_object()
+        from crm.obsidian import lead_note_path, render_lead_note
+        from crm.models import LeadMessage
+
+        path = lead_note_path(lead)
+        if path is None:
+            return Response(
+                {"detail": "OBSIDIAN_VAULT_PATH não configurado.", "content": None, "exists": False},
+                status=200,
+            )
+        if not path.exists():
+            return Response({"detail": "Nota ainda não gerada.", "content": None, "exists": False}, status=200)
+
+        content = path.read_text(encoding="utf-8")
+        return Response({"content": content, "exists": True, "path": str(path)})
+
 
 # ─── Deal ─────────────────────────────────────────────────────────────────────
 

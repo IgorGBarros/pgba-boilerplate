@@ -5,6 +5,7 @@ import {
   CheckCircle2, XCircle, Settings, Pencil, Trash2, Bot,
   ArrowRight, Loader2, Radio, MessageCircle, Calendar, Package2,
   ChevronRight, GripVertical, Palette, MapPin, Download, RefreshCw,
+  BookOpen, RefreshCcw, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ import {
   getLeadMessages, qualifyLead,
   createStage, updateStage, deleteStage,
   listCustomFieldDefs, createCustomFieldDef, deleteCustomFieldDef, bulkUpsertCustomFieldValues,
+  getLeadObsidianNote, LeadObsidianNote,
 } from "@/lib/api";
 import { CRMChannels } from "@/components/empresa/crm-channels";
 import { toast } from "sonner";
@@ -1010,6 +1012,119 @@ function ModalShell({
   );
 }
 
+// ─── Obsidian Note Tab ───────────────────────────────────────────────────────
+
+function ObsidianNoteTab({ leadId }: { leadId: number }) {
+  const [note, setNote] = useState<LeadObsidianNote | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true); else setLoading(true);
+    try {
+      const data = await getLeadObsidianNote(leadId);
+      setNote(data);
+    } catch {
+      setNote({ content: null, exists: false, detail: "Erro ao carregar nota." });
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [leadId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const parseMarkdown = (md: string) => {
+    // frontmatter → ocultar bloco ---...---
+    const withoutFrontmatter = md.replace(/^---[\s\S]*?---\n*/m, "");
+    // Títulos → negrito visual
+    const lines = withoutFrontmatter.split("\n");
+    return lines.map((line, i) => {
+      if (line.startsWith("## ")) return <h3 key={i} className="text-sm font-semibold text-foreground mt-4 mb-1">{line.slice(3)}</h3>;
+      if (line.startsWith("# ")) return <h2 key={i} className="text-base font-bold text-foreground mt-2 mb-2">{line.slice(2)}</h2>;
+      if (line.startsWith("**Lead**") || line.startsWith("**Agente**")) {
+        const isLead = line.startsWith("**Lead**");
+        return (
+          <div key={i} className={`flex gap-2 py-1 ${isLead ? "" : "justify-end"}`}>
+            <span className={`text-xs px-2.5 py-1 rounded-xl max-w-[85%] break-words leading-relaxed ${
+              isLead
+                ? "bg-muted text-foreground"
+                : "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300"
+            }`}>
+              {line.replace(/^\*\*(Lead|Agente)\*\*( _[^_]+_)?:? ?/, "")}
+            </span>
+          </div>
+        );
+      }
+      if (line.startsWith("- ") || line.startsWith("• ")) {
+        return <li key={i} className="text-xs text-muted-foreground ml-3 list-disc">{line.slice(2)}</li>;
+      }
+      if (line.startsWith("**") && line.includes(":**")) {
+        const [label, ...rest] = line.replace(/\*\*/g, "").split(":");
+        return (
+          <div key={i} className="flex gap-1.5 text-xs">
+            <span className="text-muted-foreground shrink-0">{label}:</span>
+            <span className="text-foreground">{rest.join(":").replace(/  $/, "").trim()}</span>
+          </div>
+        );
+      }
+      if (!line.trim()) return <div key={i} className="h-1" />;
+      return <p key={i} className="text-xs text-muted-foreground leading-relaxed">{line}</p>;
+    });
+  };
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex items-center justify-between px-5 py-2.5 border-b border-border shrink-0">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <BookOpen className="size-3.5" />
+          <span>Nota no Vault Obsidian</span>
+          {note?.path && (
+            <span className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded truncate max-w-[200px]" title={note.path}>
+              {note.path.split("/").slice(-2).join("/")}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => void load(true)}
+          className="p-1 rounded hover:bg-muted transition-colors"
+          title="Atualizar nota"
+        >
+          <RefreshCcw className={`size-3.5 text-muted-foreground ${refreshing ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-5">
+        {!note?.exists ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-12">
+            <FileText className="size-10 text-muted-foreground/40" />
+            <p className="text-sm text-muted-foreground">
+              {note?.detail === "OBSIDIAN_VAULT_PATH não configurado."
+                ? "Vault Obsidian não configurado no servidor."
+                : "Nota ainda não gerada. Ela será criada automaticamente após a próxima mensagem no canal."}
+            </p>
+            {note?.detail === "OBSIDIAN_VAULT_PATH não configurado." && (
+              <p className="text-xs text-muted-foreground/60">Configure OBSIDIAN_VAULT_PATH no servidor.</p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-0.5">
+            {parseMarkdown(note.content ?? "")}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Lead Detail Modal ────────────────────────────────────────────────────────
 
 function LeadDetailModal({
@@ -1021,7 +1136,7 @@ function LeadDetailModal({
   onDeleted: (id: number) => void;
   onConverted: (deal: CRMDeal) => void;
 }) {
-  const [tab, setTab] = useState<"conversa" | "info">("conversa");
+  const [tab, setTab] = useState<"conversa" | "info" | "obsidian">("conversa");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [local, setLocal] = useState(lead);
@@ -1124,6 +1239,7 @@ function LeadDetailModal({
         {([
           { key: "conversa" as const, label: "Conversa", icon: <MessageCircle className="size-3.5" /> },
           { key: "info" as const, label: "Informações", icon: <User className="size-3.5" /> },
+          { key: "obsidian" as const, label: "Obsidian", icon: <BookOpen className="size-3.5" /> },
         ]).map(t => (
           <button
             key={t.key}
@@ -1168,6 +1284,8 @@ function LeadDetailModal({
           </div>
         </div>
       )}
+
+      {tab === "obsidian" && <ObsidianNoteTab leadId={local.id} />}
 
       {editing && (
         <LeadFormDialog
