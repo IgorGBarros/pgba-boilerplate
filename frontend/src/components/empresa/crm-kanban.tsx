@@ -1576,27 +1576,46 @@ function ScraperModal({
   const [job, setJob] = useState<ScrapingJobType | null>(null);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [paused, setPaused] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const jobIdRef = useRef<number | null>(null);
 
   const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
 
+  const startPoll = (id: number) => {
+    stopPoll();
+    pollRef.current = setInterval(async () => {
+      try {
+        const updated = await getScrapingJob(id);
+        setJob(updated);
+        if (updated.status === "done" || updated.status === "failed") { stopPoll(); setPaused(false); }
+      } catch {}
+    }, 4000);
+  };
+
   useEffect(() => () => stopPoll(), []);
+
+  const handlePauseResume = () => {
+    if (!jobIdRef.current) return;
+    if (paused) {
+      startPoll(jobIdRef.current);
+      setPaused(false);
+    } else {
+      stopPoll();
+      setPaused(true);
+    }
+  };
 
   const handleStart = async () => {
     if (!query.trim()) { toast.error("Digite uma busca."); return; }
     setLoading(true);
     setJob(null);
+    setPaused(false);
     try {
       const created = await createGoogleMapsJob(query.trim(), depth);
       setJob(created);
-      stopPoll();
-      pollRef.current = setInterval(async () => {
-        try {
-          const updated = await getScrapingJob(created.id);
-          setJob(updated);
-          if (updated.status === "done" || updated.status === "failed") stopPoll();
-        } catch {}
-      }, 4000);
+      jobIdRef.current = created.id;
+      startPoll(created.id);
     } catch {
       toast.error("Erro ao iniciar scrape. Verifique se o container gmaps-scraper está ativo.");
     } finally {
@@ -1660,16 +1679,33 @@ function ScraperModal({
 
           {job && (
             <div className={`rounded-lg border p-3 space-y-2 ${isDone ? "border-emerald-500/30 bg-emerald-500/5" : isFailed ? "border-red-500/30 bg-red-500/5" : "border-primary/20 bg-primary/5"}`}>
-              <div className="flex items-center gap-2">
-                {isRunning && <Loader2 className="size-3.5 animate-spin text-primary shrink-0" />}
-                {isDone && <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />}
-                {isFailed && <XCircle className="size-3.5 text-red-400 shrink-0" />}
-                <span className="text-xs font-medium text-foreground capitalize">
-                  {isRunning ? "Buscando..." : isDone ? `${job.result_count} resultado(s) encontrado(s)` : `Falhou: ${job.error_message || "erro desconhecido"}`}
-                </span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  {(isRunning && !paused) && <Loader2 className="size-3.5 animate-spin text-primary shrink-0" />}
+                  {paused && <span className="size-3.5 rounded-full bg-amber-400 shrink-0 inline-block" />}
+                  {isDone && <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />}
+                  {isFailed && <XCircle className="size-3.5 text-red-400 shrink-0" />}
+                  <span className="text-xs font-medium text-foreground truncate">
+                    {isFailed
+                      ? `Falhou: ${job.error_message || "erro desconhecido"}`
+                      : isDone
+                      ? `${job.result_count} resultado(s) encontrado(s)`
+                      : job.results.length > 0
+                      ? `${job.results.length} encontrado(s) até agora...`
+                      : paused ? "Pausado" : "Buscando..."}
+                  </span>
+                </div>
+                {(isRunning || paused) && (
+                  <button
+                    onClick={handlePauseResume}
+                    className="text-[10px] font-semibold shrink-0 px-2 py-0.5 rounded border border-border hover:bg-muted transition-colors"
+                  >
+                    {paused ? "Retomar" : "Pausar"}
+                  </button>
+                )}
               </div>
 
-              {isDone && job.results.length > 0 && (
+              {job.results.length > 0 && (
                 <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
                   {job.results.slice(0, 10).map((r, i) => (
                     <div key={i} className="text-xs text-foreground/80 flex items-start gap-1.5 py-0.5 border-b border-border/30 last:border-0">
@@ -1691,16 +1727,16 @@ function ScraperModal({
 
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-border shrink-0">
           <Button variant="ghost" size="sm" onClick={onClose}>Fechar</Button>
-          {!isDone && (
+          {!isDone && !paused && (
             <Button size="sm" onClick={() => void handleStart()} disabled={loading || isRunning || !query.trim()} className="gap-1.5">
               {loading || isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <MapPin className="size-3.5" />}
               {isRunning ? "Buscando..." : "Iniciar busca"}
             </Button>
           )}
-          {isDone && job.result_count > 0 && (
+          {(isDone || paused) && job && job.results.length > 0 && (
             <Button size="sm" onClick={() => void handleImport()} disabled={importing} className="gap-1.5">
               {importing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-              Importar {job.result_count} lead(s)
+              Importar {job.results.length} lead(s)
             </Button>
           )}
         </div>
