@@ -1690,7 +1690,7 @@ function ScraperModal({
                       ? `Falhou: ${job.error_message || "erro desconhecido"}`
                       : isDone
                       ? `${job.result_count} resultado(s) encontrado(s)`
-                      : job.results.length > 0
+                      : (job.results?.length ?? 0) > 0
                       ? `${job.results.length} encontrado(s) até agora...`
                       : paused ? "Pausado" : "Buscando..."}
                   </span>
@@ -1705,7 +1705,7 @@ function ScraperModal({
                 )}
               </div>
 
-              {job.results.length > 0 && (
+              {(job.results?.length ?? 0) > 0 && (
                 <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
                   {job.results.slice(0, 10).map((r, i) => (
                     <div key={i} className="text-xs text-foreground/80 flex items-start gap-1.5 py-0.5 border-b border-border/30 last:border-0">
@@ -1716,7 +1716,7 @@ function ScraperModal({
                       </div>
                     </div>
                   ))}
-                  {job.results.length > 10 && (
+                  {(job.results?.length ?? 0) > 10 && (
                     <p className="text-[10px] text-muted-foreground text-center pt-1">... e mais {job.results.length - 10} resultado(s)</p>
                   )}
                 </div>
@@ -1733,7 +1733,7 @@ function ScraperModal({
               {isRunning ? "Buscando..." : "Iniciar busca"}
             </Button>
           )}
-          {(isDone || paused) && job && job.results.length > 0 && (
+          {(isDone || paused) && job && (job.results?.length ?? 0) > 0 && (
             <Button size="sm" onClick={() => void handleImport()} disabled={importing} className="gap-1.5">
               {importing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
               Importar {job.results.length} lead(s)
