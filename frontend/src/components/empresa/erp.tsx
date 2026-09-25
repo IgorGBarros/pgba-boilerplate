@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowDownCircle,
@@ -19,6 +19,7 @@ import {
   Eye,
   FileText,
   Layers,
+  Loader2,
   MapPin,
   Package,
   Plus,
@@ -33,6 +34,7 @@ import {
   Upload,
   Users,
   Wallet,
+  X,
   XCircle,
   CheckCircle2,
 } from "lucide-react";
@@ -67,8 +69,11 @@ import {
   listLinhasDRE,
   listBalancete,
   listPedidosCompra,
+  createPedidoCompra,
   listTodosOrcamentos,
   listFornecedoresCompras,
+  createFornecedorCompras,
+  buscarFornecedoresOSM,
 } from "@/lib/api";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -179,14 +184,184 @@ function StatusBadgeOrcamento({ status }: { status: Orcamento["status"] }) {
 
 // ─── Tab: Compras (PedidoCompra do módulo Compras) ────────────────────────────
 
+const PEDIDO_STATUS_OPTIONS = [
+  { v: "criado",      l: "Criado" },
+  { v: "enviado",     l: "Enviado" },
+  { v: "confirmado",  l: "Confirmado" },
+  { v: "em_transito", l: "Em Trânsito" },
+  { v: "entregue",    l: "Entregue" },
+  { v: "cancelado",   l: "Cancelado" },
+] as const;
+
+function ModalNovoPedido({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [fornecedores, setFornecedores] = useState<FornecedorCompras[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    fornecedor_id: "" as string | number,
+    numero_pedido: "",
+    status: "criado" as PedidoCompra["status"],
+    valor_total: "",
+    previsao_entrega: "",
+    observacoes: "",
+  });
+
+  useEffect(() => {
+    listFornecedoresCompras().then(setFornecedores).catch(() => {});
+  }, []);
+
+  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.fornecedor_id) { setErro("Selecione um fornecedor."); return; }
+    setSaving(true);
+    setErro(null);
+    try {
+      await createPedidoCompra({
+        fornecedor_id: Number(form.fornecedor_id),
+        numero_pedido: form.numero_pedido || undefined,
+        status: form.status,
+        valor_total: form.valor_total || undefined,
+        previsao_entrega: form.previsao_entrega || undefined,
+        observacoes: form.observacoes || undefined,
+      });
+      onSaved();
+      onClose();
+    } catch {
+      setErro("Erro ao salvar pedido. Verifique os dados.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-lg rounded-xl bg-background border border-border shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="text-base font-semibold">Novo Pedido de Compra</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Fornecedor */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">Fornecedor *</label>
+            <Select value={String(form.fornecedor_id)} onValueChange={(v) => set("fornecedor_id", v)}>
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue placeholder="Selecione um fornecedor…" />
+              </SelectTrigger>
+              <SelectContent>
+                {fornecedores.map((f) => (
+                  <SelectItem key={f.id} value={String(f.id)} className="text-sm">
+                    {f.nome} {f.cidade ? `— ${f.cidade}` : ""}
+                  </SelectItem>
+                ))}
+                {fornecedores.length === 0 && (
+                  <SelectItem value="__none" disabled className="text-xs text-muted-foreground">
+                    Nenhum fornecedor cadastrado
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {/* Nº Pedido */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Nº Pedido</label>
+              <Input
+                className="h-9 text-sm"
+                placeholder="PED-001"
+                value={form.numero_pedido}
+                onChange={(e) => set("numero_pedido", e.target.value)}
+              />
+            </div>
+            {/* Status */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Status</label>
+              <Select value={form.status} onValueChange={(v) => set("status", v)}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PEDIDO_STATUS_OPTIONS.map((o) => (
+                    <SelectItem key={o.v} value={o.v} className="text-sm">{o.l}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {/* Valor */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Valor Total (R$)</label>
+              <Input
+                className="h-9 text-sm"
+                placeholder="0,00"
+                value={form.valor_total}
+                onChange={(e) => set("valor_total", e.target.value)}
+              />
+            </div>
+            {/* Previsão entrega */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Previsão de Entrega</label>
+              <Input
+                type="date"
+                className="h-9 text-sm"
+                value={form.previsao_entrega}
+                onChange={(e) => set("previsao_entrega", e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Observações */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">Observações</label>
+            <textarea
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+              rows={3}
+              placeholder="Instruções especiais de entrega, condições, etc."
+              value={form.observacoes}
+              onChange={(e) => set("observacoes", e.target.value)}
+            />
+          </div>
+
+          {erro && (
+            <p className="text-xs text-destructive flex items-center gap-1.5">
+              <AlertTriangle size={13} /> {erro}
+            </p>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-border">
+          <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5">
+            {saving && <Loader2 size={13} className="animate-spin" />}
+            Salvar Pedido
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TabCompras() {
   const [pedidos, setPedidos] = useState<PedidoCompra[]>([]);
   const [search, setSearch] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
+  const [modalAberto, setModalAberto] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     listPedidosCompra().then(setPedidos).catch(() => {});
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const filtered = pedidos.filter((p) => {
     const matchSearch =
@@ -205,111 +380,350 @@ function TabCompras() {
   const pendentes   = pedidos.filter((p) => ["criado", "enviado", "confirmado"].includes(p.status)).length;
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Pedidos Pendentes"  value={String(pendentes)}   icon={<ClipboardList size={16} />} tone="warning" />
-        <Metric label="Em Trânsito"        value={String(emTransito)}  icon={<Truck size={16} />} />
-        <Metric label="Entregues"          value={String(entregues)}   icon={<CheckCircle2 size={16} />} tone="success" />
-        <Metric label="Valor Comprometido" value={fmtBRL(valorTotal)}  icon={<DollarSign size={16} />} />
-      </div>
+    <>
+      {modalAberto && (
+        <ModalNovoPedido
+          onClose={() => setModalAberto(false)}
+          onSaved={load}
+        />
+      )}
 
-      <div className="panel-elevated rounded-card overflow-hidden">
-        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-border">
-          <SectionHeader
-            title="Pedidos de Compra"
-            description="Gerados a partir de orçamentos aprovados no CRM → Pré-Compra"
-          />
-          <div className="flex flex-wrap gap-2">
-            <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-8 h-8 w-48 text-sm"
-                placeholder="Pedido / Fornecedor / Deal…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Metric label="Pedidos Pendentes"  value={String(pendentes)}   icon={<ClipboardList size={16} />} tone="warning" />
+          <Metric label="Em Trânsito"        value={String(emTransito)}  icon={<Truck size={16} />} />
+          <Metric label="Entregues"          value={String(entregues)}   icon={<CheckCircle2 size={16} />} tone="success" />
+          <Metric label="Valor Comprometido" value={fmtBRL(valorTotal)}  icon={<DollarSign size={16} />} />
+        </div>
+
+        <div className="panel-elevated rounded-card overflow-hidden">
+          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-border">
+            <SectionHeader
+              title="Pedidos de Compra"
+              description="Gerados a partir de orçamentos aprovados no CRM → Pré-Compra"
+            />
+            <div className="flex flex-wrap gap-2">
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-8 h-8 w-48 text-sm"
+                  placeholder="Pedido / Fornecedor / Deal…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+                <SelectTrigger className="h-8 w-36 text-xs">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[{ v: "todos", l: "Todos" }, ...PEDIDO_STATUS_OPTIONS].map((o) => (
+                    <SelectItem key={o.v} value={o.v} className="text-xs">{o.l}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                className="h-8 gap-1.5 text-xs bg-primary text-primary-foreground"
+                onClick={() => setModalAberto(true)}
+              >
+                <Plus size={13} /> Novo Pedido
+              </Button>
             </div>
-            <Select value={filtroStatus} onValueChange={setFiltroStatus}>
-              <SelectTrigger className="h-8 w-36 text-xs">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                {[
-                  { v: "todos",      l: "Todos" },
-                  { v: "criado",     l: "Criado" },
-                  { v: "enviado",    l: "Enviado" },
-                  { v: "confirmado", l: "Confirmado" },
-                  { v: "em_transito",l: "Em Trânsito" },
-                  { v: "entregue",   l: "Entregue" },
-                  { v: "cancelado",  l: "Cancelado" },
-                ].map((o) => <SelectItem key={o.v} value={o.v} className="text-xs">{o.l}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-secondary">
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Nº Pedido</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Fornecedor</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Deal / Projeto</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor</th>
+                  <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Status</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Previsão Entrega</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map((row) => (
+                  <tr key={row.id} className="hover:bg-secondary/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-xs font-medium text-muted-foreground">
+                      {row.numero_pedido || `#${row.id}`}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-sm">{row.fornecedor_nome}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{row.deal_titulo ?? "—"}</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-medium">
+                      {row.valor_total ? fmtBRL(parseFloat(row.valor_total)) : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <StatusBadgePedido status={row.status} />
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {row.previsao_entrega
+                        ? new Date(row.previsao_entrega).toLocaleDateString("pt-BR")
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-center text-sm text-muted-foreground">
+                      {pedidos.length === 0
+                        ? "Nenhum pedido ainda — aprove orçamentos no CRM ou crie um manualmente."
+                        : "Nenhum pedido encontrado com os filtros aplicados."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-secondary">
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Nº Pedido</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Fornecedor</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Deal / Projeto</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor</th>
-                <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Status</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Previsão Entrega</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map((row) => (
-                <tr key={row.id} className="hover:bg-secondary/50 transition-colors">
-                  <td className="px-4 py-3 font-mono text-xs font-medium text-muted-foreground">
-                    {row.numero_pedido || `#${row.id}`}
-                  </td>
-                  <td className="px-4 py-3 font-medium text-sm">{row.fornecedor_nome}</td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{row.deal_titulo ?? "—"}</td>
-                  <td className="px-4 py-3 text-right tabular-nums font-medium">
-                    {row.valor_total ? fmtBRL(parseFloat(row.valor_total)) : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <StatusBadgePedido status={row.status} />
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">
-                    {row.previsao_entrega
-                      ? new Date(row.previsao_entrega).toLocaleDateString("pt-BR")
-                      : "—"}
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-sm text-muted-foreground">
-                    {pedidos.length === 0
-                      ? "Nenhum pedido ainda — aprove orçamentos no CRM para gerar pedidos aqui."
-                      : "Nenhum pedido encontrado com os filtros aplicados."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
       </div>
-    </div>
+    </>
   );
 }
 
 // ─── Tab: Cotação & Pesquisa de Mercado ───────────────────────────────────────
+
+function ModalNovoFornecedor({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void;
+  onSaved: (f: FornecedorCompras) => void;
+}) {
+  const [tab, setTab] = useState<"manual" | "osm">("manual");
+  const [saving, setSaving] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  // busca OSM
+  const [osmMaterial, setOsmMaterial] = useState("");
+  const [osmCidade, setOsmCidade] = useState("");
+  const [osmRaio, setOsmRaio] = useState("10");
+  const [osmBuscando, setOsmBuscando] = useState(false);
+  const [osmResultados, setOsmResultados] = useState<FornecedorCompras[]>([]);
+  const [osmErro, setOsmErro] = useState<string | null>(null);
+  // formulário manual
+  const [form, setForm] = useState({
+    nome: "", categoria: "", telefone: "", email: "",
+    endereco: "", cidade: "", estado: "", website: "", observacoes: "",
+  });
+  const setF = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const handleSalvarManual = async () => {
+    if (!form.nome.trim()) { setErro("Nome é obrigatório."); return; }
+    setSaving(true); setErro(null);
+    try {
+      const novo = await createFornecedorCompras({ ...form, source: "manual" });
+      onSaved(novo);
+      onClose();
+    } catch { setErro("Erro ao salvar fornecedor."); }
+    finally { setSaving(false); }
+  };
+
+  const handleBuscarOSM = async () => {
+    if (!osmMaterial.trim() || !osmCidade.trim()) {
+      setOsmErro("Informe o material/tipo e a cidade."); return;
+    }
+    setOsmBuscando(true); setOsmErro(null); setOsmResultados([]);
+    try {
+      const res = await buscarFornecedoresOSM(osmMaterial, osmCidade, Number(osmRaio) || 10);
+      setOsmResultados(res);
+      if (res.length === 0) setOsmErro("Nenhum fornecedor encontrado nesta região.");
+    } catch { setOsmErro("Erro na busca OSM. Tente novamente."); }
+    finally { setOsmBuscando(false); }
+  };
+
+  const handleSalvarOSM = async (f: FornecedorCompras) => {
+    try { onSaved(f); onClose(); }
+    catch { /* já salvo pelo buscarFornecedoresOSM */ }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-xl rounded-xl bg-background border border-border shadow-xl flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <h2 className="text-base font-semibold">Adicionar Fornecedor</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Tab switcher */}
+        <div className="flex border-b border-border shrink-0">
+          {(["manual", "osm"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+                tab === t
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t === "manual" ? "Cadastro Manual" : "Busca OpenStreetMap"}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 p-5">
+          {tab === "manual" ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2 space-y-1.5">
+                  <label className="text-xs font-medium">Nome *</label>
+                  <Input className="h-9 text-sm" placeholder="Razão social ou nome fantasia" value={form.nome} onChange={(e) => setF("nome", e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">Categoria</label>
+                  <Input className="h-9 text-sm" placeholder="ex: materiais elétricos" value={form.categoria} onChange={(e) => setF("categoria", e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">Telefone</label>
+                  <Input className="h-9 text-sm" placeholder="(11) 99999-9999" value={form.telefone} onChange={(e) => setF("telefone", e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">E-mail</label>
+                  <Input className="h-9 text-sm" placeholder="contato@empresa.com" value={form.email} onChange={(e) => setF("email", e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">Website</label>
+                  <Input className="h-9 text-sm" placeholder="https://…" value={form.website} onChange={(e) => setF("website", e.target.value)} />
+                </div>
+                <div className="col-span-2 space-y-1.5">
+                  <label className="text-xs font-medium">Endereço</label>
+                  <Input className="h-9 text-sm" placeholder="Rua, nº, bairro" value={form.endereco} onChange={(e) => setF("endereco", e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">Cidade</label>
+                  <Input className="h-9 text-sm" placeholder="São Paulo" value={form.cidade} onChange={(e) => setF("cidade", e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">Estado</label>
+                  <Input className="h-9 text-sm" placeholder="SP" value={form.estado} onChange={(e) => setF("estado", e.target.value)} />
+                </div>
+                <div className="col-span-2 space-y-1.5">
+                  <label className="text-xs font-medium">Observações</label>
+                  <textarea
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                    rows={2}
+                    placeholder="Prazo médio, condições comerciais, contato preferencial…"
+                    value={form.observacoes}
+                    onChange={(e) => setF("observacoes", e.target.value)}
+                  />
+                </div>
+              </div>
+              {erro && <p className="text-xs text-destructive flex items-center gap-1.5"><AlertTriangle size={13} />{erro}</p>}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2 space-y-1.5">
+                  <label className="text-xs font-medium">Material / Tipo</label>
+                  <Input
+                    className="h-9 text-sm"
+                    placeholder="ex: materiais de construção"
+                    value={osmMaterial}
+                    onChange={(e) => setOsmMaterial(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && void handleBuscarOSM()}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">Raio (km)</label>
+                  <Input
+                    className="h-9 text-sm"
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={osmRaio}
+                    onChange={(e) => setOsmRaio(e.target.value)}
+                  />
+                </div>
+                <div className="col-span-3 space-y-1.5">
+                  <label className="text-xs font-medium">Cidade / Região</label>
+                  <div className="flex gap-2">
+                    <Input
+                      className="h-9 text-sm flex-1"
+                      placeholder="São Paulo, SP"
+                      value={osmCidade}
+                      onChange={(e) => setOsmCidade(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && void handleBuscarOSM()}
+                    />
+                    <Button size="sm" className="h-9 gap-1.5 text-xs shrink-0" onClick={() => void handleBuscarOSM()} disabled={osmBuscando}>
+                      {osmBuscando ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
+                      Buscar
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {osmErro && (
+                <p className="text-xs text-destructive flex items-center gap-1.5"><AlertTriangle size={13} />{osmErro}</p>
+              )}
+
+              {osmResultados.length > 0 && (
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <div className="px-3 py-2 bg-secondary border-b border-border">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {osmResultados.length} resultado{osmResultados.length !== 1 ? "s" : ""} encontrado{osmResultados.length !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                  <div className="divide-y divide-border max-h-60 overflow-y-auto">
+                    {osmResultados.map((f) => (
+                      <div key={f.id} className="flex items-start justify-between gap-3 px-3 py-3 hover:bg-secondary/50 transition-colors">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium">{f.nome}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">{f.endereco}{f.cidade ? ` · ${f.cidade}` : ""}</p>
+                          {f.categoria && (
+                            <Badge className="mt-1 text-[10px] bg-secondary text-muted-foreground border border-border">{f.categoria}</Badge>
+                          )}
+                        </div>
+                        <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={() => void handleSalvarOSM(f)}>
+                          Usar
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer — só no tab manual */}
+        {tab === "manual" && (
+          <div className="flex justify-end gap-2 px-5 py-4 border-t border-border shrink-0">
+            <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+            <Button size="sm" onClick={handleSalvarManual} disabled={saving} className="gap-1.5">
+              {saving && <Loader2 size={13} className="animate-spin" />}
+              Salvar Fornecedor
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function TabCotacao() {
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
   const [fornecedores, setFornecedores] = useState<FornecedorCompras[]>([]);
   const [search, setSearch] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
+  const [modalFornecedor, setModalFornecedor] = useState(false);
+
+  const loadFornecedores = useCallback(() => {
+    listFornecedoresCompras().then(setFornecedores).catch(() => {});
+  }, []);
 
   useEffect(() => {
     listTodosOrcamentos().then(setOrcamentos).catch(() => {});
-    listFornecedoresCompras().then(setFornecedores).catch(() => {});
-  }, []);
+    loadFornecedores();
+  }, [loadFornecedores]);
 
   const filtered = orcamentos.filter((o) => {
     const matchSearch = o.fornecedor_nome.toLowerCase().includes(search.toLowerCase());
@@ -322,7 +736,6 @@ function TabCotacao() {
   const pendentes  = orcamentos.filter((o) => ["rascunho", "enviado"].includes(o.status));
   const valorAprov = aprovados.reduce((acc, o) => acc + (o.valor_total ?? 0), 0);
 
-  // Ranking de fornecedores por nº de cotações
   const rankingFornecedores = Object.entries(
     orcamentos.reduce<Record<string, { nome: string; total: number; aprovados: number; valor: number }>>((acc, o) => {
       const k = String(o.fornecedor);
@@ -335,163 +748,188 @@ function TabCotacao() {
     .sort((a, b) => b[1].total - a[1].total)
     .slice(0, 8);
 
-  // Fornecedores OSM ainda sem cotação
   const fornecedoresOsm = fornecedores.filter((f) => f.source === "openstreetmap");
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Cotações Enviadas"    value={String(pendentes.length + recebidos.length)}  icon={<ClipboardList size={16} />} />
-        <Metric label="Respostas Recebidas"  value={String(recebidos.length)}  icon={<Scale size={16} />} tone="success" />
-        <Metric label="Aprovadas"            value={String(aprovados.length)}   icon={<CheckCircle2 size={16} />} tone="success" />
-        <Metric label="Valor Aprovado"       value={fmtBRL(valorAprov)}        icon={<DollarSign size={16} />} tone="warning" />
-      </div>
+    <>
+      {modalFornecedor && (
+        <ModalNovoFornecedor
+          onClose={() => setModalFornecedor(false)}
+          onSaved={(novo) => setFornecedores((prev) => [...prev, novo])}
+        />
+      )}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* Tabela de orçamentos */}
-        <div className="lg:col-span-2 panel-elevated rounded-card overflow-hidden">
-          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-border">
-            <SectionHeader title="Orçamentos Recebidos" description="Comparativo de preços por fornecedor e deal" />
-            <div className="flex flex-wrap gap-2">
-              <div className="relative">
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="pl-8 h-8 w-40 text-sm"
-                  placeholder="Fornecedor…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              <Select value={filtroStatus} onValueChange={setFiltroStatus}>
-                <SelectTrigger className="h-8 w-32 text-xs">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  {[
-                    { v: "todos",     l: "Todos" },
-                    { v: "rascunho",  l: "Rascunho" },
-                    { v: "enviado",   l: "Enviado" },
-                    { v: "recebido",  l: "Recebido" },
-                    { v: "aprovado",  l: "Aprovado" },
-                    { v: "rejeitado", l: "Rejeitado" },
-                  ].map((o) => <SelectItem key={o.v} value={o.v} className="text-xs">{o.l}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-secondary">
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Fornecedor</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor Total</th>
-                  <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Prazo (dias)</th>
-                  <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Status</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Criado em</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filtered.map((row) => (
-                  <tr key={row.id} className={`transition-colors ${row.status === "aprovado" ? "bg-success/5 hover:bg-success/10" : "hover:bg-secondary/50"}`}>
-                    <td className="px-4 py-3 font-medium text-sm">
-                      <div className="flex items-center gap-2">
-                        {row.status === "aprovado" && <CheckCircle2 size={12} className="text-success shrink-0" />}
-                        {row.fornecedor_nome}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums font-medium">
-                      {row.valor_total != null ? fmtBRL(row.valor_total) : <span className="text-muted-foreground">Aguardando</span>}
-                    </td>
-                    <td className="px-4 py-3 text-center tabular-nums text-muted-foreground">
-                      {row.prazo_entrega_dias ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <StatusBadgeOrcamento status={row.status} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {new Date(row.created_at).toLocaleDateString("pt-BR")}
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-sm text-muted-foreground">
-                      {orcamentos.length === 0
-                        ? "Nenhum orçamento ainda — busque fornecedores no CRM → Pré-Compra."
-                        : "Nenhum orçamento com esses filtros."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Metric label="Cotações Enviadas"   value={String(pendentes.length + recebidos.length)} icon={<ClipboardList size={16} />} />
+          <Metric label="Respostas Recebidas" value={String(recebidos.length)}  icon={<Scale size={16} />} tone="success" />
+          <Metric label="Aprovadas"           value={String(aprovados.length)}  icon={<CheckCircle2 size={16} />} tone="success" />
+          <Metric label="Valor Aprovado"      value={fmtBRL(valorAprov)}        icon={<DollarSign size={16} />} tone="warning" />
         </div>
 
-        {/* Painel lateral */}
-        <div className="flex flex-col gap-4">
-          {/* Ranking fornecedores */}
-          <div className="panel-elevated rounded-card overflow-hidden">
-            <div className="p-4 border-b border-border">
-              <h3 className="text-sm font-semibold">Fornecedores Mais Cotados</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">Histórico de participação em orçamentos</p>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {/* Tabela de orçamentos */}
+          <div className="lg:col-span-2 panel-elevated rounded-card overflow-hidden">
+            <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-border">
+              <SectionHeader title="Orçamentos Recebidos" description="Comparativo de preços por fornecedor e deal" />
+              <div className="flex flex-wrap gap-2">
+                <div className="relative">
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="pl-8 h-8 w-40 text-sm"
+                    placeholder="Fornecedor…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+                <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+                  <SelectTrigger className="h-8 w-32 text-xs">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      { v: "todos",     l: "Todos" },
+                      { v: "rascunho",  l: "Rascunho" },
+                      { v: "enviado",   l: "Enviado" },
+                      { v: "recebido",  l: "Recebido" },
+                      { v: "aprovado",  l: "Aprovado" },
+                      { v: "rejeitado", l: "Rejeitado" },
+                    ].map((o) => <SelectItem key={o.v} value={o.v} className="text-xs">{o.l}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="divide-y divide-border">
-              {rankingFornecedores.length === 0 ? (
-                <p className="px-4 py-5 text-xs text-muted-foreground text-center">Sem cotações ainda</p>
-              ) : rankingFornecedores.map(([, f]) => (
-                <div key={f.nome} className="flex items-center justify-between gap-2 px-4 py-3 hover:bg-secondary/50 transition-colors">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{f.nome}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {f.total} cotaç{f.total === 1 ? "ão" : "ões"}
-                      {f.aprovados > 0 && ` · ${f.aprovados} aprovada${f.aprovados > 1 ? "s" : ""}`}
-                    </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-secondary">
+                    <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Fornecedor</th>
+                    <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor Total</th>
+                    <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Prazo (dias)</th>
+                    <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Status</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Criado em</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filtered.map((row) => (
+                    <tr key={row.id} className={`transition-colors ${row.status === "aprovado" ? "bg-success/5 hover:bg-success/10" : "hover:bg-secondary/50"}`}>
+                      <td className="px-4 py-3 font-medium text-sm">
+                        <div className="flex items-center gap-2">
+                          {row.status === "aprovado" && <CheckCircle2 size={12} className="text-success shrink-0" />}
+                          {row.fornecedor_nome}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums font-medium">
+                        {row.valor_total != null ? fmtBRL(row.valor_total) : <span className="text-muted-foreground">Aguardando</span>}
+                      </td>
+                      <td className="px-4 py-3 text-center tabular-nums text-muted-foreground">
+                        {row.prazo_entrega_dias ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <StatusBadgeOrcamento status={row.status} />
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {new Date(row.created_at).toLocaleDateString("pt-BR")}
+                      </td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-6 text-center text-sm text-muted-foreground">
+                        {orcamentos.length === 0
+                          ? "Nenhum orçamento ainda — busque fornecedores no CRM → Pré-Compra."
+                          : "Nenhum orçamento com esses filtros."}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Painel lateral */}
+          <div className="flex flex-col gap-4">
+            {/* Ranking fornecedores */}
+            <div className="panel-elevated rounded-card overflow-hidden">
+              <div className="flex items-center justify-between p-4 border-b border-border">
+                <div>
+                  <h3 className="text-sm font-semibold">Fornecedores</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{fornecedores.length} cadastrado{fornecedores.length !== 1 ? "s" : ""}</p>
+                </div>
+                <Button
+                  size="sm"
+                  className="h-7 gap-1 text-xs bg-primary text-primary-foreground"
+                  onClick={() => setModalFornecedor(true)}
+                >
+                  <Plus size={12} /> Adicionar
+                </Button>
+              </div>
+
+              {rankingFornecedores.length > 0 && (
+                <>
+                  <div className="px-4 pt-3 pb-1">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Mais cotados</p>
                   </div>
-                  {f.valor > 0 && (
-                    <span className="text-xs font-semibold text-success shrink-0 tabular-nums">
-                      {fmtBRL(f.valor)}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
+                  <div className="divide-y divide-border">
+                    {rankingFornecedores.map(([, f]) => (
+                      <div key={f.nome} className="flex items-center justify-between gap-2 px-4 py-3 hover:bg-secondary/50 transition-colors">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{f.nome}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {f.total} cotaç{f.total === 1 ? "ão" : "ões"}
+                            {f.aprovados > 0 && ` · ${f.aprovados} aprovada${f.aprovados > 1 ? "s" : ""}`}
+                          </p>
+                        </div>
+                        {f.valor > 0 && (
+                          <span className="text-xs font-semibold text-success shrink-0 tabular-nums">
+                            {fmtBRL(f.valor)}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
 
-          {/* Fornecedores encontrados via OSM */}
-          <div className="panel-elevated rounded-card overflow-hidden">
-            <div className="p-4 border-b border-border">
-              <div className="flex items-center gap-2">
-                <MapPin size={14} className="text-muted-foreground" />
-                <h3 className="text-sm font-semibold">Mapa de Fornecedores</h3>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {fornecedoresOsm.length} encontrado{fornecedoresOsm.length !== 1 ? "s" : ""} via OpenStreetMap
-              </p>
-            </div>
-            <div className="divide-y divide-border max-h-64 overflow-y-auto">
-              {fornecedoresOsm.length === 0 ? (
+              {rankingFornecedores.length === 0 && (
                 <p className="px-4 py-5 text-xs text-muted-foreground text-center">
-                  Faça uma busca OSM no CRM para popular este painel.
+                  Nenhum fornecedor ainda — adicione um acima.
                 </p>
-              ) : fornecedoresOsm.map((f) => (
-                <div key={f.id} className="px-4 py-3 hover:bg-secondary/50 transition-colors">
-                  <p className="text-sm font-medium">{f.nome}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">{f.endereco} · {f.cidade}</p>
-                  {f.telefone && (
-                    <p className="text-[11px] text-muted-foreground mt-0.5">{f.telefone}</p>
-                  )}
-                  {f.categoria && (
-                    <Badge className="mt-1 text-[10px] bg-secondary text-muted-foreground border border-border">
-                      {f.categoria}
-                    </Badge>
-                  )}
+              )}
+            </div>
+
+            {/* Fornecedores via OSM */}
+            <div className="panel-elevated rounded-card overflow-hidden">
+              <div className="p-4 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <MapPin size={14} className="text-muted-foreground" />
+                  <h3 className="text-sm font-semibold">Encontrados via OSM</h3>
                 </div>
-              ))}
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {fornecedoresOsm.length} resultado{fornecedoresOsm.length !== 1 ? "s" : ""} — use "Busca OpenStreetMap" para pesquisar
+                </p>
+              </div>
+              <div className="divide-y divide-border max-h-60 overflow-y-auto">
+                {fornecedoresOsm.length === 0 ? (
+                  <p className="px-4 py-5 text-xs text-muted-foreground text-center">
+                    Clique em "Adicionar" e use a aba "Busca OpenStreetMap".
+                  </p>
+                ) : fornecedoresOsm.map((f) => (
+                  <div key={f.id} className="px-4 py-3 hover:bg-secondary/50 transition-colors">
+                    <p className="text-sm font-medium">{f.nome}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{f.endereco}{f.cidade ? ` · ${f.cidade}` : ""}</p>
+                    {f.telefone && <p className="text-[11px] text-muted-foreground mt-0.5">{f.telefone}</p>}
+                    {f.categoria && (
+                      <Badge className="mt-1 text-[10px] bg-secondary text-muted-foreground border border-border">{f.categoria}</Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 

@@ -2083,3 +2083,16 @@ export async function listPedidosCompra(params?: { project?: number; status?: st
   if (params?.status) q.set("status", params.status);
   return requestList<PedidoCompra>(`/api/v1/compras/pedidos/${q.toString() ? `?${q}` : ""}`);
 }
+
+export async function createPedidoCompra(data: {
+  fornecedor_id: number;
+  fornecedor_nome?: string;
+  status?: PedidoCompra["status"];
+  numero_pedido?: string;
+  previsao_entrega?: string;
+  observacoes?: string;
+  valor_total?: string;
+  project?: number;
+}): Promise<PedidoCompra> {
+  return request<PedidoCompra>("/api/v1/compras/pedidos/", { method: "POST", body: JSON.stringify(data) });
+}
