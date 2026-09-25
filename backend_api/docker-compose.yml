@@ -159,7 +159,7 @@ services:
   gmaps-scraper:
     image: gosom/google-maps-scraper:latest
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8181:8080"
     environment:
       DSN: ${GMAPS_SCRAPER_DSN:-}   # opcional: postgres para persistência de jobs
     restart: unless-stopped
