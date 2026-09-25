@@ -3,6 +3,7 @@ import {
   Package, Plus, Trash2, Search, CheckCircle2, XCircle,
   SendHorizonal, ThumbsUp, ThumbsDown, RefreshCw, ShoppingCart,
   MapPin, Phone, Globe, AlertTriangle, Sparkles, Star, Pencil, X,
+  ChevronDown, ChevronRight, TrendingUp, Calendar, Boxes,
 } from "lucide-react";
 import {
   listItensNecessarios, createItemNecessario, updateItemNecessario, deleteItemNecessario,
@@ -26,6 +27,14 @@ const STATUS_COLORS: Record<string, string> = {
   recebido: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
   aprovado: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
   rejeitado: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+};
+
+const STATUS_BORDER: Record<string, string> = {
+  rascunho: "border-l-slate-300 dark:border-l-slate-600",
+  enviado: "border-l-blue-400",
+  recebido: "border-l-amber-400",
+  aprovado: "border-l-emerald-500",
+  rejeitado: "border-l-red-400",
 };
 
 function fmtBRL(v: number | null | undefined) {
@@ -77,6 +86,9 @@ export function CRMPreCompra({ dealId }: Props) {
   const [editOrcForm, setEditOrcForm] = useState({ valor_total: "", prazo_entrega_dias: "", observacoes: "" });
   const [salvandoOrc, setSalvandoOrc] = useState(false);
 
+  // Expandir cotação
+  const [expandidos, setExpandidos] = useState<Set<number>>(new Set());
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -99,11 +111,18 @@ export function CRMPreCompra({ dealId }: Props) {
 
   function estoqueParaItem(nome: string): ItemEstoque | undefined {
     const n = nome.trim().toLowerCase();
-    // Exact match first, then partial match
     return (
       estoque.find(e => e.nome.trim().toLowerCase() === n) ??
       estoque.find(e => e.nome.trim().toLowerCase().includes(n) || n.includes(e.nome.trim().toLowerCase()))
     );
+  }
+
+  function toggleExpandido(id: number) {
+    setExpandidos(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   }
 
   async function adicionarItem() {
@@ -280,86 +299,119 @@ export function CRMPreCompra({ dealId }: Props) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex items-center justify-center py-16">
         <RefreshCw className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 py-2">
+    <div className="space-y-0 py-2">
 
-      {/* ── Itens necessários ── */}
-      <section>
-        <div className="flex items-center gap-2 mb-3">
-          <Package className="size-4 text-indigo-500" />
+      {/* ── Materiais Necessários ── */}
+      <section className="pb-6">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center justify-center size-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/40">
+            <Package className="size-4 text-indigo-600 dark:text-indigo-400" />
+          </div>
           <h3 className="text-sm font-semibold text-foreground">Materiais Necessários</h3>
-          <span className="ml-auto text-xs text-muted-foreground">
-            {itensFaltando.length} item{itensFaltando.length !== 1 ? "s" : ""} faltando
-          </span>
+          <div className="ml-auto flex items-center gap-2">
+            {itensFaltando.length > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="size-3" />
+                {itensFaltando.length} faltando
+              </span>
+            )}
+            {itens.length > 0 && itensFaltando.length === 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                <CheckCircle2 className="size-3" />
+                Completo
+              </span>
+            )}
+          </div>
         </div>
 
-        <div className="space-y-2">
-          {itens.map(item => {
-            const emEstoque = estoqueParaItem(item.nome);
-            return (
-              <div key={item.id} className="rounded-lg border border-border/60 px-3 py-2.5 text-sm">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => void toggleEstoque(item)}
-                    className="shrink-0"
-                    title={item.tem_estoque ? "Tem no estoque" : "Faltando"}
-                  >
-                    {item.tem_estoque
-                      ? <CheckCircle2 className="size-4 text-emerald-500" />
-                      : <XCircle className="size-4 text-amber-500" />}
-                  </button>
-                  <span className="flex-1 font-medium text-foreground">{item.nome}</span>
-                  <span className="text-muted-foreground tabular-nums">{item.quantidade} {item.unidade}</span>
-                  {!item.tem_estoque && (
-                    <span className="text-[11px] text-amber-600 dark:text-amber-400">
-                      falta {item.quantidade_faltando} {item.unidade}
+        {itens.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-8 gap-2 text-center">
+            <Boxes className="size-8 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">Nenhum material cadastrado.</p>
+            <p className="text-xs text-muted-foreground/60">Adicione abaixo os materiais necessários para este projeto.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {itens.map(item => {
+              const emEstoque = estoqueParaItem(item.nome);
+              return (
+                <div
+                  key={item.id}
+                  className={`rounded-xl border bg-card overflow-hidden transition-colors ${item.tem_estoque ? "border-l-4 border-emerald-200 border-l-emerald-500 dark:border-emerald-800 dark:border-l-emerald-500" : "border-l-4 border-amber-200 border-l-amber-400 dark:border-amber-800 dark:border-l-amber-400"}`}
+                >
+                  <div className="flex items-center gap-3 px-3 py-2.5">
+                    <button
+                      onClick={() => void toggleEstoque(item)}
+                      className="shrink-0"
+                      title={item.tem_estoque ? "Tem no estoque — clique para marcar como faltando" : "Faltando — clique para marcar como em estoque"}
+                    >
+                      {item.tem_estoque
+                        ? <CheckCircle2 className="size-4.5 text-emerald-500" />
+                        : <XCircle className="size-4.5 text-amber-500" />}
+                    </button>
+                    <span className="flex-1 text-sm font-medium text-foreground">{item.nome}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums font-mono">
+                      {item.quantidade} {item.unidade}
                     </span>
-                  )}
-                  <button onClick={() => void removerItem(item.id)} className="text-muted-foreground hover:text-destructive transition-colors">
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </div>
-                {/* Informações de estoque cruzado — sempre visível */}
-                <div className="mt-1.5 ml-7">
-                  {emEstoque ? (
-                    <div className="flex flex-wrap gap-x-4 gap-y-0.5">
-                      <span className={`text-[11px] font-medium ${emEstoque.quantidade > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
-                        {emEstoque.quantidade > 0
-                          ? `✓ Em estoque: ${emEstoque.quantidade} ${emEstoque.unidade}`
-                          : `⚠ Estoque zerado (${emEstoque.unidade})`}
+                    {!item.tem_estoque && (
+                      <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
+                        −{item.quantidade_faltando} {item.unidade}
                       </span>
-                      {Number(emEstoque.custo_medio) > 0 && (
-                        <span className="text-[11px] text-muted-foreground">
-                          Custo médio: {Number(emEstoque.custo_medio).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    )}
+                    <button
+                      onClick={() => void removerItem(item.id)}
+                      className="shrink-0 text-muted-foreground/40 hover:text-destructive transition-colors"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Linha de estoque cruzado */}
+                  <div className="px-3 pb-2 pl-10">
+                    {emEstoque ? (
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                        <span className={`flex items-center gap-1 text-[11px] font-medium ${emEstoque.quantidade > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                          <Boxes className="size-3" />
+                          {emEstoque.quantidade > 0
+                            ? `${emEstoque.quantidade} ${emEstoque.unidade} em estoque`
+                            : `Estoque zerado (${emEstoque.unidade})`}
                         </span>
-                      )}
-                      {Number(emEstoque.custo_unitario) > 0 && Number(emEstoque.custo_medio) === 0 && (
-                        <span className="text-[11px] text-muted-foreground">
-                          Valor unit.: {Number(emEstoque.custo_unitario).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                        </span>
-                      )}
-                      {emEstoque.data_ultima_compra ? (
-                        <span className="text-[11px] text-muted-foreground">
-                          Última compra: {fmtDate(emEstoque.data_ultima_compra)}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-muted-foreground/60">Sem compra registrada</span>
-                      )}
-                    </div>
-                  ) : estoque.length > 0 ? (
-                    <span className="text-[11px] text-muted-foreground/60">Não encontrado no estoque</span>
-                  ) : null}
+                        {Number(emEstoque.custo_medio) > 0 && (
+                          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                            <TrendingUp className="size-3" />
+                            Custo médio: {Number(emEstoque.custo_medio).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          </span>
+                        )}
+                        {Number(emEstoque.custo_unitario) > 0 && Number(emEstoque.custo_medio) === 0 && (
+                          <span className="text-[11px] text-muted-foreground">
+                            Val. unit.: {Number(emEstoque.custo_unitario).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          </span>
+                        )}
+                        {emEstoque.data_ultima_compra ? (
+                          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                            <Calendar className="size-3" />
+                            {fmtDate(emEstoque.data_ultima_compra)}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground/50">sem compra registrada</span>
+                        )}
+                      </div>
+                    ) : estoque.length > 0 ? (
+                      <span className="text-[11px] text-muted-foreground/50 italic">Não encontrado no estoque</span>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Adicionar item */}
         <div className="mt-3 flex gap-2">
@@ -393,301 +445,358 @@ export function CRMPreCompra({ dealId }: Props) {
         </div>
       </section>
 
-      {/* ── Buscar fornecedores OSM ── */}
+      {/* ── Buscar Fornecedores ── */}
       {itensFaltando.length > 0 && (
-        <section>
-          <div className="flex items-center gap-2 mb-3">
-            <Search className="size-4 text-blue-500" />
-            <h3 className="text-sm font-semibold text-foreground">Buscar Fornecedores</h3>
-            <span className="text-[10px] text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded">OpenStreetMap · gratuito</span>
-          </div>
-          <div className="flex gap-2 mb-3">
-            <input
-              className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              placeholder="Material (ex: fios elétricos, cimento...)"
-              value={buscaMaterial}
-              onChange={e => setBuscaMaterial(e.target.value)}
-            />
-            <input
-              className="w-40 rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              placeholder="Cidade"
-              value={buscaCidade}
-              onChange={e => setBuscaCidade(e.target.value)}
-            />
-            <button
-              onClick={() => void buscarFornecedores()}
-              disabled={buscando || !buscaMaterial.trim() || !buscaCidade.trim()}
-              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {buscando ? <RefreshCw className="size-3.5 animate-spin" /> : <Search className="size-3.5" />}
-              Buscar
-            </button>
-          </div>
-
-          {fornecedoresEncontrados.length > 0 && (
-            <>
-              {/* Barra de ações para seleção */}
-              <div className="flex items-center justify-between mb-2 gap-2">
-                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={selecionadosOSM.size === fornecedoresEncontrados.length && fornecedoresEncontrados.length > 0}
-                    onChange={toggleAllOSM}
-                    className="rounded"
-                  />
-                  Selecionar todos ({fornecedoresEncontrados.length})
-                </label>
-                <div className="flex gap-2">
-                  {selecionadosOSM.size > 0 && (
-                    <button
-                      onClick={() => void cadastrarSelecionados()}
-                      disabled={cadastrando || itensFaltando.length === 0}
-                      className="flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                    >
-                      {cadastrando ? <RefreshCw className="size-3 animate-spin" /> : <ShoppingCart className="size-3" />}
-                      Orçar selecionados ({selecionadosOSM.size})
-                    </button>
-                  )}
-                  <button
-                    onClick={limparBusca}
-                    className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-                  >
-                    <X className="size-3" />
-                    Limpar busca
-                  </button>
-                </div>
+        <>
+          <div className="border-t border-dashed border-border" />
+          <section className="py-6">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center justify-center size-7 rounded-lg bg-blue-100 dark:bg-blue-900/40">
+                <Search className="size-4 text-blue-600 dark:text-blue-400" />
               </div>
+              <h3 className="text-sm font-semibold text-foreground">Buscar Fornecedores</h3>
+              <span className="text-[10px] text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded ml-1">OpenStreetMap · gratuito</span>
+            </div>
 
-              <div className="space-y-2">
-                {fornecedoresEncontrados.map(f => (
-                  <div
-                    key={f.id}
-                    className={`rounded-xl border bg-card p-3 flex items-start gap-3 transition-colors ${selecionadosOSM.has(f.id) ? "border-blue-400/60 bg-blue-500/5" : "border-border"}`}
-                  >
+            <div className="flex gap-2 mb-3">
+              <input
+                className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="Material (ex: fios elétricos, cimento...)"
+                value={buscaMaterial}
+                onChange={e => setBuscaMaterial(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && void buscarFornecedores()}
+              />
+              <input
+                className="w-40 rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="Cidade"
+                value={buscaCidade}
+                onChange={e => setBuscaCidade(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && void buscarFornecedores()}
+              />
+              <button
+                onClick={() => void buscarFornecedores()}
+                disabled={buscando || !buscaMaterial.trim() || !buscaCidade.trim()}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {buscando ? <RefreshCw className="size-3.5 animate-spin" /> : <Search className="size-3.5" />}
+                Buscar
+              </button>
+            </div>
+
+            {fornecedoresEncontrados.length > 0 && (
+              <>
+                <div className="flex items-center justify-between mb-2 gap-2">
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
                     <input
                       type="checkbox"
-                      checked={selecionadosOSM.has(f.id)}
-                      onChange={() => toggleOSM(f.id)}
-                      className="mt-1 rounded"
+                      checked={selecionadosOSM.size === fornecedoresEncontrados.length && fornecedoresEncontrados.length > 0}
+                      onChange={toggleAllOSM}
+                      className="rounded"
                     />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate">{f.nome}</p>
-                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                        {f.endereco && (
-                          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                            <MapPin className="size-3" />{f.endereco}
-                          </span>
-                        )}
-                        {f.telefone && (
-                          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                            <Phone className="size-3" />{f.telefone}
-                          </span>
-                        )}
-                        {f.website && (
-                          <a href={f.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-blue-500">
-                            <Globe className="size-3" />Site
-                          </a>
-                        )}
-                      </div>
-                    </div>
+                    Selecionar todos ({fornecedoresEncontrados.length})
+                  </label>
+                  <div className="flex gap-2">
+                    {selecionadosOSM.size > 0 && (
+                      <button
+                        onClick={() => void cadastrarSelecionados()}
+                        disabled={cadastrando || itensFaltando.length === 0}
+                        className="flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                      >
+                        {cadastrando ? <RefreshCw className="size-3 animate-spin" /> : <ShoppingCart className="size-3" />}
+                        Orçar selecionados ({selecionadosOSM.size})
+                      </button>
+                    )}
                     <button
-                      onClick={() => void criarOrcamento(f)}
-                      disabled={criandoOrc && fornecedorSelecionado?.id === f.id}
-                      className="shrink-0 flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                      onClick={limparBusca}
+                      className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
                     >
-                      {criandoOrc && fornecedorSelecionado?.id === f.id
-                        ? <RefreshCw className="size-3 animate-spin" />
-                        : <Plus className="size-3" />}
-                      Orçar
+                      <X className="size-3" />
+                      Limpar
                     </button>
                   </div>
-                ))}
-              </div>
-            </>
-          )}
+                </div>
 
-          {!buscando && buscaMaterial && buscaCidade && fornecedoresEncontrados.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center py-4">
-              Nenhum fornecedor encontrado. Tente outro material ou cidade.
-            </p>
-          )}
-        </section>
+                <div className="space-y-2">
+                  {fornecedoresEncontrados.map(f => (
+                    <div
+                      key={f.id}
+                      className={`rounded-xl border bg-card p-3 flex items-start gap-3 transition-colors ${selecionadosOSM.has(f.id) ? "border-blue-400/60 bg-blue-500/5" : "border-border"}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selecionadosOSM.has(f.id)}
+                        onChange={() => toggleOSM(f.id)}
+                        className="mt-0.5 rounded"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-foreground truncate">{f.nome}</p>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                          {f.endereco && (
+                            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                              <MapPin className="size-3" />{f.endereco}
+                            </span>
+                          )}
+                          {f.telefone && (
+                            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                              <Phone className="size-3" />{f.telefone}
+                            </span>
+                          )}
+                          {f.website && (
+                            <a href={f.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-blue-500 hover:underline">
+                              <Globe className="size-3" />Site
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => void criarOrcamento(f)}
+                        disabled={criandoOrc && fornecedorSelecionado?.id === f.id}
+                        className="shrink-0 flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                      >
+                        {criandoOrc && fornecedorSelecionado?.id === f.id
+                          ? <RefreshCw className="size-3 animate-spin" />
+                          : <Plus className="size-3" />}
+                        Orçar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {!buscando && buscaMaterial && buscaCidade && fornecedoresEncontrados.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">
+                Nenhum fornecedor encontrado. Tente outro material ou cidade.
+              </p>
+            )}
+          </section>
+        </>
       )}
 
       {/* ── Orçamentos ── */}
       {orcamentos.length > 0 && (
-        <section>
-          <div className="flex items-center gap-2 mb-3">
-            <ShoppingCart className="size-4 text-emerald-500" />
-            <h3 className="text-sm font-semibold text-foreground">Orçamentos</h3>
-            {orcamentos.filter(o => o.status === "recebido").length >= 2 && (
-              <button
-                onClick={() => void buscarRecomendacao()}
-                disabled={carregandoRec}
-                className="ml-auto flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-50 transition-colors"
-              >
-                {carregandoRec ? <RefreshCw className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
-                Recomendar
-              </button>
-            )}
-          </div>
-
-          {/* Painel de recomendação */}
-          {recomendacao && (
-            <div className="mb-3 rounded-xl border border-violet-400/40 bg-violet-500/10 p-3">
-              <div className="flex items-start gap-2">
-                <Sparkles className="size-4 text-violet-500 shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-violet-700 dark:text-violet-300 mb-1">Nossa recomendação</p>
-                  <p className="text-sm font-bold text-foreground">{recomendacao.fornecedor_nome}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    {recomendacao.valor_total != null && (
-                      <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                        {Number(recomendacao.valor_total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                      </span>
-                    )}
-                    {recomendacao.prazo_entrega_dias != null && (
-                      <span className="text-xs text-muted-foreground">{recomendacao.prazo_entrega_dias} dias</span>
-                    )}
-                    {recomendacao.score != null && (
-                      <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                        <Star className="size-3" />
-                        {Number(recomendacao.score).toFixed(1)}/10
-                      </span>
-                    )}
-                  </div>
-                  {recomendacao.motivo && (
-                    <p className="mt-1.5 text-[11px] text-muted-foreground italic">{recomendacao.motivo}</p>
-                  )}
-                </div>
-                <button onClick={() => setRecomendacao(null)} className="text-muted-foreground hover:text-foreground text-xs shrink-0">✕</button>
+        <>
+          <div className="border-t border-dashed border-border" />
+          <section className="py-6">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center justify-center size-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/40">
+                <ShoppingCart className="size-4 text-emerald-600 dark:text-emerald-400" />
               </div>
-            </div>
-          )}
+              <h3 className="text-sm font-semibold text-foreground">Orçamentos</h3>
+              <span className="text-[11px] text-muted-foreground ml-1">{orcamentos.length} cotaç{orcamentos.length === 1 ? "ão" : "ões"}</span>
 
-          {/* Aprovado por (CEO) — exibido quando há orçamento em recebido/rascunho */}
-          {orcamentos.some(o => ["rascunho", "recebido"].includes(o.status)) && (
-            <div className="mb-3 flex gap-2 items-center">
-              <input
-                className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                placeholder="Seu nome para aprovar (CEO)"
-                value={aprovandoPor}
-                onChange={e => setAprovandoPor(e.target.value)}
-              />
+              {orcamentos.filter(o => o.status === "recebido").length >= 2 && (
+                <button
+                  onClick={() => void buscarRecomendacao()}
+                  disabled={carregandoRec}
+                  className="ml-auto flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-50 transition-colors"
+                >
+                  {carregandoRec ? <RefreshCw className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+                  Recomendar melhor
+                </button>
+              )}
             </div>
-          )}
 
-          <div className="space-y-3">
-            {orcamentos.map(orc => (
-              <div key={orc.id} className="rounded-xl border border-border bg-card p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-semibold text-foreground">{orc.fornecedor_nome}</p>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[orc.status]}`}>
-                      {STATUS_LABELS[orc.status]}
-                    </span>
-                    {/* Editar orçamento (recebido) */}
-                    {orc.status === "recebido" && (
-                      <button
-                        onClick={() => abrirEditOrc(orc)}
-                        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                        title="Editar orçamento"
-                      >
-                        <Pencil className="size-3.5" />
-                      </button>
-                    )}
-                    {/* Deletar orçamento */}
-                    {["rascunho", "rejeitado"].includes(orc.status) && (
-                      <button
-                        onClick={() => void excluirOrc(orc.id)}
-                        className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-red-500/10 transition-colors"
-                        title="Excluir orçamento"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
+            {/* Recomendação IA */}
+            {recomendacao && (
+              <div className="mb-4 rounded-xl border border-violet-300/50 dark:border-violet-700/50 bg-gradient-to-r from-violet-50 to-violet-50/50 dark:from-violet-900/20 dark:to-violet-900/10 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex items-center justify-center size-7 rounded-lg bg-violet-100 dark:bg-violet-900/60 shrink-0">
+                    <Sparkles className="size-4 text-violet-600 dark:text-violet-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-1">Recomendação IA</p>
+                    <p className="text-sm font-bold text-foreground">{recomendacao.fornecedor_nome}</p>
+                    <div className="flex items-center gap-3 mt-1.5">
+                      {recomendacao.valor_total != null && (
+                        <span className="text-base font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                          {Number(recomendacao.valor_total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </span>
+                      )}
+                      {recomendacao.prazo_entrega_dias != null && (
+                        <span className="text-xs text-muted-foreground">{recomendacao.prazo_entrega_dias} dias</span>
+                      )}
+                      {recomendacao.score != null && (
+                        <span className="flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+                          <Star className="size-3 fill-current" />
+                          {Number(recomendacao.score).toFixed(1)}/10
+                        </span>
+                      )}
+                    </div>
+                    {recomendacao.motivo && (
+                      <p className="mt-1.5 text-[11px] text-muted-foreground italic">{recomendacao.motivo}</p>
                     )}
                   </div>
+                  <button onClick={() => setRecomendacao(null)} className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                    <X className="size-4" />
+                  </button>
                 </div>
+              </div>
+            )}
 
-                {orc.valor_total != null && (
-                  <p className="text-lg font-bold text-foreground tabular-nums mb-1">
-                    {fmtBRL(orc.valor_total)}
-                    {orc.prazo_entrega_dias && (
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">· {orc.prazo_entrega_dias} dias</span>
-                    )}
-                  </p>
-                )}
+            {/* Campo de aprovação */}
+            {orcamentos.some(o => ["rascunho", "recebido", "enviado"].includes(o.status)) && (
+              <div className="mb-4 flex gap-2 items-center p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/40">
+                <ThumbsUp className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <input
+                  className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Nome de quem aprova (CEO)"
+                  value={aprovandoPor}
+                  onChange={e => setAprovandoPor(e.target.value)}
+                />
+              </div>
+            )}
 
-                {/* Itens */}
-                {orc.itens.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {orc.itens.map(it => (
-                      <div key={it.id} className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{it.nome} × {it.quantidade} {it.unidade}</span>
-                        {it.preco_unitario != null && (
-                          <span className="tabular-nums">{fmtBRL(it.subtotal)}</span>
+            <div className="space-y-3">
+              {orcamentos.map(orc => {
+                const expandido = expandidos.has(orc.id);
+                return (
+                  <div
+                    key={orc.id}
+                    className={`rounded-xl border-l-4 border bg-card overflow-hidden transition-all ${STATUS_BORDER[orc.status]} ${orc.status === "aprovado" ? "border-emerald-200 dark:border-emerald-800" : "border-border"}`}
+                  >
+                    {/* Cabeçalho da cotação */}
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-foreground truncate">{orc.fornecedor_nome}</p>
+                          {orc.aprovado_por && (
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              Aprovado por <span className="font-medium text-emerald-600 dark:text-emerald-400">{orc.aprovado_por}</span>
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[orc.status]}`}>
+                            {STATUS_LABELS[orc.status]}
+                          </span>
+                          {/* Editar e excluir: disponível para qualquer status não aprovado */}
+                          {orc.status !== "aprovado" && (
+                            <>
+                              <button
+                                onClick={() => abrirEditOrc(orc)}
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                title="Editar cotação"
+                              >
+                                <Pencil className="size-3.5" />
+                              </button>
+                              <button
+                                onClick={() => void excluirOrc(orc.id)}
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-red-500/10 transition-colors"
+                                title="Excluir cotação"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Valor em destaque */}
+                      {orc.valor_total != null ? (
+                        <div className="flex items-baseline gap-2 mb-1">
+                          <span className="text-xl font-bold text-foreground tabular-nums">
+                            {fmtBRL(orc.valor_total)}
+                          </span>
+                          {orc.prazo_entrega_dias && (
+                            <span className="text-xs text-muted-foreground">· {orc.prazo_entrega_dias} dias</span>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground/60 italic mb-1">Aguardando valores do fornecedor</p>
+                      )}
+
+                      {/* Resumo de itens + botão expandir */}
+                      <button
+                        onClick={() => toggleExpandido(orc.id)}
+                        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors mt-1"
+                      >
+                        {expandido
+                          ? <ChevronDown className="size-3" />
+                          : <ChevronRight className="size-3" />}
+                        {expandido ? "Ocultar cotação" : `Ver cotação completa (${orc.itens.length} iten${orc.itens.length !== 1 ? "s" : ""})`}
+                      </button>
+                    </div>
+
+                    {/* Detalhes expandidos da cotação */}
+                    {expandido && (
+                      <div className="border-t border-border/50 bg-muted/30 px-4 py-3 space-y-3">
+                        {orc.itens.length > 0 && (
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Itens</p>
+                            <div className="space-y-1.5">
+                              {orc.itens.map(it => (
+                                <div key={it.id} className="flex items-center justify-between text-xs">
+                                  <span className="text-foreground">{it.nome}</span>
+                                  <div className="flex items-center gap-3 text-muted-foreground">
+                                    <span className="tabular-nums">{it.quantidade} {it.unidade}</span>
+                                    {it.preco_unitario != null && (
+                                      <span className="tabular-nums font-medium text-foreground">{fmtBRL(it.subtotal)}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            {orc.valor_total != null && (
+                              <div className="flex items-center justify-between text-xs font-semibold text-foreground border-t border-border/50 mt-2 pt-2">
+                                <span>Total</span>
+                                <span className="tabular-nums">{fmtBRL(orc.valor_total)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {orc.observacoes && (
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Observações</p>
+                            <p className="text-xs text-foreground/80">{orc.observacoes}</p>
+                          </div>
                         )}
                       </div>
-                    ))}
+                    )}
+
+                    {/* Ações */}
+                    <div className="flex gap-2 px-4 pb-4 flex-wrap">
+                      {orc.status === "rascunho" && (
+                        <button
+                          onClick={() => void enviar(orc.id)}
+                          className="flex items-center gap-1 text-xs rounded-lg bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700 transition-colors"
+                        >
+                          <SendHorizonal className="size-3" />Enviar ao fornecedor
+                        </button>
+                      )}
+                      {["rascunho", "enviado", "recebido"].includes(orc.status) && (
+                        <>
+                          <button
+                            onClick={() => void aprovar(orc.id)}
+                            disabled={!aprovandoPor.trim()}
+                            className="flex items-center gap-1 text-xs rounded-lg bg-emerald-600 px-3 py-1.5 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                            title={!aprovandoPor.trim() ? "Preencha o nome de quem aprova acima" : undefined}
+                          >
+                            <ThumbsUp className="size-3" />Aprovar
+                          </button>
+                          <button
+                            onClick={() => void rejeitar(orc.id)}
+                            className="flex items-center gap-1 text-xs rounded-lg bg-red-600 px-3 py-1.5 text-white hover:bg-red-700 transition-colors"
+                          >
+                            <ThumbsDown className="size-3" />Rejeitar
+                          </button>
+                        </>
+                      )}
+                      {orc.status === "aprovado" && !("pedido" in orc) && (
+                        <button
+                          onClick={() => void gerarPedido(orc.id)}
+                          className="flex items-center gap-1 text-xs rounded-lg bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-700 transition-colors"
+                        >
+                          <ShoppingCart className="size-3" />Gerar Pedido de Compra
+                        </button>
+                      )}
+                    </div>
                   </div>
-                )}
-
-                {/* Ações */}
-                <div className="flex gap-2 mt-3 flex-wrap">
-                  {orc.status === "rascunho" && (
-                    <button
-                      onClick={() => void enviar(orc.id)}
-                      className="flex items-center gap-1 text-xs rounded-lg bg-blue-600 px-2.5 py-1.5 text-white hover:bg-blue-700 transition-colors"
-                    >
-                      <SendHorizonal className="size-3" />Enviar ao fornecedor
-                    </button>
-                  )}
-                  {["rascunho", "recebido"].includes(orc.status) && (
-                    <>
-                      <button
-                        onClick={() => void aprovar(orc.id)}
-                        disabled={!aprovandoPor.trim()}
-                        className="flex items-center gap-1 text-xs rounded-lg bg-emerald-600 px-2.5 py-1.5 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                      >
-                        <ThumbsUp className="size-3" />Aprovar
-                      </button>
-                      <button
-                        onClick={() => void rejeitar(orc.id)}
-                        className="flex items-center gap-1 text-xs rounded-lg bg-red-600 px-2.5 py-1.5 text-white hover:bg-red-700 transition-colors"
-                      >
-                        <ThumbsDown className="size-3" />Rejeitar
-                      </button>
-                    </>
-                  )}
-                  {orc.status === "aprovado" && !("pedido" in orc) && (
-                    <button
-                      onClick={() => void gerarPedido(orc.id)}
-                      className="flex items-center gap-1 text-xs rounded-lg bg-indigo-600 px-2.5 py-1.5 text-white hover:bg-indigo-700 transition-colors"
-                    >
-                      <ShoppingCart className="size-3" />Gerar Pedido de Compra
-                    </button>
-                  )}
-                </div>
-
-                {orc.aprovado_por && (
-                  <p className="mt-2 text-[11px] text-muted-foreground">
-                    Aprovado por <span className="font-medium">{orc.aprovado_por}</span>
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {itens.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
-          <AlertTriangle className="size-8 text-muted-foreground/30" />
-          <p className="text-sm text-muted-foreground">Nenhum material cadastrado ainda.</p>
-          <p className="text-xs text-muted-foreground/70">
-            Adicione os materiais necessários para o projeto e verifique o estoque.
-          </p>
-        </div>
+                );
+              })}
+            </div>
+          </section>
+        </>
       )}
 
       {/* ── Modal edição de orçamento ── */}
@@ -695,19 +804,21 @@ export function CRMPreCompra({ dealId }: Props) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-background rounded-2xl border border-border shadow-xl w-full max-w-sm p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground">Editar Orçamento</h3>
-              <button onClick={() => setEditandoOrc(null)} className="text-muted-foreground hover:text-foreground">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Editar Cotação</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">{editandoOrc.fornecedor_nome}</p>
+              </div>
+              <button onClick={() => setEditandoOrc(null)} className="text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-muted transition-colors">
                 <X className="size-4" />
               </button>
             </div>
-            <p className="text-xs text-muted-foreground">{editandoOrc.fornecedor_nome}</p>
 
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-foreground mb-1">Valor Total (R$)</label>
                 <input
                   type="number"
-                  className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="0.00"
                   value={editOrcForm.valor_total}
                   onChange={e => setEditOrcForm(p => ({ ...p, valor_total: e.target.value }))}
@@ -717,7 +828,7 @@ export function CRMPreCompra({ dealId }: Props) {
                 <label className="block text-xs font-medium text-foreground mb-1">Prazo de entrega (dias)</label>
                 <input
                   type="number"
-                  className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="Ex: 7"
                   value={editOrcForm.prazo_entrega_dias}
                   onChange={e => setEditOrcForm(p => ({ ...p, prazo_entrega_dias: e.target.value }))}
@@ -726,16 +837,16 @@ export function CRMPreCompra({ dealId }: Props) {
               <div>
                 <label className="block text-xs font-medium text-foreground mb-1">Observações</label>
                 <textarea
-                  className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
                   rows={3}
-                  placeholder="Condições, garantias, etc."
+                  placeholder="Condições, garantias, formas de pagamento..."
                   value={editOrcForm.observacoes}
                   onChange={e => setEditOrcForm(p => ({ ...p, observacoes: e.target.value }))}
                 />
               </div>
             </div>
 
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-2 pt-1">
               <button
                 onClick={() => setEditandoOrc(null)}
                 className="flex-1 rounded-lg border border-border px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
