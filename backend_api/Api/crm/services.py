@@ -10,6 +10,15 @@ from crm.models import Lead, Deal, Project, LeadMessage, Pipeline, Stage
 
 logger = logging.getLogger(__name__)
 
+
+def _fire_obsidian_sync(lead_id: int, tenant_id):
+    """Dispara sync assíncrono do lead para o Obsidian (falha silenciosamente se Celery indisponível)."""
+    try:
+        from crm.tasks import sync_lead_to_obsidian
+        sync_lead_to_obsidian.delay(lead_id, tenant_id)
+    except Exception as exc:
+        logger.warning("_fire_obsidian_sync: não foi possível enfileirar task (%s).", exc)
+
 # ─── Etapas padrão sugeridas ──────────────────────────────────────────────────
 
 DEFAULT_STAGES = {
@@ -77,6 +86,7 @@ def move_lead_to_stage(lead_id: int, stage_id: int, tenant_id) -> Lead:
         role=LeadMessage.Role.SYSTEM,
         content=f"Lead movido para etapa: {stage.name}",
     )
+    _fire_obsidian_sync(lead_id, tenant_id)
     return lead
 
 
@@ -114,6 +124,7 @@ def convert_lead_to_deal(lead_id: int, tenant_id, titulo: str = "", responsavel:
             content=f"Lead convertido em Deal: #{deal.id} — {deal.titulo}",
         )
 
+    _fire_obsidian_sync(lead_id, tenant_id)
     return deal
 
 
@@ -262,5 +273,7 @@ def qualify_lead(lead_id: int, user_message: str, tenant_id) -> dict:
         phrase in response_text.lower()
         for phrase in ["etapa de proposta", "avançar para", "fechar negócio", "posso avançar"]
     )
+
+    _fire_obsidian_sync(lead_id, tenant_id)
 
     return {"response": response_text, "closing_suggested": closing_suggested, "lead_id": lead_id}

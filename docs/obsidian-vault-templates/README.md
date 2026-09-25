@@ -2,6 +2,18 @@
 
 Estes arquivos são a base de conhecimento que o **agente comercial de IA** usa para responder leads via WhatsApp/Telegram sem inventar preços ou prazos.
 
+## Escrita automática de notas de lead
+
+Após configurar o vault (passos abaixo), a plataforma **escreve automaticamente** uma nota em `Leads/lead-{id}-{nome}.md` a cada vez que:
+
+- O agente comercial responde um lead (`qualify_lead`)
+- Um lead é movido de etapa no kanban
+- Um lead é convertido em Deal
+
+Cada nota contém frontmatter YAML (pesquisável pelo Obsidian e pelo RAG), um resumo gerado por IA e o histórico resumido das últimas mensagens. O agente comercial pode assim buscar contexto de clientes anteriores em conversas novas.
+
+---
+
 ## Como usar
 
 ### 1. Copiar para o vault
