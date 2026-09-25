@@ -229,7 +229,7 @@ def import_results_to_crm(job, pipeline_id=None) -> int:
     Importa os resultados de um ScrapingJob como Leads no CRM.
     Retorna o número de leads criados.
     """
-    from crm.models import Lead, Pipeline
+    from crm.models import Lead, Pipeline, Stage
 
     results = job.results
     if not results:
@@ -239,6 +239,12 @@ def import_results_to_crm(job, pipeline_id=None) -> int:
         pipeline = Pipeline.objects.filter(tenant_id=job.tenant_id, id=pipeline_id).first()
     else:
         pipeline = Pipeline.objects.filter(tenant_id=job.tenant_id).first()
+
+    # Primeiro stage do pipeline para posicionar o lead no kanban
+    first_stage = (
+        Stage.objects.filter(pipeline=pipeline, main_stage="lead").order_by("position").first()
+        if pipeline else None
+    )
 
     count = 0
     for item in results:
@@ -265,8 +271,8 @@ def import_results_to_crm(job, pipeline_id=None) -> int:
                 "telefone": item.get("phone") or item.get("telefone") or "",
                 "origem": "outro",
                 "pipeline": pipeline,
-                "stage": "novo",
-                "notas": (
+                "stage": first_stage,
+                "observacoes": (
                     f"Importado via scraping ({job.job_type}) — "
                     f"site: {item.get('website', '')} | "
                     f"avaliação: {item.get('review_rating', '')} "
