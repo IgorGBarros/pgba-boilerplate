@@ -2252,7 +2252,11 @@ export async function verificarDocumento(arquivo: File): Promise<VerificacaoAssi
   return data as VerificacaoAssinatura;
 }
 
-// ─── Helpdesk ─────────────────────────────────────────────────────────────────
+// ─── TI: helpdesk + observabilidade ───────────────────────────────────────────
+
+export type PrioridadeChamado = "critica" | "alta" | "media" | "baixa";
+export type StatusChamado = "aberto" | "em_atendimento" | "aguardando" | "resolvido" | "fechado";
+export type StatusSaude = "ok" | "alerta" | "falha" | "desconhecido";
 
 export interface Ticket {
   id: number;
@@ -2260,12 +2264,65 @@ export interface Ticket {
   descricao: string;
   solicitante: string;
   categoria: string;
-  prioridade: "critica" | "alta" | "media" | "baixa";
-  status: "aberto" | "em_atendimento" | "aguardando" | "resolvido" | "fechado";
+  prioridade: PrioridadeChamado;
+  status: StatusChamado;
   sla_horas: number;
+  prazo_sla: string | null;
+  sla_restante_min: number | null;
+  sla_estourado: boolean;
   atendente: string;
+  setor: number | null;
+  setor_nome: string;
+  agente: number | null;
+  agente_nome: string;
+  agente_status: string;
+  task: number | null;
+  task_status: string;
+  task_progresso: number | null;
+  origem: "manual" | "incidente" | "agente" | "email";
+  incidente_id: number | null;
+  primeira_resposta_em: string | null;
+  solucao: string;
+  interacoes_count: number;
   created_at: string;
   resolvido_em: string | null;
+}
+
+export interface FatoTI { id: string; texto: string }
+export interface SugestaoIA {
+  resposta?: string;
+  passos?: string[];
+  perguntas?: string[];
+  prioridade_sugerida?: string;
+  encaminhar_para?: string;
+  fatos?: FatoTI[];
+  citacoes_invalidas?: string[];
+  agente?: { id: number; nome: string };
+  diagnostico?: DiagnosticoTI;
+}
+export interface DiagnosticoTI {
+  causa_provavel?: string;
+  evidencias?: string[];
+  impacto?: string;
+  acoes?: string[];
+  prevencao?: string[];
+  confianca?: string;
+  fatos?: FatoTI[];
+  citacoes_invalidas?: string[];
+  agente?: { id: number; nome: string };
+  gerado_em?: string;
+  erro?: string;
+}
+
+export interface InteracaoChamado {
+  id: number;
+  ticket: number;
+  tipo: "comentario" | "resposta" | "ia" | "sistema";
+  tipo_display: string;
+  autor: string;
+  texto: string;
+  dados: SugestaoIA;
+  created_at: string;
 }
 
 export interface EquipamentoTI {
@@ -2281,26 +2338,189 @@ export interface EquipamentoTI {
   created_at: string;
 }
 
-export async function listTickets(params?: Record<string, string>): Promise<Ticket[]> {
-  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-  return requestList<Ticket>(`/api/v1/helpdesk/tickets/${qs}`);
+export interface AgenteTI {
+  id: number;
+  nome: string;
+  cargo: string;
+  papel: string;
+  nivel: string;
+  work_status: string;
+  tarefa_atual: string;
+  chamados_abertos: number;
+  tem_skill: boolean;
 }
-export async function createTicket(data: Partial<Ticket>): Promise<Ticket> {
-  return request<Ticket>("/api/v1/helpdesk/tickets/", { method: "POST", body: JSON.stringify(data) });
-}
-export async function updateTicket(id: number, data: Partial<Ticket>): Promise<Ticket> {
-  return request<Ticket>(`/api/v1/helpdesk/tickets/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+export interface EquipeTI {
+  setor: { id: number; nome: string } | null;
+  agentes: AgenteTI[];
+  papeis: { papel: string; nome: string; cargo: string }[];
 }
 
-export async function listEquipamentosTI(params?: Record<string, string>): Promise<EquipamentoTI[]> {
-  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-  return requestList<EquipamentoTI>(`/api/v1/helpdesk/equipamentos/${qs}`);
+export interface PainelTI {
+  abertos: number;
+  por_status: Record<string, number>;
+  por_prioridade: Record<string, number>;
+  por_categoria: Record<string, number>;
+  por_origem: Record<string, number>;
+  sla_estourado: number;
+  sla_vencendo: number;
+  sem_resposta: number;
+  mes: { abertos: number; resolvidos: number; no_prazo_pct: number | null; primeira_resposta_min: number | null; resolucao_min: number | null };
+  tem_time: boolean;
 }
-export async function createEquipamentoTI(data: Partial<EquipamentoTI>): Promise<EquipamentoTI> {
-  return request<EquipamentoTI>("/api/v1/helpdesk/equipamentos/", { method: "POST", body: JSON.stringify(data) });
+
+export interface Componente {
+  id: number;
+  chave: string;
+  grupo: string;
+  nome: string;
+  status: StatusSaude;
+  detalhe: string;
+  causa: string;
+  acao: string;
+  dados: Record<string, unknown>;
+  ms: number | null;
+  desde: string;
+  verificado_em: string;
+  plataforma: boolean;
+  disponibilidade_24h: number | null;
 }
-export async function updateEquipamentoTI(id: number, data: Partial<EquipamentoTI>): Promise<EquipamentoTI> {
-  return request<EquipamentoTI>(`/api/v1/helpdesk/equipamentos/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+
+export interface Incidente {
+  id: number;
+  chave: string;
+  grupo: string;
+  titulo: string;
+  gravidade: "critica" | "alta" | "media" | "baixa";
+  status: "aberto" | "resolvido";
+  aberto_em: string;
+  resolvido_em: string | null;
+  duracao_min: number;
+  detalhe: string;
+  causa: string;
+  acao: string;
+  dados: Record<string, unknown>;
+  diagnostico: DiagnosticoTI;
+  chamado_id: number | null;
+  reconhecido_por: string;
+  reconhecido_em: string | null;
+  plataforma: boolean;
+  amostras?: { em: string; status: StatusSaude; ms: number | null }[];
+}
+
+export interface ResumoMetrica { total: number; erros: number; taxa_erro: number; ms_medio: number | null }
+export interface PainelObs {
+  staff: boolean;
+  contagem: Record<StatusSaude, number>;
+  componentes: Componente[];
+  incidentes_abertos: Incidente[];
+  api_24h: ResumoMetrica;
+  ia_24h: ResumoMetrica;
+  erros_abertos: number | null;
+  ultima_verificacao: string | null;
+}
+export interface LinhaMetrica {
+  chave: string;
+  total: number;
+  erros: number;
+  erros_cliente: number;
+  taxa_erro: number;
+  ms_medio: number | null;
+  ms_max: number;
+}
+export interface Metricas {
+  tipo: "api" | "ia" | "http";
+  horas: number;
+  linhas: LinhaMetrica[];
+  serie: { hora: string; total: number; erros: number; ms_medio: number | null }[];
+}
+export interface EventoErro {
+  id: number;
+  logger: string;
+  nivel: string;
+  mensagem: string;
+  trace: string;
+  origem: string;
+  ocorrencias: number;
+  primeiro: string;
+  ultimo: string;
+  resolvido: boolean;
+}
+export interface AgenteObs {
+  id: number;
+  nome: string;
+  cargo: string;
+  setor_id: number | null;
+  setor: string;
+  work_status: string;
+  tarefa_atual: string;
+  autonomia: number;
+  chamadas: number;
+  custo_usd: number;
+  tokens: number;
+  ultima_atividade: string | null;
+  provedor: string;
+  tarefas: Record<string, number>;
+  falhas: number;
+  presas: number;
+  aprovacoes_pendentes: number;
+  saude: StatusSaude;
+}
+export interface SetorObs {
+  setor: string;
+  setor_id: number | null;
+  agentes: number;
+  trabalhando: number;
+  chamadas: number;
+  custo_usd: number;
+  falhas: number;
+  alertas: number;
+}
+export interface SaudePublica {
+  status: StatusSaude;
+  verificado_em: string;
+  componentes: { nome: string; status: StatusSaude; causa: string; acao: string }[];
+}
+
+const HD = "/api/v1/helpdesk";
+const OBS = "/api/v1/observabilidade";
+const tiPost = <T>(path: string, body: unknown = {}) => request<T>(path, { method: "POST", body: JSON.stringify(body) });
+const tiQs = (p?: Record<string, string>) => (p && Object.keys(p).length ? "?" + new URLSearchParams(p).toString() : "");
+
+export const ti = {
+  // Chamados (cada um carrega uma Task real do agente de TI)
+  chamados: (params?: Record<string, string>) => requestList<Ticket>(`${HD}/tickets/${tiQs({ page_size: "500", ...params })}`),
+  chamado: (id: number) => request<Ticket>(`${HD}/tickets/${id}/`),
+  abrir: (data: { titulo: string; descricao?: string; categoria?: string; prioridade?: string; solicitante?: string; setor?: number | null }) =>
+    tiPost<Ticket>(`${HD}/tickets/`, data),
+  interacoes: (id: number) => request<InteracaoChamado[]>(`${HD}/tickets/${id}/interacoes/`),
+  atenderIA: (id: number, instrucoes = "") => tiPost<InteracaoChamado>(`${HD}/tickets/${id}/atender-ia/`, { instrucoes }),
+  responder: (id: number, texto: string, aguardar = false) => tiPost<InteracaoChamado>(`${HD}/tickets/${id}/responder/`, { texto, aguardar }),
+  comentar: (id: number, texto: string) => tiPost<InteracaoChamado>(`${HD}/tickets/${id}/comentar/`, { texto }),
+  resolver: (id: number, solucao: string) => tiPost<Ticket>(`${HD}/tickets/${id}/resolver/`, { solucao }),
+  reabrir: (id: number, motivo = "") => tiPost<Ticket>(`${HD}/tickets/${id}/reabrir/`, { motivo }),
+  fechar: (id: number) => tiPost<Ticket>(`${HD}/tickets/${id}/fechar/`),
+  atribuir: (id: number, papel: string) => tiPost<Ticket>(`${HD}/tickets/${id}/atribuir/`, { papel }),
+  prioridade: (id: number, prioridade: string) => tiPost<Ticket>(`${HD}/tickets/${id}/prioridade/`, { prioridade }),
+  painel: () => request<PainelTI>(`${HD}/painel/`),
+  equipe: () => request<EquipeTI>(`${HD}/equipe/`),
+  montarEquipe: () => tiPost<{ setor: number; setor_criado: boolean; criados: string[]; existentes: string[] }>(`${HD}/equipe/`),
+  agentes: (horas = 24) => request<{ horas: number; agentes: AgenteObs[]; setores: SetorObs[] }>(`${HD}/agentes/?horas=${horas}`),
+  diagnosticar: (incidenteId: number) => tiPost<DiagnosticoTI>(`${HD}/incidentes/${incidenteId}/diagnosticar/`),
+  // Observabilidade
+  obs: () => request<PainelObs>(`${OBS}/painel/`),
+  verificar: () => tiPost<Componente[]>(`${OBS}/verificar/`),
+  incidentes: (status?: string) => request<Incidente[]>(`${OBS}/incidentes/${tiQs(status ? { status } : undefined)}`),
+  incidente: (id: number) => request<Incidente>(`${OBS}/incidentes/${id}/`),
+  reconhecer: (id: number) => tiPost<Incidente>(`${OBS}/incidentes/${id}/`),
+  metricas: (tipo: "api" | "ia" | "http", horas = 24) => request<Metricas>(`${OBS}/metricas/?tipo=${tipo}&horas=${horas}`),
+  erros: (todos = false) => request<EventoErro[]>(`${OBS}/erros/${todos ? "?todos=1" : ""}`),
+  resolverErros: (ids: number[]) => tiPost<{ resolvidos: number }>(`${OBS}/erros/`, { ids }),
+};
+
+/** Status público da plataforma — sem login (funciona com o banco fora). */
+export async function saudePublica(): Promise<SaudePublica> {
+  const res = await fetch(`${API_URL}${OBS}/saude/`);
+  return (await res.json()) as SaudePublica;
 }
 
 // ─── Desenvolvimento ──────────────────────────────────────────────────────────
@@ -2894,7 +3114,8 @@ export type ErpResource =
   | "contratos"
   | "contratos-itens"
   // Outros módulos com o mesmo CRUD genérico (ErpCrud): caminho completo depois de /api/v1/
-  | `juridico/${"processos" | "andamentos" | "contratos" | "prazos" | "modelos" | "documentos"}`;
+  | `juridico/${"processos" | "andamentos" | "contratos" | "prazos" | "modelos" | "documentos"}`
+  | "helpdesk/equipamentos";
 
 /** "parceiros" → /api/v1/erp/parceiros ; "juridico/prazos" → /api/v1/juridico/prazos */
 const erpBase = (resource: ErpResource) => (resource.includes("/") ? `/api/v1/${resource}` : `/api/v1/erp/${resource}`);

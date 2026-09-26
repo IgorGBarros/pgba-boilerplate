@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "erp",
     "juridico",
     "marketing",
+    "observabilidade",
     "helpdesk",
     "desenvolvimento",
     "controladoria",
@@ -59,6 +60,8 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "core.middleware.tenant.TenantMiddleware",
+    # Mede toda requisição /api/ (rota, status, tempo, empresa) — ver observabilidade
+    "observabilidade.middleware.MetricasMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -98,6 +101,8 @@ REST_FRAMEWORK = {
         "assinatura": "60/min",
         # Retorno do login OAuth das redes sociais e mídia pública (Instagram/TikTok buscam)
         "marketing_publico": "120/min",
+        # Página pública de status (/api/v1/observabilidade/saude/)
+        "status_publico": "30/min",
     },
 }
 
@@ -149,6 +154,12 @@ CELERY_BEAT_SCHEDULE = {
     },
     # Publicações APROVADAS com horário marcado (marketing) — só publica o que
     # uma pessoa aprovou
+    # Observabilidade: batimento, verificações de plataforma e de cada empresa,
+    # incidentes automáticos (o setor de TI abre chamado)
+    "observabilidade-verificacoes": {
+        "task": "observabilidade.tasks.verificar_task",
+        "schedule": 60.0,
+    },
     "marketing-publicacoes-agendadas": {
         "task": "marketing.tasks.publicar_agendadas_task",
         "schedule": 60.0,

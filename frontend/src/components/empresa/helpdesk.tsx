@@ -1,298 +1,164 @@
-import { ArrowLeft, Headphones, AlertCircle, Clock, CheckCircle2, XCircle, Monitor, Server, Wifi, Smartphone, HardDrive, TrendingUp, Users, BarChart3, Search } from "lucide-react";
-import { useState, useEffect } from "react";
+// frontend/src/components/empresa/helpdesk.tsx
+//
+// Setor TI — observabilidade de tudo (plataforma, IA de cada setor, agentes,
+// APIs, conectores, MCP, e-mail, redes) e helpdesk: chamados atendidos pelo time
+// de TI através de Tasks, com a IA diagnosticando incidentes e sugerindo respostas.
+// Cada aba vive em components/empresa/ti/.
+import { useCallback, useEffect, useState } from "react";
+import { Activity, ArrowLeft, Bot, Bug, Gauge, HardDrive, Headphones, Plug, Siren, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
-import { type Ticket, type EquipamentoTI, listTickets, listEquipamentosTI } from "@/lib/api";
+import { ti, type EquipamentoTI, type EquipeTI, type PainelObs, type PainelTI } from "@/lib/api";
+import { ErpCrud, type ColumnDef, type FieldDef } from "@/components/empresa/erp-crud";
+import { VisaoTab } from "@/components/empresa/ti/visao";
+import { ChamadosTab, NovoChamado } from "@/components/empresa/ti/chamados";
+import { IncidenteDetalhe, IncidentesTab } from "@/components/empresa/ti/incidentes";
+import { AgentesTab } from "@/components/empresa/ti/agentes";
+import { IntegracoesTab } from "@/components/empresa/ti/integracoes";
+import { ErrosTab } from "@/components/empresa/ti/erros";
+import { TimeTab } from "@/components/empresa/ti/time";
+import { Dot, Tag } from "@/components/empresa/ti/shared";
 
-interface HelpdeskViewProps {
-  onBack: () => void;
-}
+const TAB_KEY = "pgba_ti_tab";
+const TABS = [
+  { id: "visao", label: "Visão geral", icon: Gauge },
+  { id: "chamados", label: "Chamados", icon: Headphones },
+  { id: "incidentes", label: "Incidentes", icon: Siren },
+  { id: "agentes", label: "Agentes", icon: Bot },
+  { id: "integracoes", label: "APIs e integrações", icon: Plug },
+  { id: "erros", label: "Erros", icon: Bug, staff: true },
+  { id: "inventario", label: "Inventário", icon: HardDrive },
+  { id: "time", label: "Time", icon: Users },
+] as const;
+type Tab = (typeof TABS)[number]["id"];
 
-type TicketStatus = Ticket["status"];
-type Prioridade = Ticket["prioridade"];
-type EquipmentStatus = EquipamentoTI["status"];
+const EQUIP_FIELDS: FieldDef[] = [
+  { name: "codigo", label: "Código / patrimônio", required: true },
+  { name: "nome", label: "Nome", required: true },
+  { name: "tipo", label: "Tipo", type: "select", options: ["notebook", "desktop", "servidor", "switch", "roteador", "impressora", "monitor", "outro"].map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) })) },
+  { name: "status", label: "Status", type: "select", options: [
+    { value: "ativo", label: "Ativo" }, { value: "manutencao", label: "Em manutenção" }, { value: "disponivel", label: "Disponível" }, { value: "descarte", label: "Descarte" },
+  ] },
+  { name: "usuario", label: "Com quem está" },
+  { name: "setor", label: "Setor" },
+  { name: "ultima_revisao", label: "Última revisão", type: "date" },
+  { name: "observacoes", label: "Observações", type: "textarea", wide: true },
+];
+const EQUIP_TONE: Record<EquipamentoTI["status"], "ok" | "warn" | "info" | "muted"> = { ativo: "ok", manutencao: "warn", disponivel: "info", descarte: "muted" };
+const EQUIP_COLS: ColumnDef<EquipamentoTI>[] = [
+  { key: "codigo", label: "Código", render: (e) => <span className="font-mono text-xs">{e.codigo}</span> },
+  { key: "nome", label: "Equipamento" },
+  { key: "tipo", label: "Tipo" },
+  { key: "usuario", label: "Com quem", render: (e) => e.usuario || "—" },
+  { key: "setor", label: "Setor", render: (e) => e.setor || "—" },
+  { key: "status", label: "Status", render: (e) => <Tag tone={EQUIP_TONE[e.status]}>{e.status}</Tag> },
+  { key: "ultima_revisao", label: "Revisão", render: (e) => (e.ultima_revisao ? new Date(`${e.ultima_revisao}T12:00`).toLocaleDateString("pt-BR") : "—") },
+];
 
-function computeSlaRemaining(createdAt: string, slaHoras: number): number {
-  const elapsed = (Date.now() - new Date(createdAt).getTime()) / 3600000;
-  return Math.round(slaHoras - elapsed);
-}
-
-function PrioridadeBadge({ p }: { p: Prioridade }) {
-  const map: Record<Prioridade, string> = {
-    critica: "bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30",
-    alta: "bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/30",
-    media: "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
-    baixa: "bg-secondary text-muted-foreground border-border",
-  };
-  const labels: Record<Prioridade, string> = { critica: "Crítica", alta: "Alta", media: "Média", baixa: "Baixa" };
-  return <Badge className={`${map[p]} text-[11px]`}>{labels[p]}</Badge>;
-}
-
-function StatusBadge({ s }: { s: TicketStatus }) {
-  const map: Record<TicketStatus, string> = {
-    aberto: "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30",
-    em_atendimento: "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
-    aguardando: "bg-purple-500/20 text-purple-600 dark:text-purple-400 border-purple-500/30",
-    resolvido: "bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/30",
-    fechado: "bg-secondary text-muted-foreground border-border",
-  };
-  const labels: Record<TicketStatus, string> = {
-    aberto: "Aberto", em_atendimento: "Em atendimento", aguardando: "Aguardando", resolvido: "Resolvido", fechado: "Fechado",
-  };
-  return <Badge className={`${map[s]} text-[11px]`}>{labels[s]}</Badge>;
-}
-
-function SLABadge({ hours }: { hours: number }) {
-  if (hours < 0) return (
-    <span className="flex items-center gap-1 text-red-600 dark:text-red-400 text-xs font-medium">
-      <XCircle className="w-3.5 h-3.5" /> SLA violado ({Math.abs(hours)}h)
-    </span>
-  );
-  if (hours <= 4) return (
-    <span className="flex items-center gap-1 text-orange-600 dark:text-orange-400 text-xs">
-      <AlertCircle className="w-3.5 h-3.5" /> {hours}h restantes
-    </span>
-  );
-  return (
-    <span className="flex items-center gap-1 text-muted-foreground text-xs">
-      <Clock className="w-3.5 h-3.5" /> {hours}h restantes
-    </span>
-  );
-}
-
-function EquipStatusBadge({ s }: { s: EquipmentStatus }) {
-  const map: Record<EquipmentStatus, string> = {
-    ativo: "bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/30",
-    manutencao: "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
-    disponivel: "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30",
-    descarte: "bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30",
-  };
-  const labels: Record<EquipmentStatus, string> = { ativo: "Ativo", manutencao: "Manutenção", disponivel: "Disponível", descarte: "Descarte" };
-  return <Badge className={`${map[s]} text-[11px]`}>{labels[s]}</Badge>;
-}
-
-function CategoryIcon({ cat }: { cat: string }) {
-  const c = cat.toLowerCase();
-  if (c === "rede" || c === "infraestrutura") return <Wifi className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />;
-  if (c === "hardware") return <Monitor className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
-  if (c === "mobile") return <Smartphone className="w-4 h-4 text-purple-600 dark:text-purple-400" />;
-  if (c === "servidor") return <Server className="w-4 h-4 text-orange-600 dark:text-orange-400" />;
-  return <HardDrive className="w-4 h-4 text-muted-foreground" />;
-}
-
-function TabTickets({ tickets }: { tickets: Ticket[] }) {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<TicketStatus | "todos">("todos");
-
-  const filtered = tickets.filter(t => {
-    const matchSearch = t.titulo.toLowerCase().includes(search.toLowerCase()) || t.solicitante.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === "todos" || t.status === statusFilter;
-    return matchSearch && matchStatus;
+export function HelpdeskView({ onBack }: { onBack: () => void }) {
+  const [tab, setTabState] = useState<Tab>(() => {
+    try { return (sessionStorage.getItem(TAB_KEY) as Tab) || "visao"; } catch { return "visao"; }
   });
+  const [reload, setReload] = useState(0);
+  const [obs, setObs] = useState<PainelObs | null>(null);
+  const [painel, setPainel] = useState<PainelTI | null>(null);
+  const [equipe, setEquipe] = useState<EquipeTI | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [chamadoAberto, setChamadoAberto] = useState<number | null>(null);
+  const [incidenteAberto, setIncidenteAberto] = useState<number | null>(null);
+  const [novo, setNovo] = useState(false);
 
-  const slaViolados = tickets.filter(t => {
-    const remaining = computeSlaRemaining(t.created_at, t.sla_horas);
-    return remaining < 0 && t.status !== "resolvido" && t.status !== "fechado";
-  }).length;
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-4 gap-4">
-        {[
-          { label: "Abertos", value: tickets.filter(t => t.status === "aberto").length, icon: <AlertCircle className="w-4 h-4 text-blue-600 dark:text-blue-400" /> },
-          { label: "Em atendimento", value: tickets.filter(t => t.status === "em_atendimento").length, icon: <Clock className="w-4 h-4 text-yellow-600 dark:text-yellow-400" /> },
-          { label: "SLA violados", value: slaViolados, icon: <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" /> },
-          { label: "Resolvidos", value: tickets.filter(t => t.status === "resolvido").length, icon: <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400" /> },
-        ].map(m => (
-          <div key={m.label} className="p-4 rounded-lg bg-secondary border border-border flex items-center gap-3">
-            {m.icon}
-            <div>
-              <p className="text-xl font-bold text-foreground">{m.value}</p>
-              <p className="text-xs text-muted-foreground">{m.label}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Buscar ticket, solicitante..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 bg-secondary border-border text-foreground placeholder:text-muted-foreground" />
-        </div>
-        <div className="flex gap-2">
-          {(["todos", "aberto", "em_atendimento", "aguardando", "resolvido"] as const).map(s => (
-            <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${statusFilter === s ? "bg-teal-500/20 text-teal-600 dark:text-teal-400 border border-teal-500/30" : "bg-secondary text-muted-foreground border border-border hover:border-ring"}`}>
-              {s === "todos" ? "Todos" : s === "em_atendimento" ? "Em atend." : s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        {filtered.map(t => {
-          const slaHours = computeSlaRemaining(t.created_at, t.sla_horas);
-          const slaViolated = slaHours < 0 && t.status !== "resolvido" && t.status !== "fechado";
-          return (
-            <div key={t.id} className={`p-4 rounded-lg bg-secondary border transition-colors hover:border-ring ${slaViolated ? "border-red-500/30" : "border-border"}`}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3 min-w-0">
-                  <CategoryIcon cat={t.categoria} />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-medium text-foreground truncate">{t.titulo}</p>
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 flex-wrap">
-                      <span className="text-xs text-muted-foreground">{t.solicitante}</span>
-                      <span className="text-xs text-muted-foreground">· {t.categoria}</span>
-                      {t.atendente && <span className="text-xs text-muted-foreground">· {t.atendente}</span>}
-                      <span className="text-xs text-muted-foreground">· {t.created_at.slice(0, 16).replace("T", " ")}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <SLABadge hours={slaHours} />
-                  <PrioridadeBadge p={t.prioridade} />
-                  <StatusBadge s={t.status} />
-                </div>
-              </div>
-            </div>
-          );
-        })}
-        {filtered.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">Nenhum ticket encontrado</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TabInventario({ equipamentos }: { equipamentos: EquipamentoTI[] }) {
-  return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-4 gap-4 mb-2">
-        {[
-          { label: "Ativos", value: equipamentos.filter(i => i.status === "ativo").length },
-          { label: "Disponíveis", value: equipamentos.filter(i => i.status === "disponivel").length },
-          { label: "Em manutenção", value: equipamentos.filter(i => i.status === "manutencao").length },
-          { label: "Total", value: equipamentos.length },
-        ].map(m => (
-          <div key={m.label} className="p-4 rounded-lg bg-secondary border border-border">
-            <p className="text-2xl font-bold text-foreground">{m.value}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{m.label}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="rounded-lg bg-secondary border border-border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border">
-              {["ID", "Equipamento", "Tipo", "Usuário", "Setor", "Status", "Última revisão"].map(h => (
-                <th key={h} className="text-left text-xs text-muted-foreground font-medium px-4 py-3">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {equipamentos.map(item => (
-              <tr key={item.id} className="hover:bg-secondary transition-colors">
-                <td className="px-4 py-3 text-xs font-mono text-muted-foreground">{item.codigo}</td>
-                <td className="px-4 py-3 text-foreground">{item.nome}</td>
-                <td className="px-4 py-3 text-muted-foreground text-xs">{item.tipo}</td>
-                <td className="px-4 py-3 text-muted-foreground text-xs">{item.usuario || <span className="text-muted-foreground">—</span>}</td>
-                <td className="px-4 py-3 text-muted-foreground text-xs">{item.setor}</td>
-                <td className="px-4 py-3"><EquipStatusBadge s={item.status} /></td>
-                <td className="px-4 py-3 text-muted-foreground text-xs">{item.ultima_revisao ?? "—"}</td>
-              </tr>
-            ))}
-            {equipamentos.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground text-sm">Nenhum equipamento cadastrado</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-export function HelpdeskView({ onBack }: HelpdeskViewProps) {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [equipamentos, setEquipamentos] = useState<EquipamentoTI[]>([]);
+  const setTab = (t: string) => {
+    try { sessionStorage.setItem(TAB_KEY, t); } catch { /* aba privada */ }
+    setTabState(t as Tab);
+  };
+  const changed = useCallback(() => setReload((r) => r + 1), []);
+  const limparChamado = useCallback(() => setChamadoAberto(null), []);
 
   useEffect(() => {
-    listTickets().then(setTickets).catch(() => {});
-    listEquipamentosTI().then(setEquipamentos).catch(() => {});
-  }, []);
+    let vivo = true;
+    const buscar = () => Promise.allSettled([ti.obs(), ti.painel(), ti.equipe()]).then(([o, p, e]) => {
+      if (!vivo) return;
+      if (o.status === "fulfilled") setObs(o.value);
+      if (p.status === "fulfilled") setPainel(p.value);
+      if (e.status === "fulfilled") setEquipe(e.value);
+      setCarregando(false);
+    });
+    buscar();
+    const t = setInterval(buscar, 30_000); // o monitoramento roda a cada minuto
+    return () => { vivo = false; clearInterval(t); };
+  }, [reload]);
 
-  const abertos = tickets.filter(t => t.status === "aberto" || t.status === "em_atendimento").length;
-  const slaViolados = tickets.filter(t => {
-    const rem = computeSlaRemaining(t.created_at, t.sla_horas);
-    return rem < 0 && t.status !== "resolvido" && t.status !== "fechado";
-  }).length;
+  const abrirChamado = (id: number) => { setTab("chamados"); setChamadoAberto(id); };
+  const fora = obs?.contagem.falha ?? 0;
+  const trabalhando = equipe?.agentes.filter((a) => a.work_status === "working") ?? [];
+  const tabs = TABS.filter((t) => !("staff" in t) || obs?.staff);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="relative overflow-hidden rounded-xl p-6 mb-6 bg-gradient-to-r from-teal-600/20 via-cyan-600/10 to-transparent border border-border">
-        <div className="absolute inset-0 bg-gradient-to-br from-teal-500/5 to-cyan-500/5" />
-        <div className="relative flex items-start justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm" onClick={onBack} className="text-muted-foreground hover:text-foreground p-1 h-auto">
-              <ArrowLeft className="w-4 h-4 mr-1" /> Voltar
-            </Button>
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-lg bg-teal-500/20 border border-teal-500/30">
-                <Headphones className="w-5 h-5 text-teal-600 dark:text-teal-400" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-foreground">TI · Helpdesk</h1>
-                <p className="text-sm text-muted-foreground">Chamados · SLA · Inventário</p>
-              </div>
-            </div>
+    <div className="space-y-5">
+      <div className="rounded-xl border border-border bg-gradient-to-r from-secondary via-teal-500/10 to-transparent px-5 py-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={onBack} className="grid size-8 shrink-0 place-items-center rounded-md transition-colors hover:bg-secondary" title="Voltar">
+            <ArrowLeft className="size-4" />
+          </button>
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-teal-500/15 text-teal-700 dark:text-teal-300"><Activity className="size-5" /></span>
+          <div className="min-w-0">
+            <h2 className="font-display text-lg font-semibold">TI · Observabilidade e Helpdesk</h2>
+            <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              {obs && <><Dot status={fora ? "falha" : (obs.contagem.alerta ? "alerta" : obs.componentes.length ? "ok" : "desconhecido")} pulse />
+                {fora ? `${fora} fora do ar` : obs.contagem.alerta ? `${obs.contagem.alerta} com atenção` : obs.componentes.length ? "tudo no ar" : "sem verificação ainda"} ·</>}
+              {painel && <span>{painel.abertos} chamado(s) em aberto</span>}
+              {trabalhando.length > 0 && <span className="text-success">· {trabalhando.map((a) => a.nome).join(", ")} trabalhando</span>}
+            </p>
           </div>
-          <div className="flex gap-4 text-center">
-            {[
-              { label: "Chamados ativos", value: abertos, icon: <AlertCircle className="w-4 h-4 text-teal-600 dark:text-teal-400 mx-auto mb-1" /> },
-              { label: "SLA violados", value: slaViolados, icon: <XCircle className="w-4 h-4 text-red-600 dark:text-red-400 mx-auto mb-1" /> },
-              { label: "Satisfação", value: "—", icon: <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400 mx-auto mb-1" /> },
-              { label: "Equipamentos", value: equipamentos.length, icon: <BarChart3 className="w-4 h-4 text-cyan-600 dark:text-cyan-400 mx-auto mb-1" /> },
-            ].map(m => (
-              <div key={m.label} className="px-4 py-2 rounded-lg bg-secondary border border-border min-w-[90px]">
-                {m.icon}
-                <p className="text-xl font-bold text-foreground">{m.value}</p>
-                <p className="text-xs text-muted-foreground">{m.label}</p>
-              </div>
-            ))}
+          <div className="ml-auto flex items-center gap-2">
+            <a href="/status" target="_blank" rel="noreferrer" className="text-xs text-muted-foreground underline-offset-2 hover:underline">Página de status pública</a>
+            <Button size="sm" onClick={() => setNovo(true)}><Headphones className="size-3.5" /> Abrir chamado</Button>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <Tabs defaultValue="tickets" className="flex-1">
-        <TabsList className="bg-secondary border border-border mb-6">
-          <TabsTrigger value="tickets" className="data-[state=active]:bg-accent">
-            <Headphones className="w-4 h-4 mr-1.5" /> Chamados
-          </TabsTrigger>
-          <TabsTrigger value="inventario" className="data-[state=active]:bg-accent">
-            <Monitor className="w-4 h-4 mr-1.5" /> Inventário
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="tickets"><TabTickets tickets={tickets} /></TabsContent>
-        <TabsContent value="inventario"><TabInventario equipamentos={equipamentos} /></TabsContent>
-      </Tabs>
-
-      {/* Footer */}
-      <div className="mt-6 pt-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Equipe TI</span>
-          <span className="flex items-center gap-1.5"><Server className="w-3.5 h-3.5" /> Infraestrutura PGBA</span>
-        </div>
-        <span>Setor TI</span>
+      <div className="flex gap-1 overflow-x-auto rounded-xl bg-secondary p-1">
+        {tabs.map((t) => (
+          <button key={t.id} type="button" onClick={() => setTab(t.id)}
+            className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition ${tab === t.id ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            <t.icon className="size-4" /> {t.label}
+            {t.id === "incidentes" && !!obs?.incidentes_abertos.length && <span className="rounded-full bg-destructive px-1.5 text-[10px] text-destructive-foreground">{obs.incidentes_abertos.length}</span>}
+            {t.id === "chamados" && !!painel?.sla_estourado && <span className="rounded-full bg-warning px-1.5 text-[10px] text-warning-foreground">{painel.sla_estourado}</span>}
+            {t.id === "erros" && !!obs?.erros_abertos && <span className="rounded-full bg-secondary-foreground/15 px-1.5 text-[10px]">{obs.erros_abertos}</span>}
+          </button>
+        ))}
       </div>
+
+      {tab === "visao" && <VisaoTab obs={obs} painel={painel} carregando={carregando} recarregar={changed} onGo={setTab} abrirIncidente={setIncidenteAberto} />}
+      {tab === "chamados" && <ChamadosTab reloadKey={reload} abrirId={chamadoAberto} onAberto={limparChamado} onChanged={changed} />}
+      {tab === "incidentes" && <IncidentesTab reloadKey={reload} abrirChamado={abrirChamado} />}
+      {tab === "agentes" && <AgentesTab reloadKey={reload} />}
+      {tab === "integracoes" && <IntegracoesTab reloadKey={reload} staff={!!obs?.staff} componentes={obs?.componentes ?? []} />}
+      {tab === "erros" && obs?.staff && <ErrosTab reloadKey={reload} onChanged={changed} />}
+      {tab === "inventario" && (
+        <ErpCrud<EquipamentoTI>
+          resource="helpdesk/equipamentos"
+          title="Inventário de TI"
+          description="Notebooks, servidores, rede e periféricos — com quem está, setor e última revisão."
+          singular="equipamento"
+          fields={EQUIP_FIELDS}
+          columns={EQUIP_COLS}
+          defaults={{ tipo: "notebook", status: "ativo" }}
+          filters={[
+            { label: "Todos", params: {} },
+            { label: "Ativos", params: { status: "ativo" } },
+            { label: "Em manutenção", params: { status: "manutencao" } },
+            { label: "Disponíveis", params: { status: "disponivel" } },
+          ]}
+          emptyText="Nenhum equipamento cadastrado."
+        />
+      )}
+      {tab === "time" && <TimeTab equipe={equipe} onChanged={changed} />}
+
+      {incidenteAberto && tab !== "incidentes" && (
+        <IncidenteDetalhe id={incidenteAberto} onClose={() => setIncidenteAberto(null)} onChanged={changed} abrirChamado={abrirChamado} />
+      )}
+      {novo && <NovoChamado onClose={() => setNovo(false)} onCriado={(t) => { setNovo(false); changed(); abrirChamado(t.id); }} />}
     </div>
   );
 }

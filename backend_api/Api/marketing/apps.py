@@ -8,4 +8,4 @@ class MarketingConfig(AppConfig):
 
     def ready(self):
         # Resumo, agenda e rascunho de post para os agentes
-        from marketing import ai_functions  # noqa: F401
+        from marketing import ai_functions, verificacoes  # noqa: F401

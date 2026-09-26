@@ -20,14 +20,19 @@ LOGGING = {
             "class": "logging.StreamHandler",
             "formatter": "verbose",
         },
+        # ERROR/CRITICAL viram EventoErro (observabilidade, aba Erros do TI)
+        "observabilidade": {
+            "class": "observabilidade.logs.EventoErroHandler",
+            "level": "ERROR",
+        },
     },
     "root": {
-        "handlers": ["console"],
+        "handlers": ["console", "observabilidade"],
         "level": "DEBUG",
     },
     "loggers": {
         "django": {
-            "handlers": ["console"],
+            "handlers": ["console", "observabilidade"],
             "level": "INFO",
             "propagate": False,
         },

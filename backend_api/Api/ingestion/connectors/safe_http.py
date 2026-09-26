@@ -24,11 +24,13 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import time
 from urllib.parse import urljoin, urlparse
 
 import httpx
 from django.conf import settings
 
+from core.signals import saida_http
 from ingestion.connectors.base import ConnectorError
 
 MAX_BYTES = 10 * 1024 * 1024
@@ -104,6 +106,28 @@ def request(
     chama ler o corpo — APIs de redes sociais explicam o erro em JSON.
     `timeout`/`max_bytes` sobem o teto pra upload/download de mídia.
     """
+    inicio = time.monotonic()
+    host = urlparse(url or "").hostname or ""
+    status = None
+    try:
+        resp = _request(method, url, timeout, max_bytes, raise_for_status, **kwargs)
+        status = resp.status_code
+        return resp
+    except ConnectorError as exc:
+        saida_http.send_robust(
+            None, host=host, method=method, status=status,
+            ms=int((time.monotonic() - inicio) * 1000), erro=str(exc)[:300],
+        )
+        raise
+    finally:
+        if status is not None:
+            saida_http.send_robust(
+                None, host=host, method=method, status=status,
+                ms=int((time.monotonic() - inicio) * 1000), erro="",
+            )
+
+
+def _request(method, url, timeout, max_bytes, raise_for_status, **kwargs) -> httpx.Response:
     headers = {"User-Agent": USER_AGENT, **(kwargs.pop("headers", None) or {})}
     limit = max_bytes or MAX_BYTES
     current = check_url(url)
