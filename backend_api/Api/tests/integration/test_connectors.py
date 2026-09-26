@@ -743,3 +743,66 @@ def test_setor_nao_aceita_fonte_de_outro_tenant(auth_client, tenant_id):
         format="json",
     )
     assert res.status_code == 400
+
+
+@pytest.mark.django_db
+def test_registros_busca_ficha_e_previa_do_agente(auth_client, tenant_id, rede, monkeypatch):
+    from ingestion import views
+    from ingestion.services import EmbeddingError, RetrievedChunk
+
+    rede["GET api.exemplo.com/produtos"] = httpx.Response(
+        200,
+        json=[
+            {"id": i, "nome": f"Produto {i}", "garantia": "12 meses" if i == 3 else "sem"}
+            for i in range(30)
+        ],
+    )
+    src = _source(
+        tenant_id,
+        "rest_api",
+        {"url": "https://api.exemplo.com/produtos", "title_field": "nome"},
+        name="Catálogo",
+    )
+    sync_source(src)
+
+    page = auth_client.get(f"{API}/sources/{src.id}/records/").data
+    assert (page["count"], page["pages"], len(page["results"])) == (30, 2, 25)
+    assert len(auth_client.get(f"{API}/sources/{src.id}/records/?page=2").data["results"]) == 5
+    found = auth_client.get(f"{API}/sources/{src.id}/records/?search=12 meses").data
+    assert found["count"] == 1 and found["results"][0]["title"] == "Produto 3"
+
+    doc_id = found["results"][0]["id"]
+    ficha = auth_client.get(f"{API}/sources/{src.id}/records/{doc_id}/").data
+    assert "garantia: 12 meses" in ficha["content"] and ficha["external_id"] == "item:3"
+    # registro de outra fonte não aparece por esta rota
+    outra = _source(tenant_id, "url", {"url": "https://x.com"})
+    assert auth_client.get(f"{API}/sources/{outra.id}/records/{doc_id}/").status_code == 404
+
+    # sem embeddings: prévia por palavra, avisando
+    def sem_embeddings(*a, **k):
+        raise EmbeddingError("Ollama fora do ar")
+
+    monkeypatch.setattr(views, "semantic_search", sem_embeddings)
+    prev = auth_client.post(
+        f"{API}/sources/{src.id}/agent-preview/", {"question": "garantia 12 meses"}, format="json"
+    ).data
+    assert prev["mode"] == "texto" and "Ollama fora do ar" in prev["notice"]
+    assert prev["results"][0]["title"] == "Produto 3"
+
+    # com embeddings: a MESMA busca do agente, restrita a esta fonte
+    chamadas = {}
+
+    def busca(q, tenant_id, top_k, source_ids):
+        chamadas["source_ids"] = source_ids
+        return [RetrievedChunk("garantia: 12 meses", "Produto 3", "Catálogo", 0.2, doc_id)]
+
+    monkeypatch.setattr(views, "semantic_search", busca)
+    prev = auth_client.post(
+        f"{API}/sources/{src.id}/agent-preview/", {"question": "garantia"}, format="json"
+    ).data
+    assert prev["mode"] == "semantica" and prev["results"][0]["score"] == 0.8
+    assert chamadas["source_ids"] == [src.id]
+    assert (
+        auth_client.post(f"{API}/sources/{src.id}/agent-preview/", {}, format="json").status_code
+        == 400
+    )

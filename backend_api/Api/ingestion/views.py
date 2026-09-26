@@ -185,6 +185,137 @@ class KnowledgeSourceViewSet(
         except ConnectorError as exc:
             return Response({"detail": str(exc)}, status=400)
 
+    RECORDS_PAGE = 25
+
+    @action(detail=True, methods=["get"])
+    def records(self, request, pk=None):
+        """Todos os registros que o conector trouxe (ativos), com busca e página."""
+        source = self.get_object()
+        docs = Document.objects.filter(source=source, is_active=True)
+        search = (request.query_params.get("search") or "").strip()[:200]
+        if search:
+            docs = docs.filter(Q(title__icontains=search) | Q(content__icontains=search))
+        total = docs.count()
+        try:
+            page = max(1, int(request.query_params.get("page", 1)))
+        except ValueError:
+            page = 1
+        start = (page - 1) * self.RECORDS_PAGE
+        rows = docs.order_by("-updated_at")[start : start + self.RECORDS_PAGE]
+        return Response(
+            {
+                "count": total,
+                "page": page,
+                "pages": max(1, -(-total // self.RECORDS_PAGE)),
+                "results": [
+                    {
+                        "id": d.id,
+                        "title": d.title,
+                        "status": d.status,
+                        "updated_at": d.updated_at,
+                        "excerpt": (d.metadata or {}).get("excerpt") or (d.content or "")[:280],
+                        "error": d.error_message,
+                    }
+                    for d in rows
+                ],
+            }
+        )
+
+    @action(detail=True, methods=["get"], url_path=r"records/(?P<doc_id>\d+)")
+    def record(self, request, pk=None, doc_id=None):
+        """Um registro inteiro, do jeito que os agentes leem (já com PII mascarada)."""
+        source = self.get_object()
+        doc = Document.objects.filter(source=source, is_active=True, pk=doc_id).first()
+        if doc is None:
+            return Response({"detail": "Registro não encontrado."}, status=404)
+        meta = {k: v for k, v in (doc.metadata or {}).items() if k not in ("links", "excerpt")}
+        return Response(
+            {
+                "id": doc.id,
+                "external_id": doc.external_id,
+                "title": doc.title,
+                "status": doc.status,
+                "error": doc.error_message,
+                "content": doc.content,
+                "metadata": meta,
+                "chunks": doc.chunks.count(),
+                "indexed_at": doc.indexed_at,
+                "updated_at": doc.updated_at,
+            }
+        )
+
+    @action(detail=True, methods=["post"], url_path="agent-preview")
+    def agent_preview(self, request, pk=None):
+        """
+        "O que um agente encontra aqui?" — a MESMA busca semântica que o agente
+        usa, restrita a este conector. Sem provedor de embeddings, cai numa
+        busca por palavra e diz isso (nunca finge que foi a busca do agente).
+        """
+        source = self.get_object()
+        question = str(request.data.get("question") or "").strip()[:500]
+        if not question:
+            return Response({"detail": "Escreva uma pergunta."}, status=400)
+        try:
+            chunks = semantic_search(
+                question, tenant_id=request.tenant_id, top_k=5, source_ids=[source.id]
+            )
+            return Response(
+                {
+                    "mode": "semantica",
+                    "notice": "",
+                    "results": [
+                        {
+                            "document_id": c.document_id,
+                            "title": c.document_title,
+                            "excerpt": c.content[:600],
+                            "score": round(max(0.0, 1 - c.distance), 3),
+                        }
+                        for c in chunks
+                    ],
+                }
+            )
+        except Exception as exc:  # embeddings fora do ar: prévia por palavra
+            notice = (
+                "A busca dos agentes não respondeu: o provedor de embeddings (EMBEDDING_PROVIDER, "
+                "Ollama por padrão) está fora do ar ou sem configuração. Enquanto isso os agentes "
+                "não encontram nada aqui; esta prévia usa busca por palavra. Detalhe: "
+                f"{exc}"
+            )[:500]
+        words = [w for w in question.split() if len(w) >= 3][:8] or [question]
+        cond = Q()
+        for w in words:
+            cond |= Q(title__icontains=w) | Q(content__icontains=w)
+        docs = Document.objects.filter(source=source, is_active=True).filter(cond)[:50]
+        scored = []
+        for d in docs:
+            text = f"{d.title}\n{d.content}".lower()
+            hits = sum(1 for w in words if w.lower() in text)
+            scored.append((hits / len(words), d))
+        scored.sort(key=lambda t: t[0], reverse=True)
+        return Response(
+            {
+                "mode": "texto",
+                "notice": notice,
+                "results": [
+                    {
+                        "document_id": d.id,
+                        "title": d.title,
+                        "excerpt": _snippet(d.content or "", words),
+                        "score": round(score, 3),
+                    }
+                    for score, d in scored[:5]
+                ],
+            }
+        )
+
+
+def _snippet(text: str, words: list[str], size: int = 600) -> str:
+    """Trecho em volta da primeira palavra encontrada (prévia por palavra)."""
+    low = text.lower()
+    pos = min((i for i in (low.find(w.lower()) for w in words) if i >= 0), default=0)
+    start = max(0, pos - size // 3)
+    return ("…" if start else "") + text[start : start + size]
+
 
 class WebhookReceiveView(APIView):
     """

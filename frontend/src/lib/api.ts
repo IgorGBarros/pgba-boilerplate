@@ -482,6 +482,59 @@ export async function getSourceOverview(id: number): Promise<SourceOverview> {
   return request<SourceOverview>(`/api/v1/ingestion/sources/${id}/overview/`);
 }
 
+export interface SourceRecord {
+  id: number;
+  title: string;
+  status: string;
+  updated_at: string;
+  excerpt: string;
+  error: string;
+}
+
+export interface SourceRecordsPage {
+  count: number;
+  page: number;
+  pages: number;
+  results: SourceRecord[];
+}
+
+export async function listSourceRecords(id: number, page = 1, search = ""): Promise<SourceRecordsPage> {
+  const qs = new URLSearchParams({ page: String(page) });
+  if (search.trim()) qs.set("search", search.trim());
+  return request<SourceRecordsPage>(`/api/v1/ingestion/sources/${id}/records/?${qs}`);
+}
+
+export interface SourceRecordDetail {
+  id: number;
+  external_id: string;
+  title: string;
+  status: string;
+  error: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  chunks: number;
+  indexed_at: string | null;
+  updated_at: string;
+}
+
+export async function getSourceRecord(id: number, docId: number): Promise<SourceRecordDetail> {
+  return request<SourceRecordDetail>(`/api/v1/ingestion/sources/${id}/records/${docId}/`);
+}
+
+export interface AgentPreview {
+  /** "semantica" = a mesma busca do agente; "texto" = embeddings fora do ar, busca por palavra. */
+  mode: "semantica" | "texto";
+  notice: string;
+  results: { document_id: number | null; title: string; excerpt: string; score: number }[];
+}
+
+export async function previewAgentSearch(id: number, question: string): Promise<AgentPreview> {
+  return request<AgentPreview>(`/api/v1/ingestion/sources/${id}/agent-preview/`, {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  });
+}
+
 export interface QueryTable {
   colunas: string[];
   linhas: unknown[][];

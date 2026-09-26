@@ -15,8 +15,13 @@ import {
   CheckCircle2,
   Clock,
   Code2,
+  ArrowLeft,
+  Bot,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Database,
+  Eye,
   FileSpreadsheet,
   Globe,
   Link2,
@@ -30,6 +35,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Trash2,
+  Search,
   Upload,
   Users,
   Webhook,
@@ -52,17 +58,23 @@ import {
   deleteKnowledgeSource,
   getSourceAccess,
   getSourceOverview,
+  getSourceRecord,
   listKnowledgeSources,
+  listSourceRecords,
+  previewAgentSearch,
   runSourceQuery,
   setSourceAccess,
   syncKnowledgeSource,
   testKnowledgeSourceConfig,
   updateKnowledgeSource,
+  type AgentPreview,
   type ConnectorQuery,
   type KnowledgeSource,
   type QueryTable,
   type SourceAccess,
   type SourceOverview,
+  type SourceRecordDetail,
+  type SourceRecordsPage,
 } from "@/lib/api";
 
 // ─── Catálogo ────────────────────────────────────────────────────────────────
@@ -565,7 +577,7 @@ function ConfigDialog({
 
 // ─── Painel "Dados do conector" ──────────────────────────────────────────────
 
-type PanelTab = "resumo" | "dados" | "execucoes" | "acesso";
+type PanelTab = "resumo" | "dados" | "agente" | "execucoes" | "acesso";
 
 function QueryRunner({ source, q }: { source: KnowledgeSource; q: ConnectorQuery }) {
   const params = (q.parametros ?? []).map((p) => p.split(":")[0]);
@@ -626,13 +638,249 @@ function QueryRunner({ source, q }: { source: KnowledgeSource; q: ConnectorQuery
   );
 }
 
-function SourcePanel({ source, onClose, onChanged }: { source: KnowledgeSource; onClose: () => void; onChanged: () => void }) {
+// ─── Painel: o caminho do dado até o agente ──────────────────────────────────
+
+type StepState = "done" | "active" | "error" | "todo";
+
+function StepDot({ state }: { state: StepState }) {
+  if (state === "done") return <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />;
+  if (state === "active") return <Loader2 className="size-4 shrink-0 animate-spin text-primary" />;
+  if (state === "error") return <AlertCircle className="size-4 shrink-0 text-destructive" />;
+  return <span className="block size-4 shrink-0 rounded-full border-2 border-border" />;
+}
+
+/** Conectou → trouxe dados → pesquisável → quem usa. Mostra onde parou. */
+function ConnectionSteps({ source, overview, sectors }: { source: KnowledgeSource; overview: SourceOverview | null; sectors: number }) {
+  const running = source.last_sync_status === "running";
+  const failed = source.last_sync_status === "error";
+  const byStatus = overview?.documents.by_status ?? {};
+  const total = overview?.documents.active ?? 0;
+  const indexed = byStatus.indexed ?? 0;
+  const errors = byStatus.error ?? 0;
+  const ran = Boolean(source.last_synced_at) || (overview?.runs.length ?? 0) > 0;
+
+  const steps: { label: string; detail: string; state: StepState }[] = [
+    {
+      label: "Conexão",
+      detail: failed && !total ? "falhou — veja a mensagem abaixo" : ran || running ? "respondeu" : "salva, ainda sem sync",
+      state: failed && !total ? "error" : ran || running ? "done" : "todo",
+    },
+    {
+      label: "Dados recebidos",
+      detail: running ? "buscando agora…" : `${total} registro(s)`,
+      state: running ? "active" : total ? "done" : failed ? "error" : "todo",
+    },
+    {
+      label: "Pesquisável pelos agentes",
+      detail: total ? `${indexed} de ${total}${errors ? ` · ${errors} com erro` : ""}` : "—",
+      state: !total ? "todo" : indexed === total ? "done" : errors && indexed + errors === total ? "error" : "active",
+    },
+    {
+      label: "Setores com acesso",
+      detail: sectors ? `${sectors} setor(es) + CEO` : "só CEO e Orquestrador-Geral",
+      state: sectors ? "done" : "todo",
+    },
+  ];
+  return (
+    <div className="space-y-2">
+      <ol className="grid gap-2 sm:grid-cols-4">
+        {steps.map((st, i) => (
+          <li key={st.label} className={`rounded-xl border p-3 ${st.state === "error" ? "border-destructive/30 bg-destructive/5" : st.state === "done" ? "border-emerald-500/30 bg-emerald-500/5" : "border-border bg-secondary/40"}`}>
+            <div className="flex items-center gap-2">
+              <StepDot state={st.state} />
+              <span className="text-[11px] uppercase tracking-wider text-muted-foreground">{i + 1}. {st.label}</span>
+            </div>
+            <p className="mt-1 text-sm font-medium">{st.detail}</p>
+          </li>
+        ))}
+      </ol>
+      {errors > 0 && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {errors} registro(s) chegaram mas não entraram na busca: o provedor de embeddings não respondeu. Os dados
+          estão salvos (veja em Registros); confira EMBEDDING_PROVIDER (Ollama por padrão) e sincronize de novo.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** "campo: valor" por linha (REST, Notion...) vira tabela; o resto fica texto. */
+function asFields(content: string): [string, string][] | null {
+  const lines = content.split("\n").filter((l) => l.trim());
+  if (!lines.length || lines.length > 300) return null;
+  const pairs: [string, string][] = [];
+  for (const l of lines) {
+    const m = /^([^:\n]{1,80}):\s(.*)$/.exec(l);
+    if (!m) return null;
+    pairs.push([m[1], m[2]]);
+  }
+  return pairs;
+}
+
+function RecordDetailView({ sourceId, docId, onBack }: { sourceId: number; docId: number; onBack: () => void }) {
+  const [rec, setRec] = useState<SourceRecordDetail | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    getSourceRecord(sourceId, docId).then(setRec).catch((e) => setErr(e instanceof Error ? e.message : "Erro ao abrir."));
+  }, [sourceId, docId]);
+  const fields = rec ? asFields(rec.content) : null;
+  const meta = rec ? Object.entries(rec.metadata).filter(([, v]) => v !== "" && v !== null && typeof v !== "object") : [];
+  return (
+    <div className="min-w-0 space-y-3">
+      <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="size-3.5" /> Voltar aos registros</Button>
+      {err && <p className="text-sm text-destructive">{err}</p>}
+      {!rec && !err && <p className="py-6 text-center text-sm text-muted-foreground">Carregando…</p>}
+      {rec && (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="font-display text-base font-semibold">{rec.title}</h4>
+            <Pill tone={rec.status === "indexed" ? "ok" : rec.status === "error" ? "error" : "warn"}>
+              {rec.status === "indexed" ? `pesquisável · ${rec.chunks} trecho(s)` : rec.status === "error" ? "fora da busca" : "indexando"}
+            </Pill>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            ID na origem: <code>{rec.external_id}</code> · atualizado {fmtDate(rec.updated_at)}
+            {meta.map(([k, v]) => <span key={k}> · {k}: {String(v)}</span>)}
+          </p>
+          {rec.error && (
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              Chegou, mas ainda não está na busca dos agentes: falhou ao gerar os embeddings ({rec.error}). Confira o
+              provedor de embeddings (EMBEDDING_PROVIDER — Ollama por padrão) e sincronize de novo.
+            </p>
+          )}
+          {fields ? (
+            <div className="overflow-hidden rounded-xl border border-border">
+              <table className="w-full text-sm">
+                <tbody>
+                  {fields.map(([k, v], i) => (
+                    <tr key={i} className="border-b border-border last:border-0 align-top">
+                      <td className="w-1/3 bg-secondary/40 px-3 py-1.5 font-mono text-xs text-muted-foreground break-all">{k}</td>
+                      <td className="px-3 py-1.5 break-words">{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-secondary/40 p-3 text-xs">{rec.content}</pre>
+          )}
+          <p className="text-[11px] text-muted-foreground">É exatamente este texto que os agentes leem — e-mail, CPF e telefone já mascarados (LGPD).</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function RecordsBrowser({ source, refreshKey }: { source: KnowledgeSource; refreshKey: string }) {
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [term, setTerm] = useState("");
+  const [data, setData] = useState<SourceRecordsPage | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState<number | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setTerm(search); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+  useEffect(() => {
+    setLoading(true);
+    listSourceRecords(source.id, page, term)
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [source.id, page, term, refreshKey]);
+
+  if (open !== null) return <RecordDetailView sourceId={source.id} docId={open} onBack={() => setOpen(null)} />;
+  return (
+    <div className="min-w-0 space-y-2">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar no título ou no conteúdo…" className="pl-8" />
+      </div>
+      {data?.results.length ? data.results.map((d) => (
+        <button key={d.id} type="button" onClick={() => setOpen(d.id)} className="block w-full rounded-lg border border-border p-3 text-left transition hover:border-ring">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-medium">{d.title}</p>
+            <span title={d.error || undefined}>
+              <Pill tone={d.status === "indexed" ? "ok" : d.status === "error" ? "error" : "warn"}>
+                {d.status === "indexed" ? "pesquisável" : d.status === "error" ? "fora da busca" : "indexando"}
+              </Pill>
+            </span>
+          </div>
+          <p className="mt-1 line-clamp-2 whitespace-pre-line text-xs text-muted-foreground">{d.excerpt}</p>
+        </button>
+      )) : (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          {loading ? "Carregando…" : term ? "Nada encontrado." : source.webhook_url ? "Nenhum registro ainda — aguardando o primeiro POST no webhook." : "Nenhum registro ainda — sincronize o conector."}
+        </p>
+      )}
+      {data && data.count > 0 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>{data.count} registro(s){term ? ` com “${term}”` : ""} · clique para ver inteiro</span>
+          <span className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="size-7" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} title="Anterior"><ChevronLeft className="size-4" /></Button>
+            {data.page} / {data.pages}
+            <Button variant="ghost" size="icon" className="size-7" disabled={page >= data.pages} onClick={() => setPage((p) => p + 1)} title="Próxima"><ChevronRight className="size-4" /></Button>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentPreviewBox({ source }: { source: KnowledgeSource }) {
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<AgentPreview | null>(null);
+  const [open, setOpen] = useState<number | null>(null);
+  if (open !== null) return <RecordDetailView sourceId={source.id} docId={open} onBack={() => setOpen(null)} />;
+  return (
+    <div className="min-w-0 space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Faça uma pergunta como um agente faria e veja quais trechos <strong className="text-foreground">deste conector</strong> ele
+        receberia como contexto. É a mesma busca que o agente usa.
+      </p>
+      <form className="flex gap-2" onSubmit={async (e) => {
+        e.preventDefault();
+        if (!q.trim()) return;
+        setBusy(true);
+        try {
+          setRes(await previewAgentSearch(source.id, q));
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Não foi possível buscar.");
+        } finally {
+          setBusy(false);
+        }
+      }}>
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ex.: qual a garantia do produto X?" />
+        <Button type="submit" disabled={busy || !q.trim()}>{busy ? <Loader2 className="size-3.5 animate-spin" /> : <Bot className="size-3.5" />} Buscar</Button>
+      </form>
+      {res?.notice && <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">{res.notice}</p>}
+      {res && (res.results.length ? res.results.map((r, i) => (
+        <button key={i} type="button" disabled={r.document_id === null} onClick={() => r.document_id !== null && setOpen(r.document_id)}
+          className="block w-full rounded-lg border border-border p-3 text-left transition hover:border-ring">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-medium">{r.title}</p>
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{res.mode === "semantica" ? "similaridade" : "palavras"} {Math.round(r.score * 100)}%</span>
+          </div>
+          <p className="mt-1 line-clamp-4 whitespace-pre-line text-xs text-muted-foreground">{r.excerpt}</p>
+        </button>
+      )) : (
+        <p className="py-6 text-center text-sm text-muted-foreground">Nenhum trecho deste conector responde a essa pergunta.</p>
+      ))}
+    </div>
+  );
+}
+
+function SourcePanel({ source, initialTab = "resumo", onClose, onChanged }: { source: KnowledgeSource; initialTab?: PanelTab; onClose: () => void; onChanged: () => void }) {
   const def = connectorByType[source.source_type];
-  const [tab, setTab] = useState<PanelTab>("resumo");
+  const [tab, setTab] = useState<PanelTab>(initialTab);
   const [overview, setOverview] = useState<SourceOverview | null>(null);
   const [access, setAccess] = useState<SourceAccess | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [savingAccess, setSavingAccess] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(() => {
     getSourceOverview(source.id).then(setOverview).catch(() => setOverview(null));
@@ -648,12 +896,30 @@ function SourcePanel({ source, onClose, onChanged }: { source: KnowledgeSource; 
   const structured = source.mode === "structured";
   const tabs: { id: PanelTab; label: string }[] = [
     { id: "resumo", label: "Resumo" },
-    { id: "dados", label: structured ? "Consultas" : "Registros" },
+    { id: "dados", label: structured ? "Consultas" : `Registros${overview ? ` (${overview.documents.active})` : ""}` },
+    ...(structured ? [] : [{ id: "agente" as PanelTab, label: "O que o agente encontra" }]),
     { id: "execucoes", label: "Execuções" },
     { id: "acesso", label: "Quem acessa" },
   ];
   const errors = overview?.documents.by_status.error ?? 0;
   const pending = (overview?.documents.by_status.pending ?? 0) + (overview?.documents.by_status.processing ?? 0);
+
+  // Enquanto busca ou indexa, o painel se atualiza sozinho (até ~2 min).
+  const live = source.last_sync_status === "running" || pending > 0;
+  useEffect(() => {
+    if (!live) return;
+    let ticks = 0;
+    const t = setInterval(() => {
+      if (++ticks > 40) return clearInterval(t);
+      getSourceOverview(source.id).then(setOverview).catch(() => undefined);
+    }, 3000);
+    return () => clearInterval(t);
+  }, [live, source.id]);
+  // Sync terminou (a lista de conectores traz o status novo): recarrega o resumo.
+  useEffect(() => {
+    getSourceOverview(source.id).then(setOverview).catch(() => undefined);
+  }, [source.id, source.last_sync_status, source.last_synced_at]);
+  const refreshKey = `${source.last_synced_at}|${overview?.documents.active ?? 0}|${overview?.documents.by_status.indexed ?? 0}`;
   const whoCount = access ? access.sectors.filter((s) => s.access).length : 0;
 
   return (
@@ -669,10 +935,10 @@ function SourcePanel({ source, onClose, onChanged }: { source: KnowledgeSource; 
           </div>
         </DialogHeader>
 
-        <div className="flex gap-1 border-b border-border">
+        <div className="flex gap-1 overflow-x-auto border-b border-border">
           {tabs.map((t) => (
             <button key={t.id} type="button" onClick={() => setTab(t.id)}
-              className={`-mb-px border-b-2 px-3 py-2 text-sm transition-colors ${tab === t.id ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors ${tab === t.id ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
               {t.label}
             </button>
           ))}
@@ -680,27 +946,50 @@ function SourcePanel({ source, onClose, onChanged }: { source: KnowledgeSource; 
 
         {tab === "resumo" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {(structured
-                ? [
-                    ["Consultas", String(overview?.queries.length ?? "—")],
-                    ["Setores com acesso", String(whoCount)],
-                    ["Última execução", fmtDate(overview?.runs[0]?.started_at ?? null)],
-                    ["Modo", "Só leitura"],
-                  ]
-                : [
-                    ["Registros", String(overview?.documents.active ?? "—")],
-                    ["Indexando / com erro", `${pending} / ${errors}`],
-                    ["Último sync", fmtDate(source.last_synced_at)],
-                    ["Setores com acesso", String(whoCount)],
-                  ]
-              ).map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-border bg-secondary/40 p-3">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
-                  <p className="mt-1 font-display text-lg font-semibold">{value}</p>
+            {structured ? (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {[
+                  ["Consultas", String(overview?.queries.length ?? "—")],
+                  ["Setores com acesso", String(whoCount)],
+                  ["Última execução", fmtDate(overview?.runs[0]?.started_at ?? null)],
+                  ["Modo", "Só leitura"],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-border bg-secondary/40 p-3">
+                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
+                    <p className="mt-1 font-display text-lg font-semibold">{value}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <>
+                <ConnectionSteps source={source} overview={overview} sectors={whoCount} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="mr-auto text-xs text-muted-foreground">
+                    Último sync {fmtDate(source.last_synced_at)}
+                    {source.sync_interval_minutes ? ` · automático a cada ${source.sync_interval_minutes} min` : " · só manual"}
+                    {errors ? ` · ${errors} com erro` : ""}
+                  </span>
+                  {def?.syncs && (
+                    <Button size="sm" variant="outline" disabled={syncing || source.last_sync_status === "running"} onClick={async () => {
+                      setSyncing(true);
+                      try {
+                        const r = await syncKnowledgeSource(source.id);
+                        if (!r.queued) toast.success(r.detail);
+                        onChanged();
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Erro ao sincronizar.");
+                      } finally {
+                        setSyncing(false);
+                      }
+                    }}>
+                      <RefreshCw className={`size-3.5 ${syncing || source.last_sync_status === "running" ? "animate-spin" : ""}`} /> Sincronizar agora
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" onClick={() => setTab("dados")}><Eye className="size-3.5" /> Ver registros</Button>
+                  <Button size="sm" onClick={() => setTab("agente")}><Bot className="size-3.5" /> Testar como agente</Button>
                 </div>
-              ))}
-            </div>
+              </>
+            )}
             {source.last_sync_message && (
               <p className={`rounded-lg border px-3 py-2 text-sm ${source.last_sync_status === "error" ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-border bg-secondary/40 text-muted-foreground"}`}>
                 {source.last_sync_message}
@@ -730,33 +1019,9 @@ function SourcePanel({ source, onClose, onChanged }: { source: KnowledgeSource; 
           </div>
         )}
 
-        {tab === "dados" && !structured && (
-          <div className="space-y-2">
-            {overview?.recent_documents.length ? overview.recent_documents.map((d) => (
-              <div key={d.id} className="rounded-lg border border-border p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-sm font-medium">{d.title}</p>
-                  <Pill tone={d.status === "indexed" ? "ok" : d.status === "error" ? "error" : "warn"}>
-                    {d.status === "indexed" ? "pesquisável" : d.status === "error" ? "erro" : "indexando"}
-                  </Pill>
-                </div>
-                {d.error ? (
-                  <p className="mt-1 text-xs text-destructive">
-                    Chegou, mas ainda não está na busca: falhou ao gerar os embeddings ({d.error}). Confira o provedor
-                    de embeddings (EMBEDDING_PROVIDER — Ollama por padrão) e sincronize de novo.
-                  </p>
-                ) : (
-                  <p className="mt-1 line-clamp-3 whitespace-pre-line text-xs text-muted-foreground">{d.excerpt}</p>
-                )}
-              </div>
-            )) : (
-              <p className="py-8 text-center text-sm text-muted-foreground">Nenhum registro ainda — sincronize o conector.</p>
-            )}
-            {(overview?.documents.active ?? 0) > 8 && (
-              <p className="text-center text-xs text-muted-foreground">Mostrando os 8 mais recentes de {overview?.documents.active}. Todos em Conhecimento → Biblioteca.</p>
-            )}
-          </div>
-        )}
+        {tab === "dados" && !structured && <RecordsBrowser source={source} refreshKey={refreshKey} />}
+
+        {tab === "agente" && !structured && <AgentPreviewBox source={source} />}
 
         {tab === "dados" && structured && (
           <div className="min-w-0 space-y-2">
@@ -883,6 +1148,9 @@ function ConnectorCard({
         )}
       </button>
       <div className="flex shrink-0 items-center gap-0.5">
+        <Button variant="outline" size="sm" className="mr-1 h-8" onClick={onOpen} title="Ver os dados que chegaram">
+          <Eye className="size-3.5" /> <span className="hidden sm:inline">Ver dados</span>
+        </Button>
         {def?.syncs && (
           <Button variant="ghost" size="icon" className="size-8" onClick={onSync} disabled={syncing} title="Sincronizar agora">
             <RefreshCw className={`size-4 ${syncing ? "animate-spin" : ""}`} />
@@ -901,7 +1169,7 @@ export function ConnectorsTab() {
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState<{ def: ConnectorDef; source?: KnowledgeSource } | null>(null);
-  const [panel, setPanel] = useState<KnowledgeSource | null>(null);
+  const [panel, setPanel] = useState<{ source: KnowledgeSource; tab?: PanelTab } | null>(null);
   const [removing, setRemoving] = useState<KnowledgeSource | null>(null);
   const [syncingId, setSyncingId] = useState<number | null>(null);
 
@@ -938,6 +1206,21 @@ export function ConnectorsTab() {
     }
   };
 
+  // Conector novo: já busca os dados e abre o painel pra ver o que chegou.
+  const handleSaved = async (ks: KnowledgeSource, created: boolean) => {
+    if (!created) return void load();
+    const syncs = connectorByType[ks.source_type]?.syncs ?? false;
+    if (syncs) {
+      try {
+        await syncKnowledgeSource(ks.id);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Erro ao sincronizar.");
+      }
+    }
+    await load();
+    setPanel({ source: ks, tab: ks.mode === "structured" ? "dados" : "resumo" });
+  };
+
   const fallbackDef = (s: KnowledgeSource): ConnectorDef => ({
     source_type: s.source_type, label: s.source_type, description: "Tipo sem formulário", mode: s.mode,
     icon: <Plug className="size-5" />, color: "text-muted-foreground", syncs: false, fields: [],
@@ -966,7 +1249,7 @@ export function ConnectorsTab() {
               <ConnectorCard
                 key={s.id}
                 source={s}
-                onOpen={() => setPanel(s)}
+                onOpen={() => setPanel({ source: s })}
                 onEdit={() => setDialog({ def: connectorByType[s.source_type] ?? fallbackDef(s), source: s })}
                 onDelete={() => setRemoving(s)}
                 onSync={() => void handleSync(s)}
@@ -1004,12 +1287,14 @@ export function ConnectorsTab() {
           def={dialog.def}
           initial={dialog.source}
           onClose={() => setDialog(null)}
-          onSaved={() => void load()}
+          onSaved={(ks) => void handleSaved(ks, !dialog.source)}
         />
       )}
       {panel && (
         <SourcePanel
-          source={sources.find((s) => s.id === panel.id) ?? panel}
+          key={panel.source.id}
+          source={sources.find((s) => s.id === panel.source.id) ?? panel.source}
+          initialTab={panel.tab}
           onClose={() => setPanel(null)}
           onChanged={() => void load()}
         />

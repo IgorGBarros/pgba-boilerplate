@@ -190,8 +190,16 @@ Regras (não afrouxar):
 **Setor com várias fontes**: `Sector.knowledge_source` (cérebro principal) +
 `Sector.extra_knowledge_sources` (M2M). `agency.services.sector_source_ids`
 é a união; `_rag_scope_for` usa ela pra RAG E pras consultas estruturadas.
-**Painel do conector** (`connectors.tsx` → `SourcePanel`): Resumo, Registros
-(ou Consultas, com "Testar consulta"), Execuções e **Quem acessa**
+**Painel do conector** (`connectors.tsx` → `SourcePanel`, botão "Ver dados";
+abre sozinho ao criar um conector, que já sincroniza): Resumo com o caminho
+do dado — Conexão → Dados recebidos → Pesquisável pelos agentes → Setores
+com acesso, atualizando ao vivo enquanto busca/indexa —, Registros (todos,
+busca e página: `GET sources/{id}/records/`; ficha inteira como o agente lê,
+`campo: valor` vira tabela: `records/{doc}/`), **O que o agente encontra**
+(`POST sources/{id}/agent-preview/`: a MESMA `semantic_search` do agente,
+restrita à fonte; sem embeddings cai em busca por palavra e AVISA — nunca
+finge que foi a busca do agente), ou Consultas (com "Testar consulta") nos
+estruturados, Execuções e **Quem acessa**
 (`GET/POST /api/v1/agency/source-access/` — fica em `agency` porque
 `ingestion` não sabe o que é setor; o POST só mexe nas fontes adicionais).
 
