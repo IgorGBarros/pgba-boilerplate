@@ -42,7 +42,9 @@ sugestões.
 5. **Auditoria automática.** Models que representam entidades de negócio
    usam `AuditMixin` (django-simple-history) e `SoftDeleteMixin` (nunca
    `DELETE` físico de dado de tenant, exceto rotina explícita de expurgo
-   LGPD).
+   LGPD). No ViewSet, `core.mixins.SoftDeleteViewMixin` (antes do mixin de
+   tenant no MRO) esconde o excluído da lista e faz o `DELETE` virar
+   `is_active=False` — `ModelViewSet` puro apaga de verdade.
 6. **A IA nunca gera nem executa SQL livre.** Toda pergunta sobre dado
    estruturado (`orchestration`) passa por uma lista fechada de funções
    pré-aprovadas por humano (`orchestration/registry.py`). O LLM escolhe
@@ -737,6 +739,61 @@ diferente).
 Repositório criado via **Contents API do GitHub** (`PUT .../contents/{path}`
 por arquivo), não `git clone`+`push` — evita depender do binário `git`
 dentro do processo do Django, mais frágil num backend web.
+
+### Vertical `erp` — conceito SAP Business One
+
+`backend_api/Api/erp/` + `frontend/src/components/empresa/erp*.tsx`
+(Empresa → Módulos → ERP). Mesmas ideias do SAP B1, sem copiar nada dele:
+
+- **Parceiro de negócio único** (`ParceiroNegocio`, `/erp/parceiros/`):
+  cliente, fornecedor e lead numa tabela, com código por tipo (`C00001`,
+  `F00001`, `L00001`). Era `erp.Fornecedor` (migração `0007`, `RenameModel`
+  — dados e FKs preservados); `/erp/fornecedores/` continua, filtrado.
+  `compras.Fornecedor` é outra coisa: a descoberta de fornecedor pra cotação.
+  CPF sai mascarado na API (`mask_cpf`), mandar o valor mascarado de volta
+  não apaga o CPF.
+- **Itens** (`ItemEstoque.tipo_item`): `material` controla estoque (NCM pra
+  NF-e); `servico` não tem saldo (código da LC 116 pra NFS-e) e
+  `registrar_movimentacao` recusa. `erp.services.registrar_movimentacao` é
+  o único lugar que mexe em saldo (antes a regra estava na view).
+- **Todo documento carrega parceiro, projeto do CRM, centro de custo
+  (`controladoria`) e setor (`agency.Sector`)** — `LancamentoFinanceiro`,
+  `ContratoServico`, `Funcionario` (RH no setor do organograma).
+  `TenantFKMixin` (serializers) recusa FK de outro tenant ou excluído.
+- **Contrato de serviço** (`ContratoServico` + `ItemContrato`), com ou sem
+  material: número `CT-AAAA-NNNN`, nome do projeto, breve descrição, início,
+  fim, valor, periodicidade e dia de vencimento. Com linhas, o valor é a
+  soma delas (`recalcular_valor`). Fluxo em `erp/services.py`:
+
+  ```
+  crm.Project (sera_contrato=True) → contrato_de_projeto() → rascunho
+     → ativar() (material exige linha de material)
+     → gerar_faturas()     LancamentoFinanceiro a receber, 1 por parcela
+     → baixar_material()   saída de estoque, tudo ou nada (select_for_update)
+     → gerar_nota_fiscal() NotaFiscal "rascunho" (não transmite)
+  ```
+
+  Integrações idempotentes por `LancamentoFinanceiro.referencia_origem`
+  (única por tenant): `CT-2026-0001#3`, `pedido:12`.
+- **CRM → contrato**: `Deal`/`Project.sera_contrato` (+ `contrato_com_material`),
+  o negócio ganho passa pro projeto; o projeto marcado aparece em ERP →
+  Contratos ("aguardando contrato", `contratos/projetos-pendentes/`) e o
+  serializer do projeto devolve `contrato` quando já existe.
+- **Compras → financeiro**: pedido de compra `entregue`
+  (`compras.services.avancar_status_pedido`) vira conta a pagar
+  (`erp.services.conta_a_pagar_do_pedido`).
+- **Nota fiscal**: o ERP monta a NFS-e como rascunho e
+  `GET /erp/fiscal/prontidao/` diz o que falta (dados da empresa em
+  `DadosEmpresa`, `/erp/empresa/`). **Não transmite**: falta certificado A1
+  e um emissor integrado — `docs/NOTA_FISCAL.md` tem o que precisa e o
+  caminho recomendado (provedor de API via `integrations`).
+- **IA dos setores**: `erp/ai_functions.py` registra `erp_contratos_resumo`,
+  `erp_financeiro_resumo` e `erp_itens_abaixo_do_minimo` (só leitura, risco
+  `low`) — é assim que o agente de qualquer setor consulta o ERP.
+- **Tela**: `ErpCrud` (`erp-crud.tsx`) é o CRUD genérico (tabela, busca no
+  servidor, filtros, formulário com erro por campo do DRF, exclusão lógica);
+  cada aba só descreve campos e colunas (`erp-modulos.tsx`). Listas pedem
+  `page_size=500` (`ErpPagination`) e avisam "mostrando N de M" se passar.
 
 ## 8. Princípios GenAI4EU aplicados
 

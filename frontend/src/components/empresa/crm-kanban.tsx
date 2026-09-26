@@ -5,7 +5,7 @@ import {
   CheckCircle2, XCircle, Settings, Pencil, Trash2, Bot,
   ArrowRight, Loader2, Radio, MessageCircle, Calendar, Package2,
   ChevronRight, GripVertical, Palette, MapPin, Download, RefreshCw,
-  BookOpen, RefreshCcw, FileText, ShoppingCart,
+  BookOpen, RefreshCcw, FileText, FileSignature, ShoppingCart,
 } from "lucide-react";
 import { CRMPreCompra } from "./crm-pre-compra";
 import { CRMCompra } from "./crm-compra";
@@ -354,6 +354,68 @@ function LeadCard({
 
 // ─── Deal Card ────────────────────────────────────────────────────────────────
 
+// ─── Contrato de serviço (ERP) ────────────────────────────────────────────────
+
+/**
+ * "Será contrato?" — marcado no negócio, passa pro projeto quando ele é ganho;
+ * marcado no projeto, ele aparece no ERP → Contratos como "aguardando contrato"
+ * (o contrato nasce com nome, descrição, datas e valor do projeto).
+ */
+function ContratoFlags({
+  seraContrato,
+  comMaterial,
+  onChange,
+}: {
+  seraContrato: boolean;
+  comMaterial: boolean;
+  onChange: (flags: { sera_contrato: boolean; contrato_com_material: boolean }) => void;
+}) {
+  return (
+    <div className="space-y-2 rounded-lg border border-border bg-secondary/40 p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Faturamento</p>
+      <label className="flex cursor-pointer items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5 size-4 accent-primary"
+          checked={seraContrato}
+          onChange={(e) => onChange({ sera_contrato: e.target.checked, contrato_com_material: e.target.checked && comMaterial })}
+        />
+        <span>
+          Será contrato de serviço
+          <span className="block text-xs text-muted-foreground">Gera o contrato no ERP (início, fim, valor e descrição do projeto).</span>
+        </span>
+      </label>
+      {seraContrato && (
+        <label className="ml-6 flex cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="size-4 accent-primary"
+            checked={comMaterial}
+            onChange={(e) => onChange({ sera_contrato: true, contrato_com_material: e.target.checked })}
+          />
+          Inclui material (baixa do estoque)
+        </label>
+      )}
+    </div>
+  );
+}
+
+function ContratoBadge({ item }: { item: { sera_contrato: boolean; contrato_com_material: boolean; contrato?: CRMProject["contrato"] } }) {
+  if (item.contrato) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-1.5 text-[9px] font-medium text-success" title={`Contrato ${item.contrato.status} no ERP`}>
+        <FileSignature className="size-2.5" />{item.contrato.numero}
+      </span>
+    );
+  }
+  if (!item.sera_contrato) return null;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-1.5 text-[9px] font-medium text-warning" title="Será faturado como contrato de serviço no ERP">
+      <FileSignature className="size-2.5" />contrato{item.contrato_com_material ? " + material" : ""}
+    </span>
+  );
+}
+
 function DealCard({
   deal, onDragStart, onClick,
 }: {
@@ -386,6 +448,7 @@ function DealCard({
               <Calendar className="size-3" />{fmtDate(deal.data_fechamento_previsto)}
             </span>
           )}
+          <ContratoBadge item={deal} />
           {deal.projects_count > 0 && (
             <span className="flex items-center gap-0.5 text-[10px] text-emerald-600 dark:text-emerald-400">
               <Package2 className="size-3" />{deal.projects_count}
@@ -433,6 +496,7 @@ function ProjectCard({
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-muted-foreground">
+          <ContratoBadge item={project} />
           {project.data_fim_previsto && (
             <span className={`flex items-center gap-0.5 text-[10px] ${overdue ? "text-red-600 dark:text-red-400" : ""}`}>
               <Calendar className="size-3" />{fmtDate(project.data_fim_previsto)}
@@ -650,6 +714,10 @@ function DealFormDialog({
     data_fechamento_previsto: initial?.data_fechamento_previsto ?? "",
     observacoes: initial?.observacoes ?? "",
   });
+  const [flags, setFlags] = useState({
+    sera_contrato: initial?.sera_contrato ?? false,
+    contrato_com_material: initial?.contrato_com_material ?? false,
+  });
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -659,6 +727,7 @@ function DealFormDialog({
     try {
       const payload = {
         ...form,
+        ...flags,
         valor: form.valor || null,
         data_fechamento_previsto: form.data_fechamento_previsto || null,
         stage: defaultStage?.id ?? initial?.stage ?? null,
@@ -698,6 +767,7 @@ function DealFormDialog({
             <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Previsão de fechamento</label>
             <Input type="date" value={form.data_fechamento_previsto} onChange={e => set("data_fechamento_previsto", e.target.value)} className="bg-background" />
           </div>
+          <ContratoFlags seraContrato={flags.sera_contrato} comMaterial={flags.contrato_com_material} onChange={setFlags} />
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Observações</label>
             <textarea value={form.observacoes} onChange={e => set("observacoes", e.target.value)} rows={3} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring" />
@@ -745,6 +815,10 @@ function ProjectFormDialog({
     data_fim_previsto: initial?.data_fim_previsto ?? "",
     observacoes: initial?.observacoes ?? "",
   });
+  const [flags, setFlags] = useState({
+    sera_contrato: initial?.sera_contrato ?? false,
+    contrato_com_material: initial?.contrato_com_material ?? false,
+  });
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -754,6 +828,7 @@ function ProjectFormDialog({
     try {
       const payload = {
         ...form,
+        ...flags,
         data_inicio: form.data_inicio || null,
         data_fim_previsto: form.data_fim_previsto || null,
         stage: defaultStage?.id ?? initial?.stage ?? null,
@@ -798,6 +873,13 @@ function ProjectFormDialog({
               <Input type="date" value={form.data_fim_previsto} onChange={e => set("data_fim_previsto", e.target.value)} className="bg-background" />
             </div>
           </div>
+          {initial?.contrato ? (
+            <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">
+              Contrato {initial.contrato.numero} ({initial.contrato.status}) já criado no ERP.
+            </p>
+          ) : (
+            <ContratoFlags seraContrato={flags.sera_contrato} comMaterial={flags.contrato_com_material} onChange={setFlags} />
+          )}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Observações</label>
             <textarea value={form.observacoes} onChange={e => set("observacoes", e.target.value)} rows={3} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring" />
@@ -1437,6 +1519,13 @@ function DealDetailModal({
                 { icon: <DollarSign className="size-4" />, label: "Valor", value: local.valor ? fmtCurrency(local.valor, local.moeda) : null },
                 { icon: <Calendar className="size-4" />, label: "Previsão de fechamento", value: local.data_fechamento_previsto ? fmtDate(local.data_fechamento_previsto) : null },
                 { icon: <MessageSquare className="size-4" />, label: "Lead de origem", value: local.lead_nome },
+                {
+                  icon: <FileSignature className="size-4" />,
+                  label: "Faturamento",
+                  value: local.sera_contrato
+                    ? `contrato de serviço${local.contrato_com_material ? " com material" : ""}`
+                    : null,
+                },
               ].filter(r => r.value).map(r => (
                 <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
                   <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>
@@ -1581,6 +1670,15 @@ function ProjectDetailModal({
                 { icon: <CheckCircle2 className="size-4" />, label: "Entregue em", value: local.data_fim_realizado ? fmtDate(local.data_fim_realizado) : null },
                 { icon: <DollarSign className="size-4" />, label: "Deal de origem", value: local.deal_titulo },
                 { icon: <MessageSquare className="size-4" />, label: "Lead de origem", value: local.lead_nome },
+                {
+                  icon: <FileSignature className="size-4" />,
+                  label: "Contrato (ERP)",
+                  value: local.contrato
+                    ? `${local.contrato.numero} · ${local.contrato.status}`
+                    : local.sera_contrato
+                      ? `aguardando no ERP${local.contrato_com_material ? " (com material)" : ""}`
+                      : null,
+                },
               ].filter(r => r.value).map(r => (
                 <div key={r.label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/30">
                   <span className="text-muted-foreground mt-0.5 shrink-0">{r.icon}</span>

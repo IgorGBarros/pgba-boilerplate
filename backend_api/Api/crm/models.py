@@ -228,6 +228,9 @@ class Deal(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     moeda = models.CharField(max_length=10, default="BRL", blank=True)
     data_fechamento_previsto = models.DateField(null=True, blank=True)
     observacoes = models.TextField(blank=True)
+    # Negócio vai virar contrato de serviço no ERP? Passa pro Project criado a partir dele.
+    sera_contrato = models.BooleanField(default=False)
+    contrato_com_material = models.BooleanField(default=False)
 
     outcome = models.CharField(max_length=30, choices=OUTCOME_CHOICES, blank=True, default="")
     created_at = models.DateTimeField(default=timezone.now)
@@ -284,6 +287,10 @@ class Project(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     data_fim_previsto = models.DateField(null=True, blank=True)
     data_fim_realizado = models.DateField(null=True, blank=True)
     observacoes = models.TextField(blank=True)
+    # Este projeto será faturado como contrato de serviço (erp.ContratoServico)?
+    # Marcado, ele aparece no ERP → Contratos como "aguardando contrato".
+    sera_contrato = models.BooleanField(default=False)
+    contrato_com_material = models.BooleanField(default=False)
 
     outcome = models.CharField(max_length=30, choices=OUTCOME_CHOICES, blank=True, default="")
     created_at = models.DateTimeField(default=timezone.now)
