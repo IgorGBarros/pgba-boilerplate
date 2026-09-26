@@ -25,6 +25,8 @@ class ServiceCredential(TenantMixin, models.Model):
         HOSTINGER = "hostinger", "Hostinger"
         # token = chave da API Pública do DataJud (CNJ) — andamentos de processos
         DATAJUD = "datajud", "DataJud (CNJ)"
+        # account_ref = URL da API do MoneyPrinterTurbo; token = app.api_key (opcional)
+        MONEYPRINTER = "moneyprinter", "MoneyPrinterTurbo"
 
     provider = models.CharField(max_length=20, choices=Provider.choices)
     label = models.CharField(max_length=100, blank=True)

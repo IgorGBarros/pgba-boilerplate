@@ -52,7 +52,9 @@ class ServiceCredentialSerializer(serializers.ModelSerializer):
             return "(erro ao decifrar — confira ENCRYPTION_KEY)"
 
     def get_configured(self, obj):
-        return bool(obj._encrypted_token)
+        # MoneyPrinterTurbo pode rodar sem chave (rede confiável): a URL basta
+        so_url = obj.provider == "moneyprinter" and bool(obj.account_ref)
+        return bool(obj._encrypted_token) or so_url
 
 
 class ServerConnectionSerializer(serializers.ModelSerializer):

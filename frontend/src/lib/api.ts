@@ -3060,7 +3060,7 @@ export async function getProntidaoNotaFiscal(): Promise<ProntidaoNotaFiscal> {
 
 // --- integrations: painel administrativo --------------------------------------
 
-export type CredentialProvider = "github" | "n8n" | "hostinger" | "datajud" | "vercel" | "render" | "supabase";
+export type CredentialProvider = "github" | "n8n" | "hostinger" | "datajud" | "moneyprinter" | "vercel" | "render" | "supabase";
 
 export interface ServiceCredentialInfo {
   id: number;
@@ -3329,3 +3329,271 @@ export async function discoverMcpTools(sourceId: number): Promise<{ tools: McpTo
 export async function saveMcpTools(sourceId: number, ferramentas: { nome: string; risco: string }[]): Promise<{ ferramentas: { nome: string; risco: string }[] }> {
   return request(`/api/v1/ingestion/sources/${sourceId}/mcp-tools/`, { method: "POST", body: JSON.stringify({ ferramentas }) });
 }
+
+// ─── Marketing ───────────────────────────────────────────────────────────────
+
+export type RedeSocial = "instagram" | "tiktok" | "youtube" | "facebook" | "linkedin" | "x" | "discord" | "twitch";
+export type ProvedorOAuth = "meta" | "google" | "tiktok" | "linkedin" | "x" | "twitch";
+
+export interface PerfilMarca {
+  nome: string;
+  ramo: string;
+  descricao: string;
+  publico_alvo: string;
+  tom_de_voz: string;
+  pilares: string[];
+  diferenciais: string;
+  evitar: string;
+  hashtags: string;
+  cta_padrao: string;
+  site: string;
+  idioma: string;
+  cor_primaria: string;
+  cor_secundaria: string;
+  cor_texto: string;
+  tem_logo: boolean;
+  updated_at: string;
+}
+export interface RamoPreset { chave: string; nome: string; pilares: string[]; tom: string; aviso: string }
+
+export interface RedeInfo {
+  rede: RedeSocial;
+  nome: string;
+  limite: number;
+  aceita: ("texto" | "imagem" | "video")[];
+  exige_midia: boolean;
+  provedor: ProvedorOAuth | null;
+}
+export interface ContaSocial {
+  id: number;
+  rede: RedeSocial;
+  rede_nome: string;
+  provedor: ProvedorOAuth | null;
+  nome: string;
+  usuario: string;
+  conta_id: string;
+  url: string;
+  expira_em: string | null;
+  config: Record<string, string>;
+  status: "conectada" | "erro" | "expirada";
+  mensagem: string;
+  ultimo_teste: string | null;
+  conectada_por: string;
+  created_at: string;
+}
+export interface AppsRedes {
+  redirect_uri: string;
+  provedores: {
+    provedor: ProvedorOAuth;
+    nome: string;
+    redes: RedeSocial[];
+    portal: string;
+    escopos: string[];
+    app: { id: number; provedor: ProvedorOAuth; client_id: string; secret_definido: boolean; updated_at: string } | null;
+  }[];
+}
+export interface Midia {
+  id: number;
+  tipo: "imagem" | "video";
+  origem: "upload" | "criativo" | "corte" | "video_ia";
+  origem_nome: string;
+  titulo: string;
+  formato: string;
+  largura: number;
+  altura: number;
+  duracao: number;
+  tamanho: number;
+  mime: string;
+  legenda_sugerida: string;
+  dados: Record<string, unknown>;
+  job: number | null;
+  created_at: string;
+}
+export type StatusPublicacao = "rascunho" | "revisao" | "agendada" | "publicando" | "publicada" | "parcial" | "erro" | "cancelada";
+export interface DestinoPublicacao {
+  id: number;
+  conta: number;
+  rede: RedeSocial;
+  conta_nome: string;
+  texto: string;
+  texto_final: string;
+  limite: number | null;
+  status: "pendente" | "publicando" | "publicado" | "erro";
+  externo_id: string;
+  url: string;
+  erro: string;
+  tentativas: number;
+  publicado_em: string | null;
+}
+export interface Publicacao {
+  id: number;
+  titulo: string;
+  texto: string;
+  pilar: string;
+  formato: "post" | "carrossel" | "reels" | "video" | "story" | "texto";
+  gancho: string;
+  hashtags: string;
+  link: string;
+  status: StatusPublicacao;
+  status_nome: string;
+  agendada_para: string | null;
+  midias_ids: number[];
+  midias_info: { id: number; tipo: "imagem" | "video"; titulo: string; formato: string }[];
+  destinos: DestinoPublicacao[];
+  escrita_por_ia: boolean;
+  agente_nome: string;
+  fontes: number[];
+  ideia_visual: string;
+  aprovada_por: string;
+  aprovada_em: string | null;
+  publicada_em: string | null;
+  observacoes: string;
+  created_at: string;
+  avisos?: string[];
+}
+export interface PublicacaoInput {
+  titulo?: string;
+  texto?: string;
+  pilar?: string;
+  formato?: Publicacao["formato"];
+  gancho?: string;
+  hashtags?: string;
+  link?: string;
+  agendada_para?: string | null;
+  midias_ids?: number[];
+  contas?: number[];
+  textos?: Record<string, string>;
+  observacoes?: string;
+}
+export interface PainelMarketing {
+  por_status: Partial<Record<StatusPublicacao, number>>;
+  semana: number;
+  aguardando_aprovacao: number;
+  agendadas: number;
+  com_erro: number;
+  publicadas_mes: number;
+  publicadas_30d_por_rede: Partial<Record<RedeSocial, number>>;
+  dias_com_post_14d: number;
+  proximas: Publicacao[];
+  contas: { total: number; com_problema: number; redes: RedeSocial[] };
+  jobs_ativos: number;
+}
+export interface TimeMarketing {
+  setor: number | null;
+  agentes: { id: number; nome: string; cargo: string; papel: string; nivel: string; work_status: string; tarefa: string }[];
+  faltando: string[];
+}
+export interface ProntidaoMarketing {
+  ffmpeg: boolean;
+  yt_dlp: boolean;
+  transcricao: string | null;
+  moneyprinter: boolean;
+  api_publica: string;
+  criptografia: boolean;
+  redirect_uri: string;
+  time: boolean;
+}
+export interface JobVideo {
+  id: number;
+  tipo: "cortes" | "video_ia";
+  status: "na_fila" | "baixando" | "transcrevendo" | "analisando" | "cortando" | "gerando" | "concluido" | "erro";
+  status_nome: string;
+  progresso: number;
+  etapa: string;
+  titulo: string;
+  origem_url: string;
+  origem_midia: number | null;
+  parametros: Record<string, unknown>;
+  resultado: Record<string, unknown>;
+  erro: string;
+  agente_nome: string;
+  criado_por: string;
+  midias: Midia[];
+  created_at: string;
+  concluido_em: string | null;
+}
+export interface Roteiro { titulo: string; roteiro: string; termos: string[]; legenda?: string; hashtags?: string[] }
+export interface OpcoesCriativo {
+  formatos: { chave: string; largura: number; altura: number; nome: string }[];
+  modelos: { chave: string; nome: string }[];
+}
+export interface TextosCriativo {
+  kicker?: string;
+  titulo?: string;
+  subtitulo?: string;
+  destaque?: string;
+  cta?: string;
+  autor?: string;
+  laminas?: { titulo: string; texto: string }[];
+}
+
+const MKT = "/api/v1/marketing";
+const json = (body: unknown, method = "POST"): RequestInit => ({ method, body: JSON.stringify(body) });
+
+async function upload<T>(path: string, form: FormData): Promise<T> {
+  const token = getAccessToken();
+  const res = await fetch(`${API_URL}${path}`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, body.detail ?? firstFieldError(body) ?? `Erro ${res.status}`, body);
+  return body as T;
+}
+
+export const marketing = {
+  painel: () => request<PainelMarketing>(`${MKT}/painel/`),
+  time: () => request<TimeMarketing>(`${MKT}/time/`),
+  montarTime: () => request<{ setor_criado: boolean; criados: string[]; existentes: string[] }>(`${MKT}/time/`, { method: "POST" }),
+  prontidao: () => request<ProntidaoMarketing>(`${MKT}/prontidao/`),
+  marca: () => request<PerfilMarca>(`${MKT}/marca/`),
+  salvarMarca: (d: Partial<PerfilMarca>) => request<PerfilMarca>(`${MKT}/marca/`, json(d, "PATCH")),
+  enviarLogo: (f: File) => { const fd = new FormData(); fd.append("arquivo", f); return upload<PerfilMarca>(`${MKT}/marca/logo/`, fd); },
+  removerLogo: () => request<void>(`${MKT}/marca/logo/`, { method: "DELETE" }),
+  ramos: () => request<RamoPreset[]>(`${MKT}/ramos/`),
+  apps: () => request<AppsRedes>(`${MKT}/apps/`),
+  salvarApp: (provedor: ProvedorOAuth, client_id: string, client_secret: string) =>
+    request(`${MKT}/apps/`, json({ provedor, client_id, ...(client_secret ? { client_secret } : {}) })),
+  removerApp: (provedor: ProvedorOAuth) => request<void>(`${MKT}/apps/${provedor}/`, { method: "DELETE" }),
+  redes: () => request<RedeInfo[]>(`${MKT}/contas/redes/`),
+  contas: () => request<ContaSocial[]>(`${MKT}/contas/`),
+  conectar: (provedor: ProvedorOAuth) => request<{ url: string }>(`${MKT}/contas/conectar/`, json({ provedor })),
+  conectarDiscord: (webhook_url: string, nome: string) => request<ContaSocial>(`${MKT}/contas/discord/`, json({ webhook_url, nome })),
+  conectarManual: (d: { rede: RedeSocial; token: string; conta_id: string; nome?: string; usuario?: string }) =>
+    request<ContaSocial & { teste: string }>(`${MKT}/contas/manual/`, json(d)),
+  testarConta: (id: number) => request<{ ok: boolean; detail: string }>(`${MKT}/contas/${id}/testar/`, { method: "POST" }),
+  configConta: (id: number, config: Record<string, string>) => request<ContaSocial>(`${MKT}/contas/${id}/`, json({ config }, "PATCH")),
+  removerConta: (id: number) => request<void>(`${MKT}/contas/${id}/`, { method: "DELETE" }),
+  midias: (params = "") => requestList<Midia>(`${MKT}/midias/?page_size=200${params}`),
+  enviarMidia: (f: File, titulo = "") => { const fd = new FormData(); fd.append("arquivo", f); if (titulo) fd.append("titulo", titulo); return upload<Midia>(`${MKT}/midias/`, fd); },
+  editarMidia: (id: number, d: Partial<Pick<Midia, "titulo" | "legenda_sugerida">>) => request<Midia>(`${MKT}/midias/${id}/`, json(d, "PATCH")),
+  removerMidia: (id: number) => request<void>(`${MKT}/midias/${id}/`, { method: "DELETE" }),
+  midiaPath: (id: number, miniatura = false) => `${MKT}/midias/${id}/arquivo/${miniatura ? "?miniatura=1" : ""}`,
+  opcoesCriativo: () => request<OpcoesCriativo>(`${MKT}/criativos/`),
+  criarCriativo: (d: { modelo: string; formatos: string[]; textos?: TextosCriativo; usar_ia?: boolean; tema?: string; laminas?: number; fundo?: number | null }) =>
+    request<{ grupo: string; textos: TextosCriativo; midias: Midia[] }>(`${MKT}/criativos/`, json(d)),
+  publicacoes: (params = "") => requestList<Publicacao>(`${MKT}/publicacoes/?page_size=500${params}`),
+  publicacao: (id: number) => request<Publicacao>(`${MKT}/publicacoes/${id}/`),
+  criarPublicacao: (d: PublicacaoInput) => request<Publicacao>(`${MKT}/publicacoes/`, json(d)),
+  salvarPublicacao: (id: number, d: PublicacaoInput) => request<Publicacao>(`${MKT}/publicacoes/${id}/`, json(d, "PATCH")),
+  removerPublicacao: (id: number) => request<void>(`${MKT}/publicacoes/${id}/`, { method: "DELETE" }),
+  gerarPost: (d: { tema: string; contas: number[]; formato?: string; instrucoes?: string; agendada_para?: string | null; midias?: number[] }) =>
+    request<Publicacao>(`${MKT}/publicacoes/gerar/`, json(d)),
+  escreverPost: (id: number, d: { tema?: string; instrucoes?: string } = {}) => request<Publicacao>(`${MKT}/publicacoes/${id}/escrever/`, json(d)),
+  conferir: (id: number) => request<{ erros: string[] }>(`${MKT}/publicacoes/${id}/conferir/`, { method: "POST" }),
+  paraRevisao: (id: number) => request<Publicacao>(`${MKT}/publicacoes/${id}/revisao/`, { method: "POST" }),
+  aprovar: (id: number, publicar_agora = false) => request<Publicacao>(`${MKT}/publicacoes/${id}/aprovar/`, json({ publicar_agora })),
+  tentarDeNovo: (id: number) => request<Publicacao>(`${MKT}/publicacoes/${id}/publicar/`, { method: "POST" }),
+  cancelar: (id: number) => request<Publicacao>(`${MKT}/publicacoes/${id}/cancelar/`, { method: "POST" }),
+  voltarRascunho: (id: number) => request<Publicacao>(`${MKT}/publicacoes/${id}/voltar/`, { method: "POST" }),
+  aprovarLote: (ids: number[]) => request<{ aprovadas: number[]; erros: Record<string, string> }>(`${MKT}/publicacoes/aprovar-lote/`, json({ ids })),
+  escreverLote: (ids: number[], instrucoes = "") => request<{ ids: number[]; enfileirado: boolean }>(`${MKT}/publicacoes/escrever-lote/`, json({ ids, instrucoes })),
+  planejar: (d: { inicio: string; semanas: number; por_semana: number; contas: number[]; objetivo: string; escrever: boolean; instrucoes?: string }) =>
+    request<{ criadas: number[]; escrevendo: boolean; enfileirado: boolean | null }>(`${MKT}/publicacoes/planejar/`, json(d)),
+  jobs: (params = "") => requestList<JobVideo>(`${MKT}/jobs/?page_size=100${params}`),
+  job: (id: number) => request<JobVideo>(`${MKT}/jobs/${id}/`),
+  removerJob: (id: number) => request<void>(`${MKT}/jobs/${id}/`, { method: "DELETE" }),
+  cortes: (d: { url?: string; midia?: number; direitos: boolean; quantidade: number; minimo: number; maximo: number; estilo: string; legenda: boolean; gancho: boolean }) =>
+    request<JobVideo>(`${MKT}/jobs/cortes/`, json(d)),
+  roteiro: (tema: string, segundos: number, instrucoes = "") => request<Roteiro>(`${MKT}/jobs/roteiro/`, json({ tema, segundos, instrucoes })),
+  videoIA: (d: { titulo: string; roteiro: string; termos: string[]; proporcao: string; voz: string; legenda: boolean; musica: boolean; legenda_post?: string; hashtags?: string }) =>
+    request<JobVideo>(`${MKT}/jobs/video-ia/`, json(d)),
+};
+

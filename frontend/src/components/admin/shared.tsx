@@ -96,6 +96,7 @@ export function CredentialCard({
   tokenLabel,
   tokenPlaceholder,
   tokenHelp,
+  tokenOptional = false,
   onChanged,
 }: {
   provider: CredentialProvider;
@@ -107,6 +108,8 @@ export function CredentialCard({
   tokenLabel: string;
   tokenPlaceholder?: string;
   tokenHelp?: React.ReactNode;
+  /** Serviço que funciona só com o endereço (ex.: MoneyPrinterTurbo em rede confiável). */
+  tokenOptional?: boolean;
   onChanged: () => void;
 }) {
   const [account, setAccount] = useState(current?.account_ref ?? "");
@@ -152,7 +155,7 @@ export function CredentialCard({
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={save} disabled={busy !== null || (!current?.configured && !token)}>
+        <Button size="sm" onClick={save} disabled={busy !== null || (!current?.configured && !token && !(tokenOptional && account.trim()))}>
           {busy === "save" && <Loader2 className="size-3.5 animate-spin" />} Salvar e testar
         </Button>
         {current?.configured && (

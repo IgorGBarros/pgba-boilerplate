@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.mixins import SoftDeleteViewMixin, TenantContextMixin
-from integrations import n8n, hostinger
+from integrations import hostinger, moneyprinter, n8n
 from integrations.email import (
     PRESETS,
     EmailError,
@@ -67,6 +67,7 @@ class _TenantViewSet(TenantContextMixin, viewsets.ModelViewSet):
 TESTERS = {
     "n8n": n8n.test_connection,
     "hostinger": hostinger.test_connection,
+    "moneyprinter": moneyprinter.test_connection,
 }
 
 
@@ -93,7 +94,8 @@ class CredentialListView(TenantContextMixin, APIView):
         ser = ServiceCredentialSerializer(current, data=request.data, partial=bool(current))
         ser.is_valid(raise_exception=True)
         token = ser.validated_data.pop("token", None)
-        if current is None and not token:
+        # MoneyPrinterTurbo pode rodar sem chave (rede confiável): só a URL basta
+        if current is None and not token and provider != "moneyprinter":
             return Response({"token": "Informe o token / API key."}, status=400)
         cred = current or ServiceCredential(tenant_id=request.tenant_id, provider=provider)
         for k, v in ser.validated_data.items():
@@ -153,7 +155,7 @@ class CredentialTestView(TenantContextMixin, APIView):
             return Response({"ok": False, "detail": "Sem teste para este provedor."}, status=400)
         try:
             return Response({"ok": True, "detail": tester(request.tenant_id)})
-        except (n8n.N8nError, hostinger.HostingerError) as exc:
+        except (n8n.N8nError, hostinger.HostingerError, moneyprinter.MoneyPrinterError) as exc:
             return Response({"ok": False, "detail": str(exc)}, status=400)
 
 
