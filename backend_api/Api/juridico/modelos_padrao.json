@@ -1,0 +1,26 @@
+[
+  {
+    "nome": "Contrato de prestação de serviços",
+    "tipo": "contrato",
+    "descricao": "Serviço com prazo, valor e rescisão.",
+    "corpo": "CONTRATO DE PRESTAÇÃO DE SERVIÇOS\n\nCONTRATANTE: {{parte.nome}}, inscrita sob o nº {{parte.documento}}, com endereço em {{parte.endereco}}.\n\nCONTRATADA: {{empresa.razao_social}}, CNPJ {{empresa.cnpj}}, com sede em {{empresa.endereco}}, {{empresa.municipio}}/{{empresa.uf}}.\n\nCLÁUSULA 1ª — OBJETO. A CONTRATADA prestará à CONTRATANTE os serviços de {{contrato.titulo}}.\n\nCLÁUSULA 2ª — VIGÊNCIA. Este contrato vigora de {{contrato.inicio}} a {{contrato.fim}}.\n\nCLÁUSULA 3ª — PREÇO. Pelos serviços, a CONTRATANTE pagará {{contrato.valor}} por ano, reajustado anualmente pelo {{contrato.reajuste}}.\n\nCLÁUSULA 4ª — RESCISÃO. Qualquer das partes pode rescindir este contrato mediante aviso prévio de 30 (trinta) dias, por escrito.\n\nCLÁUSULA 5ª — PROTEÇÃO DE DADOS. As partes tratarão dados pessoais conforme a Lei 13.709/2018 (LGPD), apenas para a execução deste contrato.\n\nCLÁUSULA 6ª — FORO. Fica eleito o foro da comarca de {{empresa.municipio}}/{{empresa.uf}}.\n\nAs partes assinam eletronicamente, reconhecendo a validade da assinatura eletrônica (MP 2.200-2/2001, art. 10, § 2º, e Lei 14.063/2020).\n\n{{empresa.municipio}}, {{data.extenso}}."
+  },
+  {
+    "nome": "Acordo de confidencialidade (NDA)",
+    "tipo": "contrato",
+    "descricao": "Confidencialidade mútua por 2 anos.",
+    "corpo": "ACORDO DE CONFIDENCIALIDADE\n\nEntre {{empresa.razao_social}}, CNPJ {{empresa.cnpj}}, e {{parte.nome}}, {{parte.documento}}.\n\n1. As partes trocarão informações técnicas e comerciais sobre {{contrato.titulo}}, que serão tratadas como confidenciais.\n2. A parte que receber a informação não a divulgará nem a usará para outro fim, pelo prazo de 2 (dois) anos a contar desta data.\n3. Não é confidencial a informação já pública ou recebida legitimamente de terceiro.\n4. O descumprimento sujeita a parte às perdas e danos comprovados.\n\n{{empresa.municipio}}, {{data.extenso}}."
+  },
+  {
+    "nome": "Procuração ad judicia",
+    "tipo": "procuracao",
+    "descricao": "Poderes gerais para o foro.",
+    "corpo": "PROCURAÇÃO AD JUDICIA ET EXTRA\n\nOUTORGANTE: {{empresa.razao_social}}, CNPJ {{empresa.cnpj}}, com sede em {{empresa.endereco}}, {{empresa.municipio}}/{{empresa.uf}}.\n\nOUTORGADO: {{parte.nome}}, {{parte.documento}}.\n\nPODERES: os da cláusula ad judicia et extra, para o foro em geral, em qualquer juízo, instância ou tribunal, podendo propor ações, contestar, recorrer, transigir, desistir, receber e dar quitação, em especial no processo nº {{processo.numero}} ({{processo.foro}}).\n\n{{empresa.municipio}}, {{data.extenso}}."
+  },
+  {
+    "nome": "Notificação extrajudicial",
+    "tipo": "notificacao",
+    "descricao": "Constituição em mora / aviso formal.",
+    "corpo": "NOTIFICAÇÃO EXTRAJUDICIAL\n\nNOTIFICANTE: {{empresa.razao_social}}, CNPJ {{empresa.cnpj}}.\nNOTIFICADO: {{parte.nome}}, {{parte.documento}}, {{parte.endereco}}.\n\nPela presente, fica V.Sa. NOTIFICADA a, no prazo de 10 (dez) dias do recebimento, regularizar a pendência referente a {{contrato.titulo}}, sob pena das medidas cabíveis.\n\n{{empresa.municipio}}, {{data.extenso}}."
+  }
+]

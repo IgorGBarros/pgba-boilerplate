@@ -865,6 +865,41 @@ dentro do processo do Django, mais frágil num backend web.
   cada aba só descreve campos e colunas (`erp-modulos.tsx`). Listas pedem
   `page_size=500` (`ErpPagination`) e avisam "mostrando N de M" se passar.
 
+### Vertical `juridico` — contencioso, prazos, contratos, documentos e assinatura
+
+`backend_api/Api/juridico/` + `frontend/src/components/empresa/juridico*` (Empresa →
+Módulos → Jurídico). Ideias dos sistemas jurídicos profissionais, nada copiado:
+
+- **Processo** com **número CNJ** validado (`juridico/cnj.py`: dígito ISO 7064
+  mod 97-10; J+TR → sigla do tribunal no DataJud: 8.26 → tjsp, 5.02 → trt2).
+  Probabilidade de perda (CPC 25): só "provável" vira **provisão**; "possível"
+  é contingência divulgada. `Andamento` manual ou do **DataJud** (API pública do
+  CNJ, `juridico/datajud.py`, chave em `ServiceCredential(provider="datajud")`,
+  por `safe_http`; movimento dedupe por `chave`).
+- **Prazos** (`juridico/prazos.py`, funções puras): intimação + N dias úteis
+  (CPC 219/224), feriados nacionais fixos e móveis (Páscoa: Carnaval, Sexta
+  Santa, Corpus Christi) e recesso 20/12–20/01 (CPC 220). `Prazo` com
+  `data_inicio`+`dias` tem o vencimento **calculado** no serializer;
+  `prazos/calcular/` é a calculadora. Feriado local fica por conta de quem usa.
+- **Contratos** com ciclo (rascunho → revisão → aguardando assinatura →
+  vigente → expirando/vencido) e aviso de vencimento (`aviso_dias`).
+- **Modelos** (`juridico/modelos.py`): `{{empresa.*}}`, `{{parte.*}}`,
+  `{{processo.*}}`, `{{contrato.*}}`, `{{data.*}}`; campo sem dado vira
+  `[[campo?]]` e volta em `faltando`. `modelos/padrao/` cria 4 modelos.
+- **PDF sem dependência nova** (`juridico/pdf.py`): texto → PDF (Helvetica,
+  WinAnsi); `pypdf` junta original + manifesto.
+- **Assinatura eletrônica interna** (`juridico/assinatura.py`, ver
+  `docs/ASSINATURA_ELETRONICA.md`): PDF congelado + SHA-256, link pessoal
+  (só hash + cópia cifrada no banco), nome + CPF + código de 6 dígitos por
+  e-mail (caixa do Jurídico) + aceite, IP/navegador, ordem opcional, recusa,
+  trilha **encadeada por hash** (`trilha_integra`), PDF final com manifesto e
+  **verificação pública** (`/verificar`). Rotas públicas sem login e com
+  throttle `assinatura`: `juridico/assinar/<token>/…` e `juridico/verificar/`;
+  no frontend, `App.tsx` roteia `/assinar/<token>` e `/verificar` antes do login
+  (`pages/AssinarPage.tsx`). Arquivos nunca servidos por `/media` — só pelas views.
+- IA: `juridico_resumo` e `juridico_prazos_proximos` (só leitura).
+- `ErpCrud` agora aceita recurso de outro app (`"juridico/processos"` → `/api/v1/juridico/processos`).
+
 ### Painel administrativo + integrações (`integrations` + `components/admin/`)
 
 Abre pelo botão **Painel administrativo** na caixa **Empresa** do organograma

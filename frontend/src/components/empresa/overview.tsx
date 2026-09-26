@@ -61,7 +61,7 @@ import { DesenvolvimentoView } from "@/components/empresa/desenvolvimento";
 import { HelpdeskView } from "@/components/empresa/helpdesk";
 import { PROVIDER_LABEL, formatUsd } from "@/components/builder/office3d/providers";
 import { useRealtime } from "@/lib/useRealtime";
-import { openAdminPanel, takePendingModule, useModuleRequests } from "@/lib/adminPanel";
+import { clearPendingModule, openAdminPanel, peekPendingModule, useModuleRequests } from "@/lib/adminPanel";
 import { getEmailOverview, type EmailOverview } from "@/lib/api";
 import { SectorMailbox } from "@/components/admin/SectorMailbox";
 import { aiModels } from "@/lib/pgba-data";
@@ -1415,12 +1415,13 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
 export function Overview({ onNewTask }: { onNewTask: (sector?: string) => void }) {
   const [selectedSector, setSelectedSector] = useState<Sector | null>(null);
   const [selectedModule, setSelectedModule] = useState<ModuleState | null>(() => {
-    const pending = takePendingModule();
+    const pending = peekPendingModule();
     return pending ? ({ key: pending } as ModuleState) : null;
   });
+  useEffect(clearPendingModule, []);
   // Painel administrativo pediu um módulo (ex.: Data Lake → Conectores/MCP)
   const openModule = useCallback((key: string) => {
-    takePendingModule();
+    clearPendingModule();
     setSelectedSector(null);
     setSelectedModule({ key } as ModuleState);
   }, []);

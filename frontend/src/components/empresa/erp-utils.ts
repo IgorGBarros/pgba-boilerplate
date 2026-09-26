@@ -19,7 +19,9 @@ export type RelationKey =
   | "setores"
   | "centros_custo"
   | "projetos"
-  | "itens";
+  | "itens"
+  | "processos_juridicos"
+  | "contratos_juridicos";
 
 // ─── Opções de relação (cache por sessão da tela) ────────────────────────────
 
@@ -54,6 +56,14 @@ async function loadRelation(key: RelationKey): Promise<Option[]> {
         value: String(i.id),
         label: `${i.codigo} — ${i.nome} (${i.tipo_item === "servico" ? "serviço" : "material"})`,
       }));
+    }
+    case "processos_juridicos": {
+      const { results } = await erpList<{ id: number; titulo: string; numero_cnj: string }>("juridico/processos", { ordering: "-created_at" });
+      return results.map((p) => ({ value: String(p.id), label: p.numero_cnj ? `${p.numero_cnj} — ${p.titulo}` : p.titulo }));
+    }
+    case "contratos_juridicos": {
+      const { results } = await erpList<{ id: number; titulo: string; partes: string }>("juridico/contratos", { ordering: "-created_at" });
+      return results.map((c) => ({ value: String(c.id), label: `${c.titulo} — ${c.partes}` }));
     }
   }
 }
