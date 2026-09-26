@@ -5,7 +5,7 @@
 //   soltas no topo do Estúdio — com as tarefas dentro dos agentes, pertencem
 //   à empresa);
 // - Escritório 3D, Conhecimento (chat + biblioteca), Projetos e Gerar.
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { ClipboardList, Network, ScrollText, ShieldCheck } from "lucide-react";
 import { Toaster } from "sonner";
 import { Overview } from "@/components/empresa/overview";
@@ -17,10 +17,10 @@ import { Projects } from "@/components/empresa/projects";
 import { ImportProjectDialog, NewProjectDialog, NewTaskDialog } from "@/components/empresa/dialogs";
 import GeneratePanel from "@/components/builder/GeneratePanel";
 import SettingsModal from "@/components/builder/SettingsModal";
-import { DEFAULT_SETTINGS, type AppSettings } from "@/types/settings";
 import { listPendingApprovals } from "@/lib/api";
 import { useRealtime } from "@/lib/useRealtime";
 import { useTheme } from "@/lib/ThemeContext";
+import { useModuleRequests } from "@/lib/adminPanel";
 import type { EmpresaTab, Section } from "@/lib/navigation";
 
 const CompanyOffice3D = lazy(() => import("@/components/builder/CompanyOffice3D"));
@@ -61,13 +61,19 @@ export default function Studio({
   const [gerarProjectId, setGerarProjectId] = useState<number | undefined>(undefined);
   const [newProject, setNewProject] = useState(false);
   const [importProject, setImportProject] = useState(false);
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [pendingApprovals, setPendingApprovals] = useState<number | null>(null);
 
   const setEmpresaTab = (tab: EmpresaTab) => {
     try { sessionStorage.setItem(EMPRESA_TAB_KEY, tab); } catch { /* aba privada */ }
     setEmpresaTabState(tab);
   };
+
+  // Painel administrativo pediu um módulo da Empresa (ex.: Data Lake): mostra o Organograma
+  const showOrg = useCallback(() => {
+    try { sessionStorage.setItem(EMPRESA_TAB_KEY, "org"); } catch { /* aba privada */ }
+    setEmpresaTabState("org");
+  }, []);
+  useModuleRequests(showOrg);
 
   // Contador de aprovações pendentes na aba (atualiza com o WebSocket)
   const { lastPendingApprovalEvent } = useRealtime();
@@ -167,9 +173,6 @@ export default function Studio({
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => onSettingsOpenChange(false)}
-        settings={settings}
-        onUpdate={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
-        onReset={() => setSettings(DEFAULT_SETTINGS)}
       />
     </>
   );

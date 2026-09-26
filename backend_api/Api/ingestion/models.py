@@ -51,6 +51,7 @@ class KnowledgeSource(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         NOTION = "notion", "Notion"
         HUBSPOT = "hubspot", "HubSpot"
         SALESFORCE = "salesforce", "Salesforce"
+        MCP = "mcp", "Servidor MCP"
 
     class SyncStatus(models.TextChoices):
         NEVER = "", "Nunca sincronizado"

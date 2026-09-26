@@ -6,7 +6,6 @@ import ChatPanel from "@/components/builder/ChatPanel";
 import SettingsModal from "@/components/builder/SettingsModal";
 import { useChatPersistence } from "@/hooks/useChatPersistence";
 import { askStructured } from "@/lib/api";
-import { DEFAULT_SETTINGS, type AppSettings } from "@/types/settings";
 import type { ChatMessage } from "@/types/builder";
 
 export default function GerarPage() {
@@ -16,7 +15,6 @@ export default function GerarPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
   const handleSend = async (content: string) => {
     const userMsg: ChatMessage = {
@@ -65,9 +63,6 @@ export default function GerarPage() {
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        settings={settings}
-        onUpdate={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
-        onReset={() => setSettings(DEFAULT_SETTINGS)}
       />
       <div className="flex" style={{ height: "calc(100vh - 56px)" }}>
         <HistorySidebar

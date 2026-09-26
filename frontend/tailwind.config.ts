@@ -83,8 +83,9 @@ export default {
         },
       },
       fontFamily: {
-        display: ["'Space Grotesk'", "sans-serif"],
-        body:    ["'DM Sans'", "sans-serif"],
+        // var(): a família escolhida na engrenagem (ThemeContext) vale no app todo
+        display: ["var(--font-display, 'Space Grotesk')", "sans-serif"],
+        body:    ["var(--font-body, 'DM Sans')", "sans-serif"],
         mono:    ["'JetBrains Mono'", "'Fira Code'", "ui-monospace", "monospace"],
       },
       borderRadius: {

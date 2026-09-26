@@ -476,6 +476,8 @@ export interface SourceOverview {
   recent_documents: { id: number; title: string; status: string; updated_at: string; excerpt: string; error: string }[];
   runs: SourceSyncRun[];
   queries: ConnectorQuery[];
+  /** Só conector MCP: ferramentas do servidor e quais estão liberadas. */
+  mcp_tools?: McpTool[] | null;
 }
 
 export async function getSourceOverview(id: number): Promise<SourceOverview> {
@@ -2805,4 +2807,227 @@ export interface ProntidaoNotaFiscal {
 
 export async function getProntidaoNotaFiscal(): Promise<ProntidaoNotaFiscal> {
   return request<ProntidaoNotaFiscal>("/api/v1/erp/fiscal/prontidao/");
+}
+
+// --- integrations: painel administrativo --------------------------------------
+
+export type CredentialProvider = "github" | "n8n" | "hostinger" | "vercel" | "render" | "supabase";
+
+export interface ServiceCredentialInfo {
+  id: number;
+  provider: CredentialProvider;
+  label: string;
+  account_ref: string;
+  token_masked: string;
+  configured: boolean;
+  updated_at: string;
+}
+
+export async function listServiceCredentials(): Promise<ServiceCredentialInfo[]> {
+  return request<ServiceCredentialInfo[]>("/api/v1/integrations/credentials/");
+}
+export async function saveServiceCredential(data: {
+  provider: CredentialProvider;
+  label?: string;
+  account_ref?: string;
+  token?: string;
+}): Promise<ServiceCredentialInfo> {
+  return request<ServiceCredentialInfo>("/api/v1/integrations/credentials/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function removeServiceCredential(provider: CredentialProvider): Promise<void> {
+  return request<void>(`/api/v1/integrations/credentials/${provider}/`, { method: "DELETE" });
+}
+export async function testServiceCredential(provider: CredentialProvider): Promise<{ ok: boolean; detail: string }> {
+  return request(`/api/v1/integrations/credentials/${provider}/test/`, { method: "POST" });
+}
+
+export interface N8nWorkflow {
+  id: string;
+  name: string;
+  active: boolean;
+  archived: boolean;
+  updated_at: string | null;
+  created_at: string | null;
+  tags: string[];
+  nodes: number;
+  trigger: "webhook" | "agendado" | "manual" | "evento" | "outro";
+  node_types: string[];
+  recent: { success: number; error: number; other: number; last: N8nExecution | null };
+}
+export interface N8nExecution {
+  id: string;
+  workflow_id: string;
+  status: string;
+  mode: string;
+  started_at: string | null;
+  stopped_at: string | null;
+}
+export interface N8nOverview {
+  workflows: N8nWorkflow[];
+  executions: N8nExecution[];
+  totals: { workflows: number; active: number; errors_recent: number; success_recent: number };
+}
+
+export async function getN8nOverview(): Promise<N8nOverview> {
+  return request<N8nOverview>("/api/v1/integrations/n8n/overview/");
+}
+export async function listN8nExecutions(workflow?: string, status?: string): Promise<N8nExecution[]> {
+  const qs = new URLSearchParams();
+  if (workflow) qs.set("workflow", workflow);
+  if (status) qs.set("status", status);
+  return request<N8nExecution[]>(`/api/v1/integrations/n8n/executions/?${qs}`);
+}
+export async function setN8nWorkflowActive(id: string, active: boolean): Promise<{ id: string; active: boolean }> {
+  return request(`/api/v1/integrations/n8n/workflows/${encodeURIComponent(id)}/active/`, {
+    method: "POST",
+    body: JSON.stringify({ active }),
+  });
+}
+
+export interface HostingerOverview {
+  vps: { id: number | string; hostname: string; state: string; plan: string; ip: string }[];
+  domains: { domain: string; status: string; expires_at: string | null }[];
+  errors: string[];
+}
+export async function getHostingerOverview(): Promise<HostingerOverview> {
+  return request<HostingerOverview>("/api/v1/integrations/hostinger/overview/");
+}
+
+export interface ServerConnection {
+  id: number;
+  name: string;
+  provider: "oracle" | "hostinger" | "outro";
+  host: string;
+  ssh_port: number;
+  username: string;
+  region: string;
+  purpose: string;
+  notes: string;
+  has_private_key: boolean;
+  last_check_at: string | null;
+  last_check_ok: boolean | null;
+  last_check_message: string;
+}
+export async function listServers(): Promise<ServerConnection[]> {
+  return requestList<ServerConnection>("/api/v1/integrations/servers/");
+}
+export async function saveServer(data: Partial<ServerConnection> & { private_key?: string }, id?: number): Promise<ServerConnection> {
+  return request<ServerConnection>(`/api/v1/integrations/servers/${id ? `${id}/` : ""}`, {
+    method: id ? "PATCH" : "POST",
+    body: JSON.stringify(data),
+  });
+}
+export async function deleteServer(id: number): Promise<void> {
+  return request<void>(`/api/v1/integrations/servers/${id}/`, { method: "DELETE" });
+}
+export async function checkServer(id: number): Promise<ServerConnection & { ok: boolean; detail: string }> {
+  return request(`/api/v1/integrations/servers/${id}/check/`, { method: "POST" });
+}
+
+export type EmailProvider = "hostinger" | "gmail" | "outlook" | "custom";
+export interface EmailAccount {
+  id: number;
+  sector: number | null;
+  sector_name: string;
+  address: string;
+  display_name: string;
+  provider: EmailProvider;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_security: "ssl" | "starttls" | "none";
+  imap_host: string;
+  imap_port: number;
+  username: string;
+  has_password: boolean;
+  signature: string;
+  status: "pending" | "ready" | "error";
+  configured: boolean;
+  last_check_at: string | null;
+  last_check_message: string;
+}
+export interface EmailOverview {
+  default_account: EmailAccount | null;
+  sectors: { sector: { id: number; name: string }; agents: string[]; account: EmailAccount | null; drafts: number }[];
+}
+export async function getEmailOverview(): Promise<EmailOverview> {
+  return request<EmailOverview>("/api/v1/integrations/email-accounts/overview/");
+}
+export async function getEmailPresets(): Promise<Record<EmailProvider, Partial<EmailAccount>>> {
+  return request("/api/v1/integrations/email-accounts/presets/");
+}
+export async function saveEmailAccount(data: Partial<EmailAccount> & { password?: string }, id?: number): Promise<EmailAccount> {
+  return request<EmailAccount>(`/api/v1/integrations/email-accounts/${id ? `${id}/` : ""}`, {
+    method: id ? "PATCH" : "POST",
+    body: JSON.stringify(data),
+  });
+}
+export async function deleteEmailAccount(id: number): Promise<void> {
+  return request<void>(`/api/v1/integrations/email-accounts/${id}/`, { method: "DELETE" });
+}
+export async function testEmailAccount(id: number): Promise<{ ok: boolean; detail: string; account: EmailAccount }> {
+  // 400 também traz o detalhe e a conta atualizada — a tela mostra os dois
+  try {
+    return await request(`/api/v1/integrations/email-accounts/${id}/test/`, { method: "POST" });
+  } catch (err) {
+    if (err instanceof ApiError && err.body && "account" in err.body) {
+      return err.body as unknown as { ok: boolean; detail: string; account: EmailAccount };
+    }
+    throw err;
+  }
+}
+
+export interface OutboundEmail {
+  id: number;
+  sector: number | null;
+  sector_name: string;
+  to: string[];
+  cc: string[];
+  subject: string;
+  body: string;
+  status: "draft" | "sending" | "sent" | "failed" | "cancelled";
+  origin: string;
+  requested_by: string;
+  approved_by: string;
+  from_address: string;
+  sent_at: string | null;
+  error: string;
+  created_at: string;
+}
+export async function listOutboundEmails(status?: string): Promise<OutboundEmail[]> {
+  return requestList<OutboundEmail>(`/api/v1/integrations/outbound-emails/${status ? `?status=${status}` : ""}`);
+}
+export async function createOutboundEmail(data: Pick<OutboundEmail, "sector" | "to" | "subject" | "body"> & { cc?: string[] }): Promise<OutboundEmail> {
+  return request<OutboundEmail>("/api/v1/integrations/outbound-emails/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function updateOutboundEmail(id: number, data: Partial<Pick<OutboundEmail, "to" | "cc" | "subject" | "body">>): Promise<OutboundEmail> {
+  return request<OutboundEmail>(`/api/v1/integrations/outbound-emails/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+export async function sendOutboundEmail(id: number): Promise<OutboundEmail & { queued: boolean }> {
+  return request(`/api/v1/integrations/outbound-emails/${id}/send/`, { method: "POST" });
+}
+export async function cancelOutboundEmail(id: number): Promise<OutboundEmail> {
+  return request<OutboundEmail>(`/api/v1/integrations/outbound-emails/${id}/cancel/`, { method: "POST" });
+}
+export async function draftQuoteEmail(orcamentoId: number): Promise<OutboundEmail> {
+  return request<OutboundEmail>(`/api/v1/compras/orcamentos/${orcamentoId}/rascunho-email/`, { method: "POST" });
+}
+export async function draftOrderEmail(pedidoId: number): Promise<OutboundEmail> {
+  return request<OutboundEmail>(`/api/v1/compras/pedidos/${pedidoId}/rascunho-email/`, { method: "POST" });
+}
+
+// MCP (conector em ingestion)
+export interface McpTool {
+  nome: string;
+  descricao: string;
+  parametros: Record<string, { tipo: string; descricao: string }>;
+  obrigatorios: string[];
+  somente_leitura: boolean;
+  liberada?: boolean;
+  risco?: "low" | "medium" | "high" | "critical" | null;
+}
+export async function discoverMcpTools(sourceId: number): Promise<{ tools: McpTool[] }> {
+  return request(`/api/v1/ingestion/sources/${sourceId}/mcp-discover/`, { method: "POST" });
+}
+export async function saveMcpTools(sourceId: number, ferramentas: { nome: string; risco: string }[]): Promise<{ ferramentas: { nome: string; risco: string }[] }> {
+  return request(`/api/v1/ingestion/sources/${sourceId}/mcp-tools/`, { method: "POST", body: JSON.stringify({ ferramentas }) });
 }

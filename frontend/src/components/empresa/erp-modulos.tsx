@@ -558,7 +558,7 @@ export function BalanceteCrud({ onChanged }: { onChanged?: () => void }) {
 
 // ─── Fiscal: prontidão da NF + dados da empresa ──────────────────────────────
 
-const EMPRESA_FIELDS: FieldDef[] = [
+export const EMPRESA_FIELDS: FieldDef[] = [
   { name: "razao_social", label: "Razão social", wide: true },
   { name: "nome_fantasia", label: "Nome fantasia" },
   { name: "cnpj", label: "CNPJ" },

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
   Brain,
@@ -26,6 +26,7 @@ import {
   Users,
   Wallet,
   Wrench,
+  Settings2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +60,7 @@ import { DesenvolvimentoView } from "@/components/empresa/desenvolvimento";
 import { HelpdeskView } from "@/components/empresa/helpdesk";
 import { PROVIDER_LABEL, formatUsd } from "@/components/builder/office3d/providers";
 import { useRealtime } from "@/lib/useRealtime";
+import { openAdminPanel, takePendingModule, useModuleRequests } from "@/lib/adminPanel";
 import { aiModels } from "@/lib/pgba-data";
 import {
   askAsAgent,
@@ -1031,19 +1033,31 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
       {/* Árvore: Empresa → Liderança → Setores */}
       <section className="rounded-2xl border border-border bg-surface/60 p-4 sm:p-6">
         <div className="flex flex-col items-center">
-          <button
-            type="button"
-            onClick={() => setOpenCompany(true)}
-            className="group flex items-center gap-3 rounded-full border border-border bg-elevated py-2 pl-2 pr-5 shadow-sm transition hover:border-foreground/30"
-          >
-            <span className="grid size-9 place-items-center rounded-full bg-primary text-primary-foreground">
-              <Building2 className="size-4" />
-            </span>
-            <span className="text-left">
-              <span className="block text-sm font-semibold leading-tight">Empresa</span>
-              <span className="block text-[11px] text-muted-foreground">Visão estratégica · cérebro principal</span>
-            </span>
-          </button>
+          <div className="flex items-center gap-1 rounded-full border border-border bg-elevated p-1 shadow-sm transition hover:border-foreground/30">
+            <button
+              type="button"
+              onClick={() => setOpenCompany(true)}
+              className="group flex items-center gap-3 rounded-full py-1 pl-1 pr-3"
+            >
+              <span className="grid size-9 place-items-center rounded-full bg-primary text-primary-foreground">
+                <Building2 className="size-4" />
+              </span>
+              <span className="text-left">
+                <span className="block text-sm font-semibold leading-tight">Empresa</span>
+                <span className="block text-[11px] text-muted-foreground">Visão estratégica · cérebro principal</span>
+              </span>
+            </button>
+            {/* Painel administrativo: configura tudo da empresa (IA, e-mails, integrações) */}
+            <button
+              type="button"
+              onClick={() => openAdminPanel()}
+              title="Painel administrativo — IA, e-mails dos setores, n8n, Hostinger, servidores"
+              className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-2 text-xs font-medium text-muted-foreground transition hover:bg-primary hover:text-primary-foreground"
+            >
+              <Settings2 className="size-3.5" />
+              <span className="hidden sm:inline">Painel administrativo</span>
+            </button>
+          </div>
 
           {leaders.length > 0 && (
             <>
@@ -1329,6 +1343,9 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
             <Button variant="outline" onClick={() => setOpenCompany(false)}>
               Fechar
             </Button>
+            <Button onClick={() => { setOpenCompany(false); openAdminPanel(); }}>
+              <Settings2 className="size-3.5" /> Painel administrativo
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1341,7 +1358,17 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
 
 export function Overview({ onNewTask }: { onNewTask: (sector?: string) => void }) {
   const [selectedSector, setSelectedSector] = useState<Sector | null>(null);
-  const [selectedModule, setSelectedModule] = useState<ModuleState | null>(null);
+  const [selectedModule, setSelectedModule] = useState<ModuleState | null>(() => {
+    const pending = takePendingModule();
+    return pending ? ({ key: pending } as ModuleState) : null;
+  });
+  // Painel administrativo pediu um módulo (ex.: Data Lake → Conectores/MCP)
+  const openModule = useCallback((key: string) => {
+    takePendingModule();
+    setSelectedSector(null);
+    setSelectedModule({ key } as ModuleState);
+  }, []);
+  useModuleRequests(openModule);
 
   return (
     <div>

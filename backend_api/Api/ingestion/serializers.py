@@ -84,6 +84,20 @@ class KnowledgeSourceSerializer(serializers.ModelSerializer):
                 config["consultas"] = validate_queries(source_type, config.get("consultas") or [])
             except ConnectorError as exc:
                 raise serializers.ValidationError({"config": str(exc)})
+        if config is not None and source_type == "mcp":
+            from ingestion.connectors.mcp import validate_tools
+
+            old = (getattr(self.instance, "config", None) or {}) if self.instance else {}
+            # Editar URL/token não apaga o que foi descoberto/liberado antes
+            for key in ("ferramentas_disponiveis", "ferramentas"):
+                if key not in config and key in old:
+                    config[key] = old[key]
+            try:
+                config["ferramentas"] = validate_tools(
+                    config.get("ferramentas"), config.get("ferramentas_disponiveis")
+                )
+            except ConnectorError as exc:
+                raise serializers.ValidationError({"config": str(exc)})
         return attrs
 
     def _apply_config(self, instance, config):

@@ -806,3 +806,100 @@ def test_registros_busca_ficha_e_previa_do_agente(auth_client, tenant_id, rede, 
         auth_client.post(f"{API}/sources/{src.id}/agent-preview/", {}, format="json").status_code
         == 400
     )
+
+
+def _fake_mcp(rede, calls):
+    """Servidor MCP falso: initialize em JSON, tools/list e tools/call em SSE."""
+
+    def handler(request: httpx.Request):
+        msg = json.loads(request.content)
+        calls.append((msg.get("method"), request.headers.get("mcp-session-id"), request.headers.get("authorization")))
+        if msg.get("method") == "initialize":
+            return httpx.Response(
+                200,
+                headers={"mcp-session-id": "sess-1"},
+                json={"jsonrpc": "2.0", "id": msg["id"], "result": {"protocolVersion": "2025-06-18"}},
+            )
+        if "id" not in msg:  # notificação
+            return httpx.Response(202)
+        if msg["method"] == "tools/list":
+            result = {"tools": [
+                {"name": "buscar_cliente", "description": "Busca cliente pelo nome",
+                 "inputSchema": {"type": "object", "properties": {"nome": {"type": "string"}, "limite": {"type": "integer"}},
+                                 "required": ["nome"]},
+                 "annotations": {"readOnlyHint": True}},
+                {"name": "criar_ticket", "description": "Abre um ticket",
+                 "inputSchema": {"type": "object", "properties": {"titulo": {"type": "string"}}}},
+            ]}
+        elif msg["method"] == "tools/call":
+            args = msg["params"]["arguments"]
+            result = {"content": [{"type": "text", "text": f"Cliente {args['nome']} — contato ana@cliente.com, limite {args.get('limite')}"}]}
+        else:
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": msg["id"], "error": {"message": "?"}})
+        body = f"event: message\ndata: {json.dumps({'jsonrpc': '2.0', 'id': msg['id'], 'result': result})}\n\n"
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=body)
+
+    rede["POST mcp.exemplo.com/mcp"] = handler
+
+
+@pytest.mark.django_db
+def test_mcp_so_ferramentas_liberadas_viram_funcoes(auth_client, tenant_id, rede):
+    from orchestration import registry
+
+    calls = []
+    _fake_mcp(rede, calls)
+    res = auth_client.post(
+        f"{API}/sources/",
+        {"name": "CRM via MCP", "source_type": "mcp",
+         "config": {"url": "https://mcp.exemplo.com/mcp", "auth_type": "bearer", "api_key": "tok-mcp-123456789"}},
+        format="json",
+    )
+    assert res.status_code == 201, res.data
+    sid = res.data["id"]
+    assert res.data["mode"] == "structured" and "tok-mcp" not in str(res.data)
+
+    test = auth_client.post(f"{API}/sources/{sid}/test-connection/").data
+    assert test["ok"] and "2 ferramenta(s)" in test["message"], test
+    assert calls[0] == ("initialize", None, "Bearer tok-mcp-123456789")
+    assert calls[-1][1] == "sess-1"  # sessão reaproveitada
+
+    tools = auth_client.post(f"{API}/sources/{sid}/mcp-discover/").data["tools"]
+    assert {t["nome"]: t["somente_leitura"] for t in tools} == {"buscar_cliente": True, "criar_ticket": False}
+
+    # Nada liberado ainda: nenhuma função pros agentes
+    assert not [f for f in registry.dynamic_functions(tenant_id) if f.name.startswith(f"fonte{sid}_")]
+
+    # Pessoa libera as duas; sem risco escolhido, quem escreve nasce "medium"
+    res = auth_client.post(
+        f"{API}/sources/{sid}/mcp-tools/",
+        {"ferramentas": [{"nome": "buscar_cliente"}, {"nome": "criar_ticket"}]},
+        format="json",
+    )
+    assert res.data["ferramentas"] == [
+        {"nome": "buscar_cliente", "risco": "low"},
+        {"nome": "criar_ticket", "risco": "medium"},
+    ]
+    bad = auth_client.post(f"{API}/sources/{sid}/mcp-tools/", {"ferramentas": ["apagar_tudo"]}, format="json")
+    assert bad.status_code == 400
+
+    funcs = {f.name: f for f in registry.dynamic_functions(tenant_id)}
+    assert funcs[f"fonte{sid}_criar_ticket"].risk == "medium"
+    # Escopo por setor: fonte fora do escopo não aparece
+    assert not registry.dynamic_functions(tenant_id, source_ids=[])
+
+    out = registry.execute(f"fonte{sid}_buscar_cliente", tenant_id, {"nome": "Acme", "limite": "3"})
+    assert "Cliente Acme" in out["resultado"] and "ana@cliente.com" not in out["resultado"]  # LGPD
+    assert "limite 3" in out["resultado"]  # "3" virou inteiro pelo schema
+
+    ov = auth_client.get(f"{API}/sources/{sid}/overview/").data
+    assert [q["nome"] for q in ov["queries"]] == ["buscar_cliente", "criar_ticket"]
+    assert {t["nome"]: t["liberada"] for t in ov["mcp_tools"]} == {"buscar_cliente": True, "criar_ticket": True}
+
+    # Editar o token não perde as ferramentas liberadas
+    auth_client.patch(
+        f"{API}/sources/{sid}/",
+        {"config": {"url": "https://mcp.exemplo.com/mcp", "auth_type": "bearer", "api_key": "••••6789"}},
+        format="json",
+    )
+    src = KnowledgeSource.objects.get(pk=sid)
+    assert len(src.config["ferramentas"]) == 2 and src.get_secrets()["api_key"] == "tok-mcp-123456789"

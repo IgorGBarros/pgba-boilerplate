@@ -16,4 +16,8 @@ class IntegrationsConfig(AppConfig):
 
     default_auto_field = "django.db.models.BigAutoField"
     name = "integrations"
-    verbose_name = "Integrações externas (GitHub, Vercel, Render, Supabase)"
+    verbose_name = "Integrações externas (GitHub, n8n, Hostinger, VPS, e-mail)"
+
+    def ready(self):
+        # Funções da IA: resumo do n8n (lê) e rascunho de e-mail do setor (não envia).
+        from integrations import ai_functions  # noqa: F401

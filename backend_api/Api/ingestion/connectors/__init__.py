@@ -4,6 +4,7 @@ Conectores de fonte externa. Um por `KnowledgeSource.SourceType`:
 
 - documents.py  — conteúdo que vira Document e entra na busca semântica
 - structured.py — banco/CRM consultado na hora por consultas nomeadas
+- mcp.py        — servidor MCP: só as ferramentas que uma pessoa liberou
 - safe_http.py  — toda saída de rede (anti-SSRF)
 - secrets.py    — segredos cifrados, nunca devolvidos pela API
 
@@ -19,6 +20,7 @@ from ingestion.connectors.documents import (
     UrlConnector,
     WebhookConnector,
 )
+from ingestion.connectors.mcp import McpConnector
 from ingestion.connectors.structured import HubSpotConnector, SalesforceConnector, SqlConnector
 
 CONNECTORS = {
@@ -34,6 +36,7 @@ CONNECTORS = {
         SqlConnector,
         HubSpotConnector,
         SalesforceConnector,
+        McpConnector,
     )
 }
 

@@ -8,10 +8,11 @@ import {
 import {
   listItensNecessarios, createItemNecessario, updateItemNecessario, deleteItemNecessario,
   listOrcamentos, buscarFornecedoresOSM, criarOrcamentoCompleto,
-  enviarOrcamento, aprovarOrcamento, rejeitarOrcamento, gerarPedidoCompra,
+  enviarOrcamento, aprovarOrcamento, rejeitarOrcamento, gerarPedidoCompra, draftQuoteEmail,
   recomendarFornecedor, updateOrcamento, deleteOrcamento, listEstoque,
   ItemNecessario, Orcamento, FornecedorCompras, RecomendacaoOrcamento, ItemEstoque,
 } from "@/lib/api";
+import { EmailDraftButton } from "@/components/admin/EmailDraftButton";
 
 const STATUS_LABELS: Record<string, string> = {
   rascunho: "Rascunho",
@@ -757,12 +758,21 @@ export function CRMPreCompra({ dealId }: Props) {
                     {/* Ações */}
                     <div className="flex gap-2 px-4 pb-4 flex-wrap">
                       {orc.status === "rascunho" && (
-                        <button
-                          onClick={() => void enviar(orc.id)}
-                          className="flex items-center gap-1 text-xs rounded-lg bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700 transition-colors"
-                        >
-                          <SendHorizonal className="size-3" />Enviar ao fornecedor
-                        </button>
+                        <>
+                          {/* E-mail de verdade pela caixa de Compras: pessoa revisa e envia; a cotação vira "enviado" quando sai */}
+                          <EmailDraftButton
+                            label="Pedir cotação por e-mail"
+                            create={() => draftQuoteEmail(orc.id)}
+                            onDone={() => void load()}
+                          />
+                          <button
+                            onClick={() => void enviar(orc.id)}
+                            title="Já mandou por fora (WhatsApp, telefone)? Só marca como enviado."
+                            className="flex items-center gap-1 text-xs rounded-lg border border-border px-3 py-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <SendHorizonal className="size-3" />Marcar como enviado
+                          </button>
+                        </>
                       )}
                       {["rascunho", "enviado", "recebido"].includes(orc.status) && (
                         <>

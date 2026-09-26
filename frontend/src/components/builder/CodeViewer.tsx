@@ -1,6 +1,6 @@
 // frontend/src/components/builder/CodeViewer.tsx
 import { useEffect, useState, useRef, useCallback } from "react";
-import CodeMirror from "@uiw/react-codemirror";
+import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { css } from "@codemirror/lang-css";
 import { json } from "@codemirror/lang-json";
@@ -9,6 +9,7 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { Loader2, Save, X, CheckCircle2, AlertTriangle } from "lucide-react";
 import { fetchFileContent, saveFileContent, fetchFileHash } from "@/lib/devserver";
 import { toast } from "sonner";
+import { usePreferences } from "@/lib/ThemeContext";
 
 function getExtensions(filePath: string) {
   const ext = filePath.split(".").pop() ?? "";
@@ -41,7 +42,8 @@ export default function CodeViewer({ filePath, workspace, localPath, goToLine, o
   const editorViewRef = useRef<import("@codemirror/view").EditorView | null>(null);
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
-  const extensions = getExtensions(filePath);
+  const { prefs } = usePreferences();
+  const extensions = prefs.wordWrap ? [...getExtensions(filePath), EditorView.lineWrapping] : getExtensions(filePath);
 
   useEffect(() => {
     let cancelled = false;
@@ -191,7 +193,7 @@ export default function CodeViewer({ filePath, workspace, localPath, goToLine, o
             indentOnInput: true,
             tabSize: 2,
           }}
-          style={{ fontSize: "12px", minHeight: "100%", height: "100%" }}
+          style={{ fontSize: `${prefs.editorFontSize}px`, minHeight: "100%", height: "100%" }}
         />
       </div>
     </div>
