@@ -56,7 +56,7 @@ export function ActivityPanel({
   if (!open) return null;
 
   return (
-    <div className="absolute left-0 top-0 flex h-full w-60 flex-col border-r border-white/10 bg-[#0d1117]/90 backdrop-blur-sm">
+    <div className="absolute left-0 top-0 z-30 flex h-full w-60 flex-col border-r border-white/10 bg-[#0d1117]/90 backdrop-blur-sm">
       <div className="border-b border-white/10 p-3">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-xs font-bold tracking-widest text-white">📡 ATIVIDADES</h2>
@@ -899,7 +899,7 @@ export function AgentInfoPanel({
 }) {
   if (!open) return null;
   return (
-    <div className="absolute right-0 top-0 flex h-full w-64 flex-col border-l border-white/10 bg-[#0d1117]/90 backdrop-blur-sm">
+    <div className="absolute right-0 top-0 z-30 flex h-full w-64 flex-col border-l border-white/10 bg-[#0d1117]/90 backdrop-blur-sm">
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <p className="text-xs font-bold tracking-widest text-white">AGENTS INFO</p>
         <button type="button" onClick={onClose} className="text-slate-400 hover:text-white">

@@ -280,23 +280,43 @@ agente também mostra `last_active_at` (anotado via
 `Max("interactions__created_at")` no `AgentViewSet`), a última interação
 registrada, para não parecer "sempre ocioso" por causa do timing do poll.
 
-**Visão 3D (Fase 1 — salas + agentes parados)**:
+**Visão 3D (Fase 3 — planta isométrica)**:
 `frontend/src/components/builder/CompanyOffice3D.tsx` (aba "Escritório
-3D" do Studio) — Three.js via `@react-three/fiber`/`@react-three/drei`,
-carregado sob demanda (`React.lazy`, ~960KB só quem abre a aba paga).
-Cada `Sector` vira uma sala (posição determinística em grade, cor fixa
-por índice — nunca aleatória, pra não trocar a cada recarga); cada
-`Agent` é um avatar simples (cápsula + esfera) posicionado estaticamente
-dentro da sala do seu setor, com brilho verde quando `work_status ==
-"working"` (mostra `current_task` acima da cabeça), cinza quando `idle`,
-amarelo quando `paused`. Mesmo polling de 5s da `CompanyOverview` — dado
-real, nunca simulado.
+3D" do Studio) + `builder/office3d/` — Three.js via
+`@react-three/fiber`/`@react-three/drei`, carregado sob demanda
+(`React.lazy`, ~1MB só quem abre a aba paga). Cada `Sector` vira uma sala
+(posição determinística em grade, cor fixa por índice — nunca aleatória);
+CEO/Orquestrador-Geral ficam na sala CEO, e há uma Sala de Reunião fixa.
 
-**O que falta desta fase pra próxima (deliberadamente não implementado
-ainda)**: movimento/pathfinding entre estações, animação de "andar",
-"envelope voando" pra mensagens entre setores (`SectorMessage`) — a
-Fase 2 combinada quando a Fase 1 foi decidida. Não implementar isso agora
-foi intencional, não uma limitação técnica descoberta depois.
+- **Câmera ortográfica isométrica** (`office3d/IsoCamera.tsx`): "planta de
+  arquiteto", sem distorção de perspectiva; modos Isométrica/Planta/Frontal,
+  zoom +/−/⌂ que enquadra tudo a partir do tamanho real do canvas.
+- **Salas em corte** ("casa de boneca"): laje elevada, paredes do fundo/
+  esquerda cheias, frente/direita baixas — dá pra ver dentro sem girar.
+- **Uma mesa por agente**, com crachá (★ = CEO/orquestrador), monitor com
+  textura gerada em canvas que acende quando o agente daquela mesa está
+  `working`. O agente senta de frente pro monitor.
+- **Cérebro central** (`office3d/BrainHub.tsx`): mesma regra de
+  `_rag_scope_for()` — fio contínuo pra sala CEO (cérebro principal) e pra
+  setores com `knowledge_source`; fio tracejado cinza pra setor sem
+  `knowledge_source` (o RAG dele devolve vazio, a planta não finge conexão).
+  Pulsos correm pelo fio só enquanto algum agente do setor está `working`.
+- **Cartões de KPI por setor** (`office3d/SectorCard.tsx`): agentes,
+  ativos/pausados, cérebro do setor e Tasks fazendo/próximas/feitas — tudo
+  de dado real (`listAgents`, `listTasks` + eventos `task`/`agent` do
+  WebSocket). Clicar abre o `RoomModal`.
+- **Tudo local**: sem HDR de CDN (`Environment` com `Lightformer`) e sem
+  fonte baixada em runtime (rótulos 3D rasterizados em canvas,
+  `office3d/textures.ts#labelTexture`) — sem rede, a cena ainda renderiza.
+
+Mantido da Fase 2: movimento por waypoints (porta → corredor → destino),
+reunião convocada pelo `MeetingModal`, portas que abrem quando um agente
+se aproxima, painéis de atividade/agentes e console.
+
+Ideias de layout inspiradas no Agents Office
+(github.com/ajsahni/agents-office), **sem copiar código** — a licença
+dele (PolyForm Noncommercial + termos adicionais) proíbe incorporá-lo em
+outro produto. Não traga código daquele repositório pra cá.
 
 ### Autonomia e Policy Engine (`Agent.autonomy_level` + `PolicyRule`)
 
