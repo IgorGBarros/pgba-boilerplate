@@ -237,10 +237,73 @@ export interface SectorMetric {
   budget_usd: number;
   usage_percent: number | null;
   status: SectorBudgetStatus;
+  /** Gasto do mês corrente — é contra ele que o orçamento mensal é comparado. */
+  month_cost_usd: number;
+  /** Gasto do mês por provedor de IA ("" = interação anterior ao registro de provedor). */
+  month_by_provider: ProviderCost[];
+  /** Provedor fixo do setor ("" = o do tenant). */
+  ai_provider: string;
+}
+
+export interface ProviderCost {
+  provider: string;
+  cost_usd: number;
+  tokens: number;
+  calls: number;
 }
 
 export async function getSectorMetrics(): Promise<SectorMetric[]> {
   return request<SectorMetric[]>("/api/v1/agency/metrics/sectors/");
+}
+
+/** Qual IA cada setor usa e se está pronta (credencial + modelo) — sem chamar o provedor. */
+export interface AIStatusEntry {
+  provider: string;
+  ready: boolean;
+  detail: string;
+}
+
+export interface AIStatus {
+  tenant: AIStatusEntry;
+  sectors: (AIStatusEntry & { sector_id: number; sector_name: string; model: string; source: "sector" | "tenant" })[];
+  agents: (AIStatusEntry & { agent_id: number; agent_name: string; model: string })[];
+}
+
+export async function getAIStatus(): Promise<AIStatus> {
+  return request<AIStatus>("/api/v1/agency/ai-status/");
+}
+
+// --- agency: linha do tempo (replay do dia no Escritório 3D) ---------------
+
+export type TimelineEvent =
+  | { kind: "interaction"; at: string; agent_id: number; agent_name: string; text: string; provider: string; cost_usd: number; task_id: number | null }
+  | { kind: "task_status"; at: string; task_id: number; agent_id: number; status: TaskStatus; previous_status: TaskStatus | null; finished: boolean; text: string }
+  | { kind: "task_finished"; at: string; task_id: number; agent_id: number; text: string }
+  | {
+      kind: "message_created" | "message_answered" | "message_rejected";
+      at: string; message_id: number; agent_id: number; agent_name: string;
+      from_sector_id: number | null; to_sector_id: number; to_sector_name: string; text: string; created_at: string;
+      relayed_by_id?: number | null; relayed_by_name?: string | null;
+    }
+  | {
+      kind: "approval_created" | "approval_decided";
+      at: string; approval_id: number; agent_id: number; agent_name: string; text: string; risk: string;
+      status?: "approved" | "rejected";
+    };
+
+export interface Timeline {
+  since: string;
+  until: string;
+  events: TimelineEvent[];
+  truncated: boolean;
+}
+
+export async function getTimeline(params?: { since?: string; until?: string }): Promise<Timeline> {
+  const query = new URLSearchParams();
+  if (params?.since) query.set("since", params.since);
+  if (params?.until) query.set("until", params.until);
+  const qs = query.toString();
+  return request<Timeline>(`/api/v1/agency/timeline/${qs ? `?${qs}` : ""}`);
 }
 
 // --- ingestion: fontes de conhecimento (a "Dados corporativos" real) ------
@@ -329,6 +392,8 @@ export interface KnowledgeGraphNode {
   status: DocumentStatus;
   updated_at: string | null;
   excerpt: string;
+  /** Links desta nota que não apontam pra nenhuma nota indexada (inexistente/privada). */
+  broken_links: string[];
 }
 
 export interface KnowledgeGraph {
@@ -351,6 +416,15 @@ export interface KnowledgeUsage {
 
 export async function getKnowledgeUsage(documentId: number): Promise<KnowledgeUsage[]> {
   return request<KnowledgeUsage[]>(`/api/v1/agency/knowledge-usage/?document=${documentId}`);
+}
+
+/** Uso de TODAS as notas de uma vez (mapa de calor do Cérebro): id → contagem. */
+export async function getKnowledgeUsageSummary(days?: number): Promise<Record<string, { count: number; last_at: string }>> {
+  const query = days ? `?days=${days}` : "";
+  const res = await request<{ documents: Record<string, { count: number; last_at: string }> }>(
+    `/api/v1/agency/knowledge-usage/summary/${query}`,
+  );
+  return res.documents;
 }
 
 export async function getKnowledgeGraph(sourceId?: number): Promise<KnowledgeGraph> {
@@ -497,6 +571,8 @@ export interface Task {
   version: number;
   task_type: string;
   workspace: string;
+  /** Trabalho rodando fora do Django (ex: geração de página no devserver). */
+  runs_externally: boolean;
   snapshots: TaskSnapshot[];
   created_at: string;
   updated_at: string;
@@ -565,6 +641,17 @@ export async function rejectTask(taskId: number, reason?: string): Promise<Task>
   return request<Task>(`/api/v1/agency/tasks/${taskId}/reject/`, {
     method: "POST",
     body: JSON.stringify({ reason: reason ?? "" }),
+  });
+}
+
+/**
+ * Marca que o trabalho vai rodar FORA do Django (agente aparece
+ * trabalhando) e devolve qual IA o agente usa — quem gera deve usar a
+ * mesma (ex: setor Desenvolvimento → Claude). Fecha com reportTaskResult.
+ */
+export async function startExternalTask(taskId: number): Promise<Task & { ai_provider: string; ai_model: string }> {
+  return request<Task & { ai_provider: string; ai_model: string }>(`/api/v1/agency/tasks/${taskId}/start-external/`, {
+    method: "POST",
   });
 }
 
@@ -684,6 +771,7 @@ export interface SectorMessage {
   rejection_reason: string;
   created_at: string;
   answered_at: string | null;
+  rejected_at: string | null;
 }
 
 export async function listSectorMessages(status?: SectorMessageStatus): Promise<SectorMessage[]> {

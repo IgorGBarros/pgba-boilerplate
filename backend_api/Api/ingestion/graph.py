@@ -59,6 +59,9 @@ def note_excerpt(content: str) -> str:
     return text[:EXCERPT_CHARS] + ("…" if len(text) > EXCERPT_CHARS else "")
 
 
+MAX_BROKEN_PER_NODE = 20
+
+
 def build_knowledge_graph(documents) -> dict:
     """
     `documents`: iterável de objetos com id, source_id, title, external_id,
@@ -95,6 +98,7 @@ def build_knowledge_graph(documents) -> dict:
             targets, excerpt = list(meta["links"] or []), str(meta["excerpt"] or "")
         else:
             targets, excerpt = extract_wikilinks(d.content or ""), note_excerpt(d.content or "")
+        broken: list[str] = []
         for t in targets:
             key = _norm(t)
             target_id = (
@@ -104,6 +108,8 @@ def build_knowledge_graph(documents) -> dict:
             )
             if target_id is None:
                 unresolved += 1
+                if t not in broken:
+                    broken.append(t)
             elif target_id != d.id:
                 edges.add((d.id, target_id))
 
@@ -120,6 +126,10 @@ def build_knowledge_graph(documents) -> dict:
             "status": d.status,
             "updated_at": d.updated_at.isoformat() if d.updated_at else None,
             "excerpt": excerpt,
+            # Links desta nota que não apontam pra nenhuma nota indexada do
+            # tenant (inexistente, privada, fora de include_tags) — o nome do
+            # link é o que já está escrito na própria nota, nada vazado.
+            "broken_links": broken[:MAX_BROKEN_PER_NODE],
         })
 
     return {

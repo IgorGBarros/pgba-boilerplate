@@ -119,6 +119,30 @@ def get_credential(tenant_id, provider: str) -> ResolvedCredential:
     return ResolvedCredential(provider=provider, api_key=env_key, base_url=env_base)
 
 
+def provider_readiness(tenant_id, provider: str, model: str | None = None) -> str | None:
+    """
+    Diz se `chat_completion(tenant_id, provider, model, ...)` teria o que
+    precisa pra rodar — credencial E modelo resolvidos pelas MESMAS regras
+    de `get_credential`/`chat_completion` — sem chamar o provedor. Devolve
+    `None` quando está pronto, ou a mensagem do `ProviderConfigError` que a
+    chamada real levantaria. Não testa rede nem validade da chave: serve
+    pra avisar antes ("este setor usa Claude e não há credencial"), não
+    pra garantir que a chamada vai dar certo.
+    """
+    if provider not in DEFAULT_BASE_URLS:
+        return f"Provedor '{provider}' não suportado."
+    try:
+        cred = get_credential(tenant_id, provider)
+    except ProviderConfigError as exc:
+        return str(exc)
+    if not (model or cred.default_model or getattr(settings, f"{provider.upper()}_CHAT_MODEL", "")):
+        return (
+            f"Nenhum modelo configurado para '{provider}' — defina em "
+            f"`configure_ai_provider --provider {provider} --model ...`."
+        )
+    return None
+
+
 def chat_completion(
     tenant_id, provider: str, model: str | None, messages: list[dict],
     temperature: float = 0.3, json_mode: bool = False, timeout: float | None = None,

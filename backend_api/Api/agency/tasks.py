@@ -77,7 +77,7 @@ def execute_task(tenant_id, task_id) -> Task:
 
     # Mesma regra de ask_as_agent: agente → setor → tenant (ex: setor de
     # Desenvolvimento fixo em Claude, demais no provedor do tenant).
-    from agency.services import resolve_agent_llm
+    from agency.services import record_interaction, resolve_agent_llm
     provider, model = resolve_agent_llm(agent)
 
     def _finish_with_error(detail: dict):
@@ -103,6 +103,10 @@ def execute_task(tenant_id, task_id) -> Task:
     except ProviderConfigError as exc:
         _finish_with_error({"error": str(exc)})
         raise
+
+    # Custo da execução entra no mesmo registro das perguntas avulsas — sem
+    # isso, orçamento do setor e custo por provedor ignoravam as Tasks.
+    record_interaction(agent, task.brief, raw, provider, model, task=task)
 
     cleaned = raw.strip()
     if cleaned.startswith("```"):
@@ -144,6 +148,34 @@ def update_progress(tenant_id, task_id, progress: float) -> Task:
     return task
 
 
+def start_external_task(tenant_id, task_id) -> Task:
+    """
+    Marca que o trabalho de uma Task começou FORA do Django (ex: geração de
+    página no devserver) — status IN_PROGRESS e agente "trabalhando", pra
+    planta e o quadro mostrarem a verdade durante a geração. Não chama
+    modelo nenhum; quem fecha é `report_task_result`.
+    """
+    task = Task.objects.select_related("agent").get(tenant_id=tenant_id, id=task_id)
+    if task.status not in (Task.Status.CREATED, Task.Status.ADAPTED):
+        raise TaskStateError(
+            f"Task {task_id} está em '{task.status}' — só dá pra iniciar a partir de created/adapted."
+        )
+
+    task.status = Task.Status.IN_PROGRESS
+    task.runs_externally = True
+    task.progress = 0.0
+    task.updated_at = timezone.now()
+    task.save(update_fields=["status", "runs_externally", "progress", "updated_at"])
+    broadcast_task_update(task)
+
+    agent = task.agent
+    agent.work_status = Agent.WorkStatus.WORKING
+    agent.current_task = task.brief[:255]
+    agent.save(update_fields=["work_status", "current_task"])
+    broadcast_agent_update(agent)
+    return task
+
+
 def report_task_result(
     tenant_id, task_id, success: bool, result: dict, current_files: list | None = None,
 ) -> Task:
@@ -156,13 +188,20 @@ def report_task_result(
     resultado aqui dentro), esta função só REGISTRA um resultado que já
     aconteceu — nunca invoca modelo nenhum.
 
-    Só aceita a partir de CREATED ou ADAPTED (mesma regra de
-    `execute_task` — nunca fecha uma Task que já foi decidida ou que já
-    está em outro estado intermediário).
+    Aceita a partir de CREATED ou ADAPTED (mesma regra de `execute_task`),
+    ou de uma Task iniciada por `start_external_task` que ainda não teve
+    resultado — nunca fecha uma Task já decidida, nem uma que o próprio
+    `execute_task` está rodando.
     """
     task = Task.objects.select_related("agent").get(tenant_id=tenant_id, id=task_id)
-    if task.status not in (Task.Status.CREATED, Task.Status.ADAPTED):
-        raise TaskStateError(f"Task {task_id} está em '{task.status}' — report_task_result só aceita a partir de created/adapted.")
+    started_outside = (
+        task.status == Task.Status.IN_PROGRESS and task.runs_externally and task.progress < 1.0
+    )
+    if task.status not in (Task.Status.CREATED, Task.Status.ADAPTED) and not started_outside:
+        raise TaskStateError(
+            f"Task {task_id} está em '{task.status}' — report_task_result só aceita a partir de "
+            f"created/adapted ou de uma Task iniciada fora do Django (start-external)."
+        )
 
     task.result = result
     task.current_files = current_files or []

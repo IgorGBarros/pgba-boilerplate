@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { BarChart3, Zap, DollarSign, MessageSquare, Users, RefreshCw, TrendingUp } from "lucide-react";
+import { BarChart3, Zap, DollarSign, MessageSquare, RefreshCw, TrendingUp } from "lucide-react";
 import { getCRMTokenUsage, TokenUsageSummary } from "@/lib/api";
 
 const CHANNEL_LABELS: Record<string, string> = {

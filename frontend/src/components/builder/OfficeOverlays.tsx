@@ -9,6 +9,8 @@ import {
   ChevronRight,
   DoorOpen,
   Gauge,
+  History,
+  ListTodo,
   Loader2,
   PanelRight,
   ShieldAlert,
@@ -25,10 +27,16 @@ import {
   getSectorMetrics,
   updateSector,
   type AgentAskResult,
+  type AIStatus,
   type Sector,
+  type SectorMessage,
   type SectorMetric,
+  type Task,
 } from "@/lib/api";
-import { PROVIDERS, PROVIDER_LABEL } from "./office3d/providers";
+import { PROVIDERS, PROVIDER_LABEL, formatUsd, providerName, sumByProvider } from "./office3d/providers";
+import { ProviderCosts } from "./office3d/ProviderCosts";
+import { RoomTaskBoard } from "./office3d/RoomTaskBoard";
+import { SendMessageForm } from "./office3d/SendMessageForm";
 import {
   getOrchestrators,
   getSectorAgents,
@@ -132,6 +140,10 @@ export function OfficeTopBar({
   onOpenConsole,
   pendingApprovals = 0,
   onOpenApprovals,
+  budgetAlerts = 0,
+  aiProblems = 0,
+  replaying = false,
+  onToggleReplay,
 }: {
   agents: OfficeAgent[];
   connected: boolean;
@@ -148,6 +160,12 @@ export function OfficeTopBar({
   onOpenConsole: () => void;
   pendingApprovals?: number;
   onOpenApprovals?: () => void;
+  /** Setores com gasto do mês ≥ 80% do orçamento. */
+  budgetAlerts?: number;
+  /** Setores cuja IA não tem credencial/modelo configurado. */
+  aiProblems?: number;
+  replaying?: boolean;
+  onToggleReplay?: () => void;
 }) {
   const active = agents.filter((a) => a.status === "working" || a.status === "thinking").length;
   const inMeeting = agents.filter((a) => a.status === "meeting").length;
@@ -218,12 +236,31 @@ export function OfficeTopBar({
 
       {/* Ações */}
       <div className="ml-auto flex items-center gap-1.5">
+        {aiProblems > 0 && (
+          <span
+            title="Setor(es) com IA fixa sem credencial ou modelo — as chamadas deles falham até configurar (configure_ai_provider). Passe o mouse na etiqueta do setor."
+            className="flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700"
+          >
+            ⚠ IA sem credencial · {aiProblems}
+          </span>
+        )}
+        {budgetAlerts > 0 && (
+          <button
+            type="button"
+            onClick={onOpenConsole}
+            title="Setores com gasto do mês acima de 80% do orçamento"
+            className="flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 transition hover:bg-amber-100"
+          >
+            $ orçamento · {budgetAlerts} setor{budgetAlerts > 1 ? "es" : ""}
+          </button>
+        )}
         {pendingApprovals > 0 && (
           <button
             type="button"
             onClick={onOpenApprovals}
-            title="Ações bloqueadas pela política de autonomia esperando decisão humana"
-            className="flex items-center gap-1.5 rounded-full border border-orange-300 bg-orange-50 px-3 py-1 text-[11px] font-semibold text-orange-700 transition hover:bg-orange-100"
+            disabled={!onOpenApprovals}
+            title={onOpenApprovals ? "Ações bloqueadas pela política de autonomia esperando decisão humana" : "Pendentes naquele instante (replay)"}
+            className="flex items-center gap-1.5 rounded-full border border-orange-300 bg-orange-50 px-3 py-1 text-[11px] font-semibold text-orange-700 transition hover:bg-orange-100 disabled:cursor-default disabled:hover:bg-orange-50"
           >
             <ShieldAlert className="size-3.5" />
             {pendingApprovals} {pendingApprovals === 1 ? "aprovação" : "aprovações"}
@@ -251,11 +288,24 @@ export function OfficeTopBar({
           type="button"
           onClick={onOpenConsole}
           className="flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1 text-[11px] font-medium text-stone-700 transition hover:bg-stone-50"
-          title="Console — tokens e custo por setor"
+          title="Console — custo do mês por setor e por IA"
         >
           <Gauge className="size-3.5" />
           Console
         </button>
+        {onToggleReplay && (
+          <button
+            type="button"
+            onClick={onToggleReplay}
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium transition ${
+              replaying ? "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100" : "border-stone-200 bg-white text-stone-700 hover:bg-stone-50"
+            }`}
+            title="Rever o dia: quem trabalhou, mensagens e aprovações"
+          >
+            <History className="size-3.5" />
+            {replaying ? "Voltar ao vivo" : "Linha do tempo"}
+          </button>
+        )}
 
         <span className="mx-1 h-4 w-px bg-stone-200" />
 
@@ -351,6 +401,21 @@ function AgentAvatarDot({ agent, size = 28 }: { agent: OfficeAgent; size?: numbe
   );
 }
 
+function BudgetBar({ percent, status }: { percent: number; status: SectorMetric["status"] }) {
+  const color = status === "over" ? "#ef4444" : status === "warn" ? "#f59e0b" : "#10b981";
+  return (
+    <div className="flex items-center gap-2" title="Gasto do mês ÷ orçamento mensal do setor">
+      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-stone-100">
+        <span className="block h-full rounded-full" style={{ width: `${Math.min(percent, 100)}%`, background: color }} />
+      </span>
+      <span className="font-mono text-[10px]" style={{ color }}>{percent.toFixed(0)}%</span>
+      {status !== "ok" && (
+        <span className="text-[10px] font-semibold" style={{ color }}>{status === "over" ? "estourou" : "perto do limite"}</span>
+      )}
+    </div>
+  );
+}
+
 // ─── Room Modal ────────────────────────────────────────────────────────────────
 
 export function RoomModal({
@@ -362,6 +427,10 @@ export function RoomModal({
   onClose,
   onAgentClick,
   onSectorUpdated,
+  tasks = [],
+  onTaskUpdated,
+  metric,
+  aiStatus,
 }: {
   /** Setor real (null na sala CEO / reunião). */
   sector: Sector | null;
@@ -372,6 +441,13 @@ export function RoomModal({
   onClose: () => void;
   onAgentClick?: (a: OfficeAgent) => void;
   onSectorUpdated?: (s: Sector) => void;
+  /** Todas as Tasks — filtradas aqui pelos agentes da sala. */
+  tasks?: Task[];
+  onTaskUpdated?: (t: Task) => void;
+  /** Custo do mês do setor (metrics/sectors). */
+  metric?: SectorMetric | null;
+  /** Status da IA do setor (ai-status) — sem credencial = aviso. */
+  aiStatus?: AIStatus["sectors"][number] | null;
 }) {
   // id -2 = sala CEO: quem não tem setor (CEO / Orquestrador-Geral)
   const roomAgents = agents.filter((a) => (sectorId === -2 ? a.sectorId == null : a.sectorId === sectorId));
@@ -405,15 +481,25 @@ export function RoomModal({
   };
 
   const working = roomAgents.filter((a) => a.status === "working").length;
+  const roomAgentIds = new Set(roomAgents.map((a) => a.id));
+  const roomTasks = tasks.filter((t) => roomAgentIds.has(t.agent));
 
   return (
     <OfficeDialog
       open={open}
       onClose={onClose}
+      width="max-w-2xl"
       icon={<span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-stone-200 text-stone-700"><DoorOpen className="size-4" /></span>}
       title={`Sala · ${sectorName}`}
       subtitle={`${roomAgents.length} ${roomAgents.length === 1 ? "agente" : "agentes"} · ${working} trabalhando`}
     >
+      {aiStatus && !aiStatus.ready && (
+        <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-800">
+          <b>⚠ A IA deste setor ({providerName(aiStatus.provider)}) não está pronta.</b> As chamadas dos agentes daqui
+          falham até configurar — sem cair em outro provedor.
+          <span className="mt-0.5 block font-mono text-[10px] text-red-700/80">{aiStatus.detail}</span>
+        </div>
+      )}
       <div className="space-y-1">
         {roomAgents.length === 0 && <p className="py-4 text-center text-stone-400">Nenhum agente nesta sala.</p>}
         {roomAgents.map((agent) => (
@@ -437,6 +523,33 @@ export function RoomModal({
           </button>
         ))}
       </div>
+
+      {onTaskUpdated && roomAgents.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+            <ListTodo className="size-3" /> Tarefas
+          </p>
+          <RoomTaskBoard tasks={roomTasks} agents={roomAgents} onTaskUpdated={onTaskUpdated} />
+        </div>
+      )}
+
+      {metric && (
+        <div className="mt-4 rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+          <p className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+            Custo do mês
+            <span className="font-mono normal-case tracking-normal text-stone-800">
+              {formatUsd(metric.month_cost_usd)}
+              {metric.budget_usd > 0 && <span className="text-stone-400"> / {formatUsd(metric.budget_usd)}</span>}
+            </span>
+          </p>
+          {metric.usage_percent !== null && (
+            <BudgetBar percent={metric.usage_percent} status={metric.status} />
+          )}
+          <div className="mt-2">
+            <ProviderCosts rows={metric.month_by_provider} />
+          </div>
+        </div>
+      )}
 
       {sector && (
         <div className="mt-4 rounded-xl border border-stone-200 bg-white px-3 py-2.5">
@@ -495,10 +608,15 @@ export function AgentModal({
   agent,
   open,
   onClose,
+  sectors = [],
+  onMessageSent,
 }: {
   agent: OfficeAgent | null;
   open: boolean;
   onClose: () => void;
+  sectors?: Sector[];
+  /** Pedido para outro setor registrado (envelope pendente na porta). */
+  onMessageSent?: (m: SectorMessage) => void;
 }) {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
@@ -582,6 +700,12 @@ export function AgentModal({
           </div>
         )}
       </div>
+
+      {onMessageSent && (
+        <div className="mt-4">
+          <SendMessageForm agent={agent} sectors={sectors} onSent={onMessageSent} />
+        </div>
+      )}
     </OfficeDialog>
   );
 }
@@ -1036,6 +1160,8 @@ export function ConsoleModal({ open, onClose }: { open: boolean; onClose: () => 
 
   const totalTokens = metrics.reduce((s, m) => s + m.tokens, 0);
   const totalCost = metrics.reduce((s, m) => s + m.cost_usd, 0);
+  const monthByProvider = sumByProvider(metrics.map((m) => m.month_by_provider ?? []));
+  const monthTotal = metrics.reduce((s, m) => s + (m.month_cost_usd ?? 0), 0);
 
   return (
     <OfficeDialog
@@ -1044,7 +1170,7 @@ export function ConsoleModal({ open, onClose }: { open: boolean; onClose: () => 
       width="max-w-lg"
       icon={<span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-stone-200 text-stone-700"><TrendingUp className="size-4" /></span>}
       title="Console"
-      subtitle="Tokens e custo estimado por setor"
+      subtitle="Custo estimado do mês por setor e por IA"
     >
       {loading ? (
         <p className="py-8 text-center text-stone-400">Carregando métricas…</p>
@@ -1054,16 +1180,26 @@ export function ConsoleModal({ open, onClose }: { open: boolean; onClose: () => 
         <p className="py-8 text-center text-stone-400">Nenhum dado ainda — aparece depois das primeiras interações dos agentes.</p>
       ) : (
         <div className="space-y-2">
+          <div className="rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+            <p className="mb-1.5 flex justify-between text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+              Este mês, por IA
+              <b className="font-mono normal-case tracking-normal text-stone-900">{formatUsd(monthTotal)}</b>
+            </p>
+            <ProviderCosts rows={monthByProvider} />
+          </div>
           <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
             <div className="grid grid-cols-4 gap-2 border-b border-stone-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-stone-400">
-              <span className="col-span-2">Setor</span>
-              <span className="text-right">Tokens</span>
-              <span className="text-right">Custo</span>
+              <span className="col-span-2">Setor · orçamento do mês</span>
+              <span className="text-right">Mês</span>
+              <span className="text-right">Total</span>
             </div>
             {metrics.map((m) => (
               <div key={m.sector_id} className="grid grid-cols-4 items-center gap-2 border-b border-stone-50 px-3 py-2 last:border-0">
                 <div className="col-span-2 flex items-center gap-2">
                   <span className="truncate text-[12px] font-medium text-stone-800">{m.sector_name}</span>
+                  {m.ai_provider && (
+                    <span className="shrink-0 rounded-full bg-stone-100 px-1.5 text-[9px] text-stone-500">{providerName(m.ai_provider)}</span>
+                  )}
                   {m.usage_percent !== null && (
                     <span className="flex items-center gap-1" title="Uso do orçamento mensal do setor">
                       <span className="h-1.5 w-14 overflow-hidden rounded-full bg-stone-100">
@@ -1079,8 +1215,8 @@ export function ConsoleModal({ open, onClose }: { open: boolean; onClose: () => 
                     </span>
                   )}
                 </div>
-                <span className="text-right font-mono text-[11px] text-stone-600">{formatTokens(m.tokens)}</span>
-                <span className="text-right font-mono text-[11px] text-stone-600">{formatCost(m.cost_usd)}</span>
+                <span className="text-right font-mono text-[11px] text-stone-800">{formatUsd(m.month_cost_usd ?? 0)}</span>
+                <span className="text-right font-mono text-[11px] text-stone-500" title={`${formatTokens(m.tokens)} tokens desde o início`}>{formatCost(m.cost_usd)}</span>
               </div>
             ))}
           </div>
@@ -1091,7 +1227,10 @@ export function ConsoleModal({ open, onClose }: { open: boolean; onClose: () => 
               <b>{formatCost(totalCost)}</b>
             </span>
           </div>
-          <p className="text-[10px] text-stone-400">Custo estimado pela tabela aproximada do backend (agency.services), não pela fatura do provedor.</p>
+          <p className="text-[10px] text-stone-400">
+            Custo estimado pela tabela aproximada do backend (agency.services), não pela fatura do provedor. O orçamento
+            é mensal: compara com o gasto do mês corrente. Chamadas da diretoria (sem setor) não entram por setor.
+          </p>
         </div>
       )}
     </OfficeDialog>

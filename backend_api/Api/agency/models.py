@@ -213,6 +213,16 @@ class AgentInteraction(TenantMixin, models.Model):
     # (ids soltos, sem FK — mesma regra do query_log_id: vertical não amarra
     # o core). É o que permite o Cérebro mostrar "quem consultou esta nota".
     source_document_ids = models.JSONField(default=list, blank=True)
+    # Qual IA respondeu (resolve_agent_llm) — é o que permite separar custo
+    # por provedor ("Desenvolvimento: Claude R$ X · demais: Groq R$ Y").
+    # Vazio = interação anterior a este campo (provedor desconhecido).
+    provider = models.CharField(max_length=20, blank=True)
+    model = models.CharField(max_length=100, blank=True)
+    # Preenchido quando o custo veio da execução de uma Task (execute_task),
+    # não de uma pergunta avulsa (ask_as_agent).
+    task = models.ForeignKey(
+        "Task", on_delete=models.SET_NULL, null=True, blank=True, related_name="interactions",
+    )
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:
@@ -250,6 +260,7 @@ class SectorMessage(TenantMixin, models.Model):
     rejection_reason = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     answered_at = models.DateTimeField(null=True, blank=True)
+    rejected_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -437,6 +448,11 @@ class Task(TenantMixin, AuditMixin, models.Model):
     # um workspace local pode nunca virar Project nenhum, e um Project já
     # publicado no GitHub pode não ter workspace local correspondente.
     workspace = models.CharField(max_length=100, blank=True)
+    # True = o trabalho está rodando FORA do Django (ex: geração de página no
+    # devserver) — marcado por `start_external_task`, fechado por
+    # `report_task_result`. Permite o agente aparecer "trabalhando" durante
+    # a geração sem que o backend finja ter chamado um modelo.
+    runs_externally = models.BooleanField(default=False)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
 

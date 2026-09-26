@@ -131,7 +131,7 @@ function ChannelCard({
     },
   });
 
-  const parseBh = (raw: ChannelConfig["business_hours"]): BusinessHours => {
+  const parseBh = (raw: ChannelConfig["business_hours"] | undefined): BusinessHours => {
     if (!raw || !("schedule" in raw)) return defaultBh();
     return raw as BusinessHours;
   };
