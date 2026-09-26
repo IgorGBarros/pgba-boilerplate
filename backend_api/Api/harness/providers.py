@@ -453,3 +453,65 @@ def embed(tenant_id, provider: str, model: str, text: str, timeout: float = 30.0
             raise ProviderConfigError(str(exc)) from exc
 
     raise ProviderConfigError(f"Provedor '{provider}' não suporta embeddings aqui.")
+
+
+# Transcrição de áudio (Whisper) — Groq e OpenAI expõem `/audio/transcriptions`
+# no mesmo dialeto. Ollama não tem Whisper: vídeo sem legenda precisa de uma
+# dessas duas credenciais (opt-in explícito, como qualquer nuvem aqui).
+TRANSCRIBE_MODELS = {"groq": "whisper-large-v3-turbo", "openai": "whisper-1"}
+TRANSCRIBE_MAX_BYTES = 25 * 1024 * 1024
+
+
+def transcription_provider(tenant_id) -> str | None:
+    """Primeiro provedor com credencial que transcreve (groq → openai), ou None."""
+    for provider in ("groq", "openai"):
+        try:
+            if get_credential(tenant_id, provider).api_key:
+                return provider
+        except ProviderConfigError:
+            continue
+    return None
+
+
+def transcribe(
+    tenant_id, audio: bytes, filename: str = "audio.mp3", language: str = "pt",
+    provider: str | None = None, timeout: float = 600.0,
+) -> list[dict]:
+    """
+    Transcreve áudio e devolve segmentos com tempo: [{"inicio", "fim", "texto"}].
+    Levanta ProviderConfigError de forma explícita (sem credencial, arquivo
+    grande demais, resposta sem segmentos).
+    """
+    provider = provider or transcription_provider(tenant_id)
+    if provider not in TRANSCRIBE_MODELS:
+        raise ProviderConfigError(
+            "Transcrever áudio precisa de credencial da Groq ou da OpenAI (Whisper) — "
+            "configure em IA (painel administrativo)."
+        )
+    if len(audio) > TRANSCRIBE_MAX_BYTES:
+        raise ProviderConfigError("Áudio acima de 25 MB — o provedor não aceita.")
+    cred = get_credential(tenant_id, provider)
+    try:
+        resp = httpx.post(
+            f"{cred.base_url}/audio/transcriptions",
+            headers={"Authorization": f"Bearer {cred.api_key}"},
+            data={
+                "model": TRANSCRIBE_MODELS[provider],
+                "response_format": "verbose_json",
+                "language": language,
+            },
+            files={"file": (filename, audio, "audio/mpeg")},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise ProviderConfigError(f"Transcrição falhou ({provider}): {exc}") from exc
+    segs = [
+        {"inicio": float(s["start"]), "fim": float(s["end"]), "texto": str(s["text"]).strip()}
+        for s in data.get("segments") or []
+        if str(s.get("text", "")).strip()
+    ]
+    if not segs:
+        raise ProviderConfigError("A transcrição voltou sem falas.")
+    return segs

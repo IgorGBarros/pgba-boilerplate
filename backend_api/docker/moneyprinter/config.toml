@@ -1,0 +1,20 @@
+# Configuração mínima do MoneyPrinterTurbo pro PGBA (copie de
+# github.com/harry0703/MoneyPrinterTurbo/blob/main/config.example.toml se
+# quiser ajustar mais). O roteiro vem pronto do PGBA — LLM aqui não é usado.
+[app]
+video_source = "pexels"
+# Troque por um valor aleatório e cole o mesmo no painel do PGBA
+api_key = "troque-esta-chave"
+# Chave gratuita em https://www.pexels.com/api/
+pexels_api_keys = []
+pixabay_api_keys = []
+max_concurrent_tasks = 2
+endpoint = ""
+
+[whisper]
+model_size = "large-v3"
+device = "CPU"
+compute_type = "int8"
+
+[ui]
+hide_log = false

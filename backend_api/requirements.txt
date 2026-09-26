@@ -67,3 +67,8 @@ black>=23.0,<24.0
 flake8>=6.1,<7.0
 isort>=5.12,<6.0
 pre-commit>=3.4,<4.0
+
+# 📣 Marketing (criativos em imagem e cortes de vídeo)
+Pillow>=10.1,<13.0
+# yt-dlp muda sempre que o YouTube muda — sem teto de versão; atualize com frequência
+yt-dlp>=2025.1.1

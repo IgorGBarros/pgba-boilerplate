@@ -900,6 +900,42 @@ Módulos → Jurídico). Ideias dos sistemas jurídicos profissionais, nada copi
 - IA: `juridico_resumo` e `juridico_prazos_proximos` (só leitura).
 - `ErpCrud` agora aceita recurso de outro app (`"juridico/processos"` → `/api/v1/juridico/processos`).
 
+### Vertical `marketing` — time de conteúdo, 8 redes sociais e vídeo
+
+`backend_api/Api/marketing/` + `frontend/src/components/empresa/marketing*` (Empresa →
+Módulos → Marketing). Detalhes e o que cada rede exige em `docs/MARKETING.md`.
+
+- **Time** (`marketing/equipe.py`, `seed_marketing` ou botão "Montar time"): Head de
+  Marketing (orquestrador) + Estrategista, Copywriter, Designer, Editor de Vídeo, Social
+  Media, Analista — skills em `agency/skills/`. Serve pra qualquer ramo via
+  `PerfilMarca` (briefing de todo prompt, `services.briefing`; presets em `ramos.py`).
+- **IA** (`marketing/ia.py`): `harness.chat_completion` + `extract_json`/`validate_schema`,
+  IA do setor, custo no agente (`record_interaction`), texto externo como `<dado>`.
+  Plano do período, post por rede, texto de criativo, cortes (`ajustar_cortes` confere
+  o que a IA sugeriu), roteiro. **Nada publica.**
+- **Publicar = pessoa aprova** (`services.aprovar` confere limites/mídia antes;
+  editar aprovado volta pra revisão; `reivindicar` atômico; beat
+  `publicar_agendadas_task` a cada 60s). `Destino` por conta, erro por rede não
+  derruba as outras. Agentes só têm `marketing_rascunho_post` (rascunho).
+- **Redes** (`marketing/redes/`, tudo por `safe_http`): Instagram/Facebook (Meta Graph;
+  Instagram busca mídia por link assinado → `PUBLIC_API_URL`), TikTok (caixa de entrada
+  por padrão), YouTube (upload resumável), LinkedIn (Posts API, little text), X (v2),
+  Discord (webhook), Twitch (anúncio no chat). OAuth com `state` de uso único + PKCE
+  no banco (`OAuthPendente`); tokens cifrados; callback público
+  `/api/v1/marketing/oauth/callback/` → página `/marketing-conectado` no frontend.
+- **Criativos** (`criativos.py`, Pillow): 4 modelos × 6 formatos, cores/logo da marca,
+  fonte Montserrat (OFL) em `marketing/fonts/`.
+- **Vídeo** (`video.py`): cortes 9:16 de vídeo longo (yt-dlp só YouTube/Twitch, com
+  confirmação de direitos; legenda do vídeo ou `harness.providers.transcribe` (Whisper);
+  ffmpeg + libass). Vídeo curto pelo **MoneyPrinterTurbo** como serviço à parte
+  (`integrations/moneyprinter.py`, `ServiceCredential(provider="moneyprinter")`,
+  profile `marketing` no docker-compose) — roteiro vai pronto daqui; nada do código
+  dele foi copiado.
+- Mídia (`Midia`) só sai pelas views (com login) ou pelo link assinado de 2 dias;
+  tipo conferido pelo conteúdo do arquivo (`midias.farejar`), não pelo nome.
+- Organograma: setor "Marketing" abre o módulo; `getSectorModule` tratava "marke**ti**ng"
+  como TI/Helpdesk — agora "ti" só como palavra.
+
 ### Painel administrativo + integrações (`integrations` + `components/admin/`)
 
 Abre pelo botão **Painel administrativo** na caixa **Empresa** do organograma

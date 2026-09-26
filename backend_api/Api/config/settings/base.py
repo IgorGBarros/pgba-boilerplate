@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "crm",
     "erp",
     "juridico",
+    "marketing",
     "helpdesk",
     "desenvolvimento",
     "controladoria",
@@ -95,6 +96,8 @@ REST_FRAMEWORK = {
         "webhook": "120/min",
         # Links públicos de assinatura eletrônica (juridico) e verificação de documento
         "assinatura": "60/min",
+        # Retorno do login OAuth das redes sociais e mídia pública (Instagram/TikTok buscam)
+        "marketing_publico": "120/min",
     },
 }
 
@@ -144,11 +147,23 @@ CELERY_BEAT_SCHEDULE = {
         "task": "integrations.tasks.fetch_inboxes_task",
         "schedule": 300.0,
     },
+    # Publicações APROVADAS com horário marcado (marketing) — só publica o que
+    # uma pessoa aprovou
+    "marketing-publicacoes-agendadas": {
+        "task": "marketing.tasks.publicar_agendadas_task",
+        "schedule": 60.0,
+    },
 }
 DATA_RETENTION_DAYS = int(os.environ.get("DATA_RETENTION_DAYS", "730"))
 
 # 🌐 Frontend URL (usado em e-mails de reset de senha, etc.)
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+# Endereço PÚBLICO desta API (https://api.suaempresa.com). O retorno do login
+# OAuth das redes cai aqui, e Instagram/TikTok buscam a mídia por este endereço.
+# Vazio = usa o host da própria requisição (serve em dev, não pro Instagram).
+PUBLIC_API_URL = os.environ.get("PUBLIC_API_URL", "")
+META_GRAPH_VERSION = os.environ.get("META_GRAPH_VERSION", "v23.0")
+LINKEDIN_API_VERSION = os.environ.get("LINKEDIN_API_VERSION", "")
 
 # 📧 Email
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")

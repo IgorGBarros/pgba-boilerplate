@@ -88,11 +88,28 @@ def check_url(url: str) -> str:
     return parsed.geturl()
 
 
-def request(method: str, url: str, **kwargs) -> httpx.Response:
-    """httpx com as travas acima. Levanta ConnectorError com mensagem legível."""
+def request(
+    method: str,
+    url: str,
+    *,
+    timeout: float | None = None,
+    max_bytes: int | None = None,
+    raise_for_status: bool = True,
+    **kwargs,
+) -> httpx.Response:
+    """
+    httpx com as travas acima. Levanta ConnectorError com mensagem legível.
+
+    `raise_for_status=False` devolve a resposta de erro (4xx/5xx) pra quem
+    chama ler o corpo — APIs de redes sociais explicam o erro em JSON.
+    `timeout`/`max_bytes` sobem o teto pra upload/download de mídia.
+    """
     headers = {"User-Agent": USER_AGENT, **(kwargs.pop("headers", None) or {})}
+    limit = max_bytes or MAX_BYTES
     current = check_url(url)
-    with httpx.Client(transport=_transport, timeout=TIMEOUT, follow_redirects=False) as client:
+    with httpx.Client(
+        transport=_transport, timeout=timeout or TIMEOUT, follow_redirects=False
+    ) as client:
         for _ in range(MAX_REDIRECTS + 1):
             try:
                 with client.stream(method, current, headers=headers, **kwargs) as resp:
@@ -107,8 +124,10 @@ def request(method: str, url: str, **kwargs) -> httpx.Response:
                     body = bytearray()
                     for chunk in resp.iter_bytes():
                         body.extend(chunk)
-                        if len(body) > MAX_BYTES:
-                            raise ConnectorError("Resposta grande demais (limite de 10 MB).")
+                        if len(body) > limit:
+                            raise ConnectorError(
+                                f"Resposta grande demais (limite de {limit // (1024 * 1024)} MB)."
+                            )
                     response = httpx.Response(
                         resp.status_code,
                         headers=resp.headers,
@@ -121,6 +140,8 @@ def request(method: str, url: str, **kwargs) -> httpx.Response:
                 ) from exc
             except httpx.HTTPError as exc:
                 raise ConnectorError(f"Falha de rede: {exc}") from exc
+            if not raise_for_status:
+                return response
             if response.status_code in (401, 403):
                 raise ConnectorError(
                     f"Acesso negado ({response.status_code}) — confira a credencial."
@@ -147,3 +168,37 @@ def post_json(url: str, **kwargs):
         return resp.json()
     except ValueError as exc:
         raise ConnectorError("A resposta não é JSON.") from exc
+
+
+def download(url: str, dest, *, max_bytes: int, timeout: float = 120.0, **kwargs) -> int:
+    """
+    Baixa pra arquivo em pedaços (sem carregar tudo na memória), com as
+    mesmas travas de host e redirect. Devolve o tamanho gravado.
+    """
+    headers = {"User-Agent": USER_AGENT, **(kwargs.pop("headers", None) or {})}
+    current = check_url(url)
+    with httpx.Client(transport=_transport, timeout=timeout, follow_redirects=False) as client:
+        for _ in range(MAX_REDIRECTS + 1):
+            try:
+                with client.stream("GET", current, headers=headers, **kwargs) as resp:
+                    if resp.is_redirect:
+                        current = check_url(urljoin(current, resp.headers.get("location", "")))
+                        continue
+                    if resp.status_code >= 400:
+                        raise ConnectorError(f"Download recusado ({resp.status_code}).")
+                    total = 0
+                    with open(dest, "wb") as fh:
+                        for chunk in resp.iter_bytes():
+                            total += len(chunk)
+                            if total > max_bytes:
+                                mb = max_bytes // (1024 * 1024)
+                                raise ConnectorError(f"Arquivo grande demais (limite de {mb} MB).")
+                            fh.write(chunk)
+                    return total
+            except httpx.TimeoutException as exc:
+                raise ConnectorError(
+                    f"Tempo esgotado baixando de {urlparse(current).hostname}."
+                ) from exc
+            except httpx.HTTPError as exc:
+                raise ConnectorError(f"Falha de rede: {exc}") from exc
+    raise ConnectorError("Redirecionamentos demais.")

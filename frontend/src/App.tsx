@@ -9,6 +9,7 @@ import { RealtimeProvider } from "@/lib/RealtimeContext";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { AdminPanelHost } from "@/components/admin/AdminPanel";
 import { AssinarPage, VerificarPage } from "@/pages/AssinarPage";
+import { MarketingConectado } from "@/pages/MarketingConectado";
 import type { Section } from "@/lib/navigation";
 
 // Carregado sob demanda: só quem abre o Estúdio paga o custo de
@@ -64,10 +65,12 @@ const embeddedTab = (params.get("tab") as EmbedTab | null) ?? "pages";
 // Páginas públicas (sem login): assinatura por link pessoal e verificação de PDF
 const assinarToken = window.location.pathname.match(/^\/assinar\/([\w-]+)\/?$/)?.[1];
 const isVerificar = /^\/verificar\/?$/.test(window.location.pathname);
+const isMarketingConectado = /^\/marketing-conectado\/?$/.test(window.location.pathname);
 
 export default function App() {
   if (assinarToken) return <AssinarPage token={assinarToken} />;
   if (isVerificar) return <VerificarPage />;
+  if (isMarketingConectado) return <MarketingConectado />;
   return <MainApp />;
 }
 

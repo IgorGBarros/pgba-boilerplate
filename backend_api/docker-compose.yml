@@ -166,7 +166,25 @@ services:
       DSN: ${GMAPS_SCRAPER_DSN:-}   # opcional: postgres para persistência de jobs
     restart: unless-stopped
 
+  # 🎬 MoneyPrinterTurbo (MIT, github.com/harry0703/MoneyPrinterTurbo) — vídeo curto
+  # (roteiro → banco de vídeos → narração → legenda). Opcional: sobe com
+  # `docker compose --profile marketing up -d moneyprinter`. O roteiro vai pronto do
+  # time de Marketing (IA pelo harness); o MoneyPrinter só precisa da chave do Pexels
+  # e de `api_key` no config.toml. No PGBA: Painel administrativo → MoneyPrinterTurbo,
+  # URL http://moneyprinter:8080 + CONNECTORS_ALLOWED_PRIVATE_HOSTS=moneyprinter.
+  moneyprinter:
+    image: ghcr.io/harry0703/moneyprinterturbo:latest
+    profiles: ["marketing"]
+    command: ["python3", "main.py"]
+    ports:
+      - "127.0.0.1:8090:8080"
+    volumes:
+      - ./docker/moneyprinter/config.toml:/MoneyPrinterTurbo/config.toml
+      - moneyprinter_storage:/MoneyPrinterTurbo/storage
+    restart: unless-stopped
+
 volumes:
+  moneyprinter_storage:
   pgba_pg_data:
   pgba_ollama_data:
   evolution_instances:
