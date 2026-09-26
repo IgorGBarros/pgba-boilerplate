@@ -23,24 +23,13 @@ from django.utils import timezone
 
 from agency.models import Sector, Agent, AgentInteraction, SectorMessage, Project, PendingApproval
 from harness.injection_guard import sanitize_user_input
+from harness.providers import track_usage
 from agency.realtime import (
     broadcast_pending_approval_update,
     broadcast_sector_message_update,
 )
 from integrations.services import create_project_repository, get_project_repository, IntegrationConfigError
 from orchestration import registry
-
-# Preço aproximado por 1K tokens (entrada+saída médio), só para dar uma
-# ordem de grandeza no console — não é billing real. Ajuste conforme os
-# preços vigentes do(s) provedor(es) configurados no harness.
-APPROX_PRICE_PER_1K_TOKENS = {
-    "ollama": Decimal("0.0"),       # local, sem custo de API
-    "openai": Decimal("0.01"),
-    "anthropic": Decimal("0.01"),
-    "groq": Decimal("0.001"),
-    "openrouter": Decimal("0.005"),
-}
-
 
 class AccessDeniedError(Exception):
     """Uma regra de hierarquia foi violada (ex: setor tentando falar com outro sem mediação)."""
@@ -97,22 +86,50 @@ def resolve_agent_llm(agent: Agent) -> tuple[str, str | None]:
 def record_interaction(
     agent: Agent, question: str, answer: str, provider: str, model: str | None = None,
     source_document_ids: list[int] | None = None, task=None,
+    usage: list | None = None, tokens_in: int | None = None, tokens_out: int | None = None,
+    cost_usd=None,
 ) -> AgentInteraction:
     """
-    Registra uma chamada de IA feita em nome de um agente, com tokens/custo
-    estimados e QUAL provedor respondeu. Único lugar que calcula custo —
-    `ask_as_agent` (pergunta avulsa) e `execute_task` (Task) passam por
-    aqui, então orçamento de setor e custo por provedor enxergam os dois.
+    Registra uma chamada de IA feita em nome de um agente e QUAL provedor
+    respondeu. Único lugar que registra custo de agente — `ask_as_agent`
+    (pergunta avulsa), `execute_task` (Task) e `report_task_result` (Claude
+    Code local) passam por aqui, então orçamento de setor e custo por
+    provedor enxergam os três.
+
+    Ordem de precisão: `usage` (lista de `harness.ChatUsage` — tokens que o
+    provedor informou, preço do modelo em `harness.pricing`) → `tokens_in/
+    tokens_out` informados por quem rodou fora → estimativa por texto.
+    `cost_usd` explícito (ex: `total_cost_usd` do Claude Code) vence o cálculo.
     """
-    tokens = _estimate_tokens(question) + _estimate_tokens(answer)
-    price_table = APPROX_PRICE_PER_1K_TOKENS.get(provider, Decimal("0.005"))
+    from harness.pricing import estimate_cost
+
+    estimated = False
+    if usage:
+        tin = sum(u.tokens_in for u in usage)
+        tout = sum(u.tokens_out for u in usage)
+        model = model or usage[-1].model
+        cost = sum(
+            (estimate_cost(u.provider, u.model, u.tokens_in, u.tokens_out) for u in usage),
+            start=Decimal(0),
+        )
+    elif tokens_in is not None or tokens_out is not None:
+        tin, tout = tokens_in or 0, tokens_out or 0
+        cost = estimate_cost(provider, model or "", tin, tout)
+    else:
+        tin, tout = _estimate_tokens(question), _estimate_tokens(answer)
+        cost = estimate_cost(provider, model or "", tin, tout)
+        estimated = True
+    if cost_usd is not None:
+        cost = Decimal(str(cost_usd))
+
     return AgentInteraction.objects.create(
         tenant_id=agent.tenant_id,
         agent=agent,
         question=question,
         answer=answer,
-        tokens_used=tokens,
-        estimated_cost_usd=(Decimal(tokens) / Decimal(1000)) * price_table,
+        tokens_used=tin + tout,
+        tokens_estimated=estimated,
+        estimated_cost_usd=cost,
         source_document_ids=sorted(set(source_document_ids or [])),
         provider=provider or "",
         model=model or "",
@@ -366,15 +383,16 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
     agent.save(update_fields=["work_status", "current_task"])
 
     provider, model = resolve_agent_llm(agent)
-    result = answer_question(
-        tenant_id, question,
-        use_rag_context=use_rag_context,
-        rag_source_ids=_rag_scope_for(agent),
-        policy_check=make_policy_check(agent),
-        agent_instructions=agent.instructions or "",
-        provider=provider,
-        model=model,
-    )
+    with track_usage() as usage:  # tokens reais de todas as chamadas da pergunta
+        result = answer_question(
+            tenant_id, question,
+            use_rag_context=use_rag_context,
+            rag_source_ids=_rag_scope_for(agent),
+            policy_check=make_policy_check(agent),
+            agent_instructions=agent.instructions or "",
+            provider=provider,
+            model=model,
+        )
 
     if result.get("status") == "pending_approval" and result.get("function_called"):
         fn = registry.get_function(result["function_called"])
@@ -390,6 +408,7 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
 
     record_interaction(
         agent, question, result.get("answer", ""), provider, model,
+        usage=usage,
         source_document_ids=[
             s["document_id"]
             for s in result.get("sources") or []

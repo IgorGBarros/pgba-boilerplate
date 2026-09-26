@@ -29,21 +29,17 @@ interface PreviewPanelProps {
   isTerminalOpen?: boolean;
   onToggleTerminal?: () => void;
   taskCommitMessage?: string;
+  /** Pedido do pai pra abrir uma URL no preview (ex: página recém-gerada). */
+  navigateTo?: { url: string; nonce: number } | null;
 }
 
-// Heuristic: convert a file path to a preview route
+// Página gerada → rota do preview. Mesma regra de scripts/generator.mjs
+// (updateRoutes): src/pages[/generated]/Contato.tsx → "#/contato". As rotas
+// são por hash, então a query (?embed=1&tab=pages do app principal) fica
+// intacta — antes trocava o caminho e o iframe carregava o Studio inteiro.
 function filePathToRoute(filePath: string): string | null {
-  const match = filePath.match(/src\/pages\/(.+)\.(tsx?|jsx?)$/);
-  if (!match) return null;
-  const name = match[1]
-    .replace(/\bindex$/i, "")
-    .replace(/([A-Z])/g, (m) => `/${m.toLowerCase()}`)
-    .replace(/^\//, "")
-    .replace(/\/$/, "");
-  if (!name) return "/";
-  // PascalCase "GerarPage" → "/gerar"
-  const clean = name.replace(/page$/i, "").replace(/\//g, "/");
-  return "/" + clean;
+  const match = filePath.match(/src\/pages\/(?:generated\/)?([^/]+)\.tsx$/);
+  return match ? `/${match[1].toLowerCase()}` : null;
 }
 
 export default function PreviewPanel({
@@ -56,6 +52,7 @@ export default function PreviewPanel({
   isTerminalOpen: isTerminalOpenProp,
   onToggleTerminal: onToggleTerminalProp,
   taskCommitMessage,
+  navigateTo,
 }: PreviewPanelProps) {
   const [showExplorer, setShowExplorer] = useState(true);
   const [explorerMode, setExplorerMode] = useState<"files" | "search">("files");
@@ -86,10 +83,24 @@ export default function PreviewPanel({
 
   useEffect(() => { setFiles(initialFiles); }, [initialFiles]);
 
+  // Trocou de projeto (outro servidor de preview): recomeça do endereço dele
+  useEffect(() => {
+    setCurrentUrl(previewUrl);
+    setDraftUrl(previewUrl);
+    setIframeKey((k) => k + 1);
+  }, [previewUrl]);
+
+  useEffect(() => {
+    if (!navigateTo) return;
+    setCurrentUrl(navigateTo.url);
+    setShowPreview(true);
+    setIframeKey((k) => k + 1);
+  }, [navigateTo]);
+
   const refreshFiles = useCallback(async () => {
     const { files: updated, error } = await listProjectFiles(workspace, localPath);
     setLoadError(error);
-    if (updated.length > 0) setFiles(updated);
+    setFiles(updated);
   }, [workspace, localPath]);
 
   const handleSelectFile = useCallback((filePath: string, line?: number) => {
@@ -103,12 +114,7 @@ export default function PreviewPanel({
     setOpenFiles((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]));
     // Navigate preview to the matching route
     const route = filePathToRoute(filePath);
-    if (route && previewUrl) {
-      try {
-        const base = new URL(previewUrl);
-        setCurrentUrl(`${base.origin}${route}`);
-      } catch { /* ignore invalid URLs */ }
-    }
+    if (route && previewUrl) setCurrentUrl(`${previewUrl.split("#")[0]}#${route}`);
   }, [splitView, activeFile, previewUrl]);
 
   const handleCloseFile = useCallback((filePath: string) => {

@@ -261,10 +261,23 @@ class InterruptTaskSerializer(serializers.Serializer):
     instructions = serializers.CharField(max_length=2000)
 
 
+class TaskUsageSerializer(serializers.Serializer):
+    """Consumo informado por quem rodou a Task fora do Django (ex: Claude Code)."""
+
+    provider = serializers.CharField(max_length=20, required=False, allow_blank=True, default="")
+    model = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    tokens_in = serializers.IntegerField(min_value=0, required=False, allow_null=True)
+    tokens_out = serializers.IntegerField(min_value=0, required=False, allow_null=True)
+    cost_usd = serializers.DecimalField(
+        max_digits=10, decimal_places=6, min_value=0, required=False, allow_null=True,
+    )
+
+
 class ReportTaskResultSerializer(serializers.Serializer):
     success = serializers.BooleanField()
     result = serializers.JSONField(default=dict)
     current_files = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    usage = TaskUsageSerializer(required=False, allow_null=True)
 
 
 class AdaptTaskSerializer(serializers.Serializer):

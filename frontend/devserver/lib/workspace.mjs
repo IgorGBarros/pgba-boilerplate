@@ -13,7 +13,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TEMPLATE_DIR = path.resolve(__dirname, "..", "workspace-template");
+// MESMO template que o backend empurra pro GitHub ao criar o projeto
+// (agency.services._load_simple_commercial_template) — antes a pasta local
+// vinha de um template próprio do devserver, e a árvore do projeto novo não
+// batia com o que foi pro repositório. Um template só, dois consumidores.
+const TEMPLATE_DIR = path.resolve(__dirname, "..", "..", "project-templates", "simple_commercial");
+const NAME_PLACEHOLDER = "PROJECT_NAME_PLACEHOLDER";
 const WORKSPACE_ROOT = path.resolve(__dirname, "..", "..", "workspace");
 
 const PORT_RANGE_START = 4000;
@@ -31,10 +36,11 @@ function copyTemplateRecursive(src, dest, workspaceName) {
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
+    if (entry.name === "node_modules" || entry.name === "package-lock.json") continue; // igual ao backend
     if (entry.isDirectory()) {
       copyTemplateRecursive(srcPath, destPath, workspaceName);
     } else {
-      const content = fs.readFileSync(srcPath, "utf-8").replaceAll("__WORKSPACE_NAME__", workspaceName);
+      const content = fs.readFileSync(srcPath, "utf-8").replaceAll(NAME_PLACEHOLDER, workspaceName);
       fs.writeFileSync(destPath, content, "utf-8");
     }
   }

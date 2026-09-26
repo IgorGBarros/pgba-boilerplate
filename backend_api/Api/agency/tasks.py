@@ -58,7 +58,7 @@ def execute_task(tenant_id, task_id) -> Task:
 
     from django.conf import settings
 
-    from harness.providers import chat_completion, ProviderConfigError
+    from harness.providers import chat_completion, ProviderConfigError, track_usage
 
     task = Task.objects.select_related("agent__sector").get(id=task_id, tenant_id=tenant_id)
     if task.status not in (Task.Status.CREATED, Task.Status.ADAPTED):
@@ -91,22 +91,36 @@ def execute_task(tenant_id, task_id) -> Task:
         agent.save(update_fields=["work_status", "current_task"])
         broadcast_agent_update(agent)
 
+    started_version = task.version
     try:
-        raw = chat_completion(
-            tenant_id, provider, model,  # model=None -> resolve por get_credential().default_model
-            messages=[
-                {"role": "system", "content": DEFAULT_TASK_SYSTEM_PROMPT},
-                {"role": "user", "content": task.brief},
-            ],
-            temperature=0.3, json_mode=True,
-        )
+        with track_usage() as usage:
+            # model=None -> resolve por get_credential().default_model
+            raw = chat_completion(
+                tenant_id, provider, model,
+                messages=[
+                    {"role": "system", "content": DEFAULT_TASK_SYSTEM_PROMPT},
+                    {"role": "user", "content": task.brief},
+                ],
+                temperature=0.3, json_mode=True,
+            )
     except ProviderConfigError as exc:
+        # Alguém pausou/decidiu enquanto o modelo rodava: não sobrescreve.
+        if _changed_while_running(task, started_version):
+            raise
         _finish_with_error({"error": str(exc)})
         raise
 
     # Custo da execução entra no mesmo registro das perguntas avulsas — sem
-    # isso, orçamento do setor e custo por provedor ignoravam as Tasks.
-    record_interaction(agent, task.brief, raw, provider, model, task=task)
+    # isso, orçamento do setor e custo por provedor ignoravam as Tasks. Conta
+    # mesmo se o resultado for descartado abaixo: a chamada foi feita e paga.
+    record_interaction(agent, task.brief, raw, provider, model, task=task, usage=usage)
+
+    # A chamada ao modelo pode levar minutos. Se nesse meio-tempo o CEO pausou
+    # (interrupt_task → PAUSED_CEO, version+1), adaptou, aprovou ou rejeitou,
+    # o resultado desta execução já não vale: gravar por cima apagava a
+    # intervenção humana e deixava o agente "ocioso" com a tarefa pausada.
+    if _changed_while_running(task, started_version):
+        return task
 
     cleaned = raw.strip()
     if cleaned.startswith("```"):
@@ -134,6 +148,16 @@ def execute_task(tenant_id, task_id) -> Task:
     broadcast_agent_update(agent)
 
     return task
+
+
+def _changed_while_running(task: Task, started_version: int) -> bool:
+    """
+    Relê a Task do banco: True se ela saiu de IN_PROGRESS ou mudou de versão
+    desde que a execução começou (intervenção humana no meio). Atualiza o
+    objeto em memória com o estado atual.
+    """
+    task.refresh_from_db(fields=["status", "version", "progress", "result", "updated_at"])
+    return task.status != Task.Status.IN_PROGRESS or task.version != started_version
 
 
 def update_progress(tenant_id, task_id, progress: float) -> Task:
@@ -178,6 +202,7 @@ def start_external_task(tenant_id, task_id) -> Task:
 
 def report_task_result(
     tenant_id, task_id, success: bool, result: dict, current_files: list | None = None,
+    usage: dict | None = None,
 ) -> Task:
     """
     Fecha uma Task cujo trabalho de verdade aconteceu FORA do Django —
@@ -201,6 +226,19 @@ def report_task_result(
         raise TaskStateError(
             f"Task {task_id} está em '{task.status}' — report_task_result só aceita a partir de "
             f"created/adapted ou de uma Task iniciada fora do Django (start-external)."
+        )
+
+    if usage:
+        # Quem rodou fora informou o consumo (ex: Claude Code local:
+        # tokens + total_cost_usd). Entra no custo do agente/setor como
+        # qualquer outra chamada de IA.
+        from agency.services import record_interaction
+
+        record_interaction(
+            task.agent, task.brief, str(result.get("output") or result.get("error") or "")[:4000],
+            usage.get("provider") or "", usage.get("model") or "",
+            task=task, tokens_in=usage.get("tokens_in"), tokens_out=usage.get("tokens_out"),
+            cost_usd=usage.get("cost_usd"),
         )
 
     task.result = result

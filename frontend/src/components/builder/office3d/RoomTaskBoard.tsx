@@ -11,7 +11,7 @@
 // projeto continua sendo pelo quadro de tarefas do Studio, que tem os
 // arquivos em mãos.
 import { useMemo, useState } from "react";
-import { Check, Loader2, Pause, Play, Plus, RotateCcw, X } from "lucide-react";
+import { Check, Loader2, Pause, Play, Plus, RotateCcw, SquareTerminal, X } from "lucide-react";
 import {
   ApiError,
   adaptTask,
@@ -23,6 +23,7 @@ import {
   type Task,
 } from "@/lib/api";
 import type { OfficeAgent } from "../office-types";
+import { ClaudeCodePanel } from "./ClaudeCodePanel";
 
 type Column = "doing" | "review" | "next" | "done";
 
@@ -54,13 +55,18 @@ export function RoomTaskBoard({
   tasks,
   agents,
   onTaskUpdated,
+  claudeCode = false,
 }: {
   /** Tasks dos agentes desta sala. */
   tasks: Task[];
   agents: OfficeAgent[];
   onTaskUpdated: (t: Task) => void;
+  /** Sala do Desenvolvimento: tarefas podem ir pro Claude Code local. */
+  claudeCode?: boolean;
 }) {
   const [newAgent, setNewAgent] = useState<number | "">("");
+  const [claudeTaskId, setClaudeTaskId] = useState<number | null>(null);
+  const claudeTask = tasks.find((t) => t.id === claudeTaskId) ?? null;
   const [brief, setBrief] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -73,14 +79,15 @@ export function RoomTaskBoard({
     return m;
   }, [tasks]);
 
-  const create = async (run: boolean) => {
+  const create = async (run: boolean | "claude") => {
     if (newAgent === "" || !brief.trim()) return;
     setCreating(true);
     setCreateError(null);
     try {
       const task = await createTask({ agentId: newAgent, brief: brief.trim() });
       onTaskUpdated(task);
-      if (run) onTaskUpdated(await executeTask(task.id));
+      if (run === "claude") setClaudeTaskId(task.id);
+      else if (run) onTaskUpdated(await executeTask(task.id));
       setBrief("");
     } catch (e) {
       setCreateError(e instanceof ApiError ? e.message : "Falha ao criar a tarefa.");
@@ -101,12 +108,21 @@ export function RoomTaskBoard({
             <div className="space-y-1.5">
               {byColumn[col.id].length === 0 && <p className="px-1 py-2 text-center text-[10px] text-stone-300">—</p>}
               {byColumn[col.id].map((t) => (
-                <TaskCard key={t.id} task={t} onTaskUpdated={onTaskUpdated} />
+                <TaskCard
+                  key={t.id}
+                  task={t}
+                  onTaskUpdated={onTaskUpdated}
+                  onClaudeCode={claudeCode ? () => setClaudeTaskId(t.id) : undefined}
+                />
               ))}
             </div>
           </div>
         ))}
       </div>
+
+      {claudeTask && (
+        <ClaudeCodePanel task={claudeTask} onTaskUpdated={onTaskUpdated} onClose={() => setClaudeTaskId(null)} />
+      )}
 
       {agents.length > 0 && (
         <div className="mt-2 rounded-xl border border-dashed border-stone-300 bg-white px-2.5 py-2">
@@ -139,6 +155,18 @@ export function RoomTaskBoard({
             >
               Criar
             </button>
+            {claudeCode && (
+              <button
+                type="button"
+                onClick={() => create("claude")}
+                disabled={creating || newAgent === "" || !brief.trim()}
+                title="Cria a tarefa e abre o painel do Claude Code local"
+                className="flex items-center gap-1 rounded-full bg-violet-700 px-3 py-1 text-[11px] font-semibold text-white hover:bg-violet-800 disabled:opacity-40"
+              >
+                <SquareTerminal className="size-3" />
+                Criar → Claude Code
+              </button>
+            )}
             <button
               type="button"
               onClick={() => create(true)}
@@ -155,7 +183,15 @@ export function RoomTaskBoard({
   );
 }
 
-function TaskCard({ task, onTaskUpdated }: { task: Task; onTaskUpdated: (t: Task) => void }) {
+function TaskCard({
+  task,
+  onTaskUpdated,
+  onClaudeCode,
+}: {
+  task: Task;
+  onTaskUpdated: (t: Task) => void;
+  onClaudeCode?: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // "pause" pede a instrução do CEO; "adapt" pede o novo brief
@@ -240,6 +276,12 @@ function TaskCard({ task, onTaskUpdated }: { task: Task; onTaskUpdated: (t: Task
       {!decided && !prompt && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1">
           {busy && <Loader2 className="size-3 animate-spin text-stone-400" />}
+          {onClaudeCode && task.task_type !== "generate_page"
+            && (canExecute || (task.runs_externally && task.status === "in_progress" && task.progress < 1)) && (
+            <ActionButton title="Claude Code local (terminal ou em segundo plano)" onClick={onClaudeCode} disabled={busy}>
+              <SquareTerminal className="size-3" />
+            </ActionButton>
+          )}
           {canExecute && (
             <ActionButton title="Executar agora (IA do setor)" onClick={() => run(() => executeTask(task.id))} disabled={busy}>
               <Play className="size-3" />

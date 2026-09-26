@@ -177,6 +177,10 @@ CHAT_TIMEOUT_SECONDS = float(os.environ.get("CHAT_TIMEOUT_SECONDS", "120"))
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+# Preço por modelo (US$/milhão de tokens, entrada/saída) — sobrescreve a
+# tabela de harness/pricing.py sem editar código. JSON, ex:
+# {"groq:llama-3.3-70b": [0.59, 0.79], "openai:gpt-4o": [2.5, 10]}
+AI_MODEL_PRICES = os.environ.get("AI_MODEL_PRICES", "")
 ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_BASE_URL = os.environ.get("GROQ_BASE_URL", "")

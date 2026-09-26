@@ -9,7 +9,9 @@ import { useChatPersistence } from "@/hooks/useChatPersistence";
 import {
   connectGenerateStream,
   listProjectFiles,
+  startWorkspace,
   triggerGeneratePage,
+  waitForServerReady,
   type GenerateLogEvent,
   type ProjectFile,
 } from "@/lib/devserver";
@@ -45,6 +47,11 @@ const PROVIDER_NAME: Record<string, string> = {
 // Mostra só as páginas geradas, sem carregar o Studio de novo dentro do iframe.
 const PREVIEW_URL = "http://localhost:5173/?embed=1&tab=pages";
 
+/** URL do preview com a página aberta pelo hash (#/contato) — mesma regra das rotas geradas. */
+function withRoute(base: string, route?: string) {
+  return route ? `${base.split("#")[0]}#${route}` : base;
+}
+
 interface GeneratePanelProps {
   initialProjectId?: number;
 }
@@ -68,12 +75,42 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? null;
+  // Preview do projeto selecionado: o servidor PRÓPRIO dele (workspace sobe
+  // numa porta 4000+). Antes o preview era sempre o app principal, então a
+  // página gerada "não aparecia" — ela nem era escrita no projeto.
+  const [previewUrl, setPreviewUrl] = useState(PREVIEW_URL);
+  const [previewNav, setPreviewNav] = useState<{ url: string; nonce: number } | null>(null);
+  const [previewNote, setPreviewNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPreviewNote(null);
+    if (!activeProject) { setPreviewUrl(PREVIEW_URL); return; }
+    if (activeProject.workspace) {
+      setPreviewNote("Subindo o servidor do projeto…");
+      startWorkspace(activeProject.workspace)
+        .then(async ({ port }) => {
+          const url = `http://localhost:${port}/`;
+          await waitForServerReady(url);
+          if (!cancelled) { setPreviewUrl(url); setPreviewNote(null); }
+        })
+        .catch((err) => {
+          if (!cancelled) setPreviewNote(err instanceof Error ? err.message : "Não consegui subir o servidor do projeto.");
+        });
+    } else {
+      // Pasta local importada: o Studio não sobe o servidor dela — edite a URL do preview.
+      setPreviewNote("Projeto de pasta local: rode o servidor dele e informe a URL no preview.");
+    }
+    return () => { cancelled = true; };
+  }, [activeProject?.id, activeProject?.workspace]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function refreshFiles(project?: Project | null) {
     const p = project ?? activeProject;
+    // Sempre substitui a árvore — antes, projeto com pasta vazia/inexistente
+    // continuava mostrando a árvore do projeto anterior.
     listProjectFiles(p?.workspace || undefined, p?.local_path || undefined)
-      .then(({ files }) => { if (files.length > 0) setFiles(files); })
-      .catch(() => {});
+      .then(({ files }) => setFiles(files))
+      .catch(() => setFiles([]));
   }
 
   useEffect(() => {
@@ -157,7 +194,7 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
           agentId: agent.id,
           brief: prompt,
           taskType: "generate_page",
-          // Sem workspace/projeto: a geração abaixo escreve no app principal.
+          workspace: activeProject?.workspace || "",
         });
         const started = await startExternalTask(task.id);
         taskId = task.id;
@@ -194,6 +231,8 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
         addMessage({ type: "assistant", content: event.message });
       } else if (event.stage === "complete") {
         finishTask(true, { ...(event.result ?? {}) }, event.result?.filePath ? [event.result.filePath] : []);
+        // Abre o preview direto na página recém-gerada
+        setPreviewNav({ url: withRoute(previewUrl, event.result?.route), nonce: Date.now() });
         setIsLoading(false);
         refreshFiles();
         source.close();
@@ -207,7 +246,12 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
     eventSourceRef.current = source;
 
     try {
-      await triggerGeneratePage({ jobId, prompt, accessToken, provider, model });
+      await triggerGeneratePage({
+        jobId, prompt, accessToken, provider, model,
+        // Gera DENTRO do projeto selecionado (antes ia sempre pro app principal)
+        workspace: activeProject?.workspace || undefined,
+        localPath: activeProject?.local_path || undefined,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Falha ao iniciar geração.";
       finishTask(false, { error: message });
@@ -285,6 +329,7 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
                 </option>
               ))}
             </select>
+            {previewNote && <span className="max-w-[260px] truncate text-[10px] text-amber-400" title={previewNote}>{previewNote}</span>}
             {activeProject?.local_path && (
               <span className="max-w-[200px] truncate text-[10px] text-slate-500" title={activeProject.local_path}>
                 {activeProject.local_path}
@@ -294,7 +339,8 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
         )}
         <div className="min-h-0 flex-1">
           <PreviewPanel
-            previewUrl={PREVIEW_URL}
+            previewUrl={previewUrl}
+            navigateTo={previewNav}
             files={files}
             logs={logs}
             onClearLogs={() => setLogs([])}

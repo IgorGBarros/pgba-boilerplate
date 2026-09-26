@@ -218,6 +218,9 @@ class AgentInteraction(TenantMixin, models.Model):
     # Vazio = interação anterior a este campo (provedor desconhecido).
     provider = models.CharField(max_length=20, blank=True)
     model = models.CharField(max_length=100, blank=True)
+    # False = tokens informados pelo provedor/Claude Code; True = estimativa
+    # por texto (chamada sem retorno de uso, ou anterior a este campo).
+    tokens_estimated = models.BooleanField(default=True)
     # Preenchido quando o custo veio da execução de uma Task (execute_task),
     # não de uma pergunta avulsa (ask_as_agent).
     task = models.ForeignKey(

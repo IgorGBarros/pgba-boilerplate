@@ -14,11 +14,14 @@ import * as THREE from "three";
 import {
   getAIStatus, getSectorMetrics, getTimeline,
   listAgents, listPendingApprovals, listSectorMessages, listSectors, listTasks, patchAgentAutonomy,
-  type AIStatus, type Agent, type PendingApproval, type Sector, type SectorMessage, type SectorMetric,
+  type AIProvider, type AIStatus, type Agent, type PendingApproval, type Sector, type SectorMessage, type SectorMetric,
   type Task, type Timeline, ApiError,
 } from "@/lib/api";
 import { ReplayBar } from "./office3d/ReplayBar";
+import { DailySummaryModal } from "./office3d/DailySummaryModal";
+import { AIConfigModal } from "./office3d/AIConfigModal";
 import { REPLAY_SPEEDS, replayStateAt } from "./office3d/replay";
+import { getClaudeAutoOpen, isClaudeCodeSector, launchClaudeCode } from "./office3d/claudeCode";
 import { BrainHub, type BrainLink } from "./office3d/BrainHub";
 import { BrainGraph } from "./office3d/BrainGraph";
 import { MessageModal } from "./office3d/MessageModal";
@@ -1707,6 +1710,9 @@ export default function CompanyOffice3D() {
   const [replayT,        setReplayT]        = useState(0);
   const [replayPlaying,  setReplayPlaying]  = useState(false);
   const [replaySpeed,    setReplaySpeed]    = useState<number>(REPLAY_SPEEDS[1]);
+  const [summaryOpen,    setSummaryOpen]    = useState(false);
+  // Configurar chave de IA: null = fechado; string = provedor que falta ("" = geral)
+  const [aiConfigFor,    setAiConfigFor]    = useState<string | null>(null);
 
   // Intervalo de polling derivado do slider (não estado separado)
   const speed = AUTONOMY_SPEEDS[autonomySlider] ?? 30_000;
@@ -1873,6 +1879,24 @@ export default function CompanyOffice3D() {
         ? prev.map((t) => (t.id === lastTaskEvent.id ? lastTaskEvent : t))
         : [lastTaskEvent, ...prev],
     );
+  }, [lastTaskEvent]);
+
+  // Tarefa NOVA pro Desenvolvimento + "abrir automaticamente" ligado: abre o
+  // Claude Code num terminal na máquina (devserver). Só tarefa criada agora
+  // (evento ao vivo, status created) — nunca as antigas do carregamento — e
+  // uma vez por tarefa, mesmo que o evento chegue de novo.
+  const autoLaunchedRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    const t = lastTaskEvent;
+    if (!t || t.status !== "created" || t.task_type === "generate_page" || autoLaunchedRef.current.has(t.id)) return;
+    if (!isClaudeCodeSector(t.sector_name) || !getClaudeAutoOpen()) return;
+    autoLaunchedRef.current.add(t.id);
+    launchClaudeCode(t, "terminal")
+      .then(({ task }) => setTasks((prev) => prev.map((x) => (x.id === task.id ? task : x))))
+      .catch((err) => {
+        const closed = (err as { task?: Task }).task;
+        if (closed) setTasks((prev) => prev.map((x) => (x.id === closed.id ? closed : x)));
+      });
   }, [lastTaskEvent]);
 
   // Quando uma reunião local está ativa, sobrescreve o status dos participantes
@@ -2242,6 +2266,8 @@ export default function CompanyOffice3D() {
         budgetAlerts={budgetAlerts}
         aiProblems={aiProblems}
         replaying={replayOn}
+        onOpenSummary={() => setSummaryOpen(true)}
+        onOpenAIConfig={() => setAiConfigFor(aiStatus?.sectors.find((x) => !x.ready)?.provider ?? "")}
         onToggleReplay={() => {
           // Troca de modo não anima o que "mudou" entre ao vivo e replay
           seenStatusRef.current = null;
@@ -2550,6 +2576,7 @@ export default function CompanyOffice3D() {
         onTaskUpdated={replay ? undefined : upsertTask}
         metric={selectedRoom ? metricBySector.get(selectedRoom.id) ?? null : null}
         aiStatus={selectedRoom ? aiBySector.get(selectedRoom.id) ?? null : null}
+        onConfigureAI={(provider) => { setRoomModalOpen(false); setAiConfigFor(provider); }}
       />
       <MeetingModal
         open={meetingOpen}
@@ -2566,6 +2593,16 @@ export default function CompanyOffice3D() {
         onEndMeeting={() => setMeetingAgentIds(new Set())}
       />
       <ConsoleModal open={consoleOpen} onClose={() => setConsoleOpen(false)} />
+      <DailySummaryModal open={summaryOpen} onClose={() => setSummaryOpen(false)} />
+      <AIConfigModal
+        open={aiConfigFor !== null}
+        provider={(aiConfigFor || undefined) as AIProvider | undefined}
+        onClose={() => {
+          setAiConfigFor(null);
+          // Chave nova: o selo ⚠ da planta precisa refletir já
+          getAIStatus().then(setAiStatus).catch(() => {});
+        }}
+      />
     </div>
   );
 }

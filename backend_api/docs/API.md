@@ -153,6 +153,15 @@ automação do projeto que precise de código/texto gerado por LLM:
 |---|---|---|
 | `POST` | `/api/v1/harness/generate/` | Gera código via o provedor configurado (`CHAT_PROVIDER`) |
 
+### `GET providers/status/` · `POST providers/test/`
+
+`status/`: para cada provedor, `{provider, ready, detail, source, default_model}`
+— `ready` = credencial + modelo resolvidos (sem chamar o provedor),
+`source` = de onde vem a chave (`tenant`/`global`/`env`/`null`), mais
+`active_provider` (o padrão do tenant). `test/` `{"provider", "model"?}`
+faz UMA chamada curta de verdade ("responda só: ok") e devolve
+`{ok, model, reply, latency_ms, tokens_in, tokens_out}` ou `{ok: false, error}`.
+
 ### `POST generate/`
 
 ```json
@@ -212,7 +221,9 @@ Prefixo: `/api/v1/agency/`
 | `POST` | `tasks/{id}/adapt/` | `{"new_brief": "..."}` — só em tarefa pausada; monta novo prompt citando o snapshot |
 | `POST` | `tasks/{id}/execute/` | Dispara a execução com a IA do agente (`resolve_agent_llm`: agente → setor → tenant) — só a partir de `created`/`adapted`. O custo entra em `AgentInteraction` com `task` preenchido |
 | `POST` | `tasks/{id}/start-external/` | O trabalho vai rodar fora do Django (ex: geração de página): `in_progress` + agente trabalhando; resposta traz `ai_provider`/`ai_model` do agente |
-| `POST` | `tasks/{id}/report-result/` | `{"success", "result", "current_files"}` — fecha uma Task feita fora do Django |
+| `POST` | `tasks/{id}/report-result/` | `{"success", "result", "current_files", "usage"?}` — fecha uma Task feita fora do Django; `usage` `{provider, model, tokens_in, tokens_out, cost_usd}` (ex: o que o Claude Code informou) entra no custo do agente |
+| `POST` | `daily-summary/` | `{"since"?, "until"?}` — resumo do período escrito pelo CEO, só com fatos numerados `[E#]`; `invalid_citations` = citações a fatos inexistentes (removidas); `502` se a IA do CEO não responder |
+| `POST` | `daily-summary/save/` | `{"markdown", "facts"?, "day"?}` — guarda o resumo como nota do Cérebro (fonte "Resumos do dia (CEO)"; um por dia) |
 | `POST` | `tasks/{id}/approve/` | `{"files": {"path": "conteúdo"}, "trigger_git": true}` — se a tarefa tiver `project`, cria branch+PR real no GitHub |
 | `POST` | `tasks/{id}/reject/` | `{"reason": "..."}` (opcional) |
 | `GET` | `metrics/overview/` | Custo/tokens/chamadas totais do tenant + mensagens pendentes |
