@@ -19,6 +19,11 @@ import * as THREE from "three";
 export type V3 = [number, number, number];
 
 const PAPER = "#fbf7ee";
+
+// Camadas dos rótulos Html (zIndexRange): agentes 0–6, etiquetas de
+// setor/Cérebro 7–10, itens clicáveis que pedem ação (envelope, aprovação)
+// 12–13 — sempre por cima; senão a etiqueta do setor da frente cobre o
+// envelope e não dá pra clicar.
 export const ENVELOPE_COLORS = {
   pending: "#f59e0b",
   request: "#6366f1",
@@ -68,7 +73,7 @@ export interface PendingEnvelope {
   stackIndex: number;
 }
 
-function Parked({ env }: { env: PendingEnvelope }) {
+function Parked({ env, onOpen }: { env: PendingEnvelope; onOpen?: (id: number) => void }) {
   const ref = useRef<THREE.Group>(null!);
   const phase = useMemo(() => (env.id % 7) * 0.9, [env.id]);
   useFrame(({ clock }) => {
@@ -81,10 +86,11 @@ function Parked({ env }: { env: PendingEnvelope }) {
     <group ref={ref} position={env.at}>
       <EnvelopeMesh flap={ENVELOPE_COLORS.pending} />
       {env.stackIndex === 0 && (
-        <Html center position={[0, 0.75, 0]} zIndexRange={[8, 7]} style={{ userSelect: "none" }}>
+        <Html center position={[0, 0.75, 0]} zIndexRange={[13, 12]} style={{ userSelect: "none" }}>
           <div
-            title={env.content}
-            className="flex items-center gap-1 whitespace-nowrap rounded-full border border-amber-300 bg-amber-50/95 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-800 shadow-sm"
+            title={`${env.content}\n\nClique para mediar`}
+            onClick={() => onOpen?.(env.id)}
+            className={`flex items-center gap-1 whitespace-nowrap rounded-full border border-amber-300 bg-amber-50/95 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-800 shadow-sm ${onOpen ? "cursor-pointer hover:bg-amber-100" : ""}`}
           >
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
             {env.label}
@@ -166,7 +172,7 @@ function Flying({ flight, onDone }: { flight: Flight; onDone: (key: string) => v
   return (
     <group ref={ref} position={flight.legs[0]?.from}>
       <EnvelopeMesh flap={color} />
-      <Html center position={[0, 0.75, 0]} zIndexRange={[8, 7]} style={{ pointerEvents: "none", userSelect: "none" }}>
+      <Html center position={[0, 0.75, 0]} zIndexRange={[13, 12]} style={{ pointerEvents: "none", userSelect: "none" }}>
         <div
           className="whitespace-nowrap rounded-full border bg-white/95 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider shadow-sm"
           style={{ borderColor: color, color }}
@@ -182,14 +188,17 @@ export function Envelopes({
   pending,
   flights,
   onFlightDone,
+  onOpenPending,
 }: {
   pending: PendingEnvelope[];
   flights: Flight[];
   onFlightDone: (key: string) => void;
+  /** Clique no envelope pendente (abre o modal de mediação). */
+  onOpenPending?: (id: number) => void;
 }) {
   return (
     <group>
-      {pending.map((p) => <Parked key={p.id} env={p} />)}
+      {pending.map((p) => <Parked key={p.id} env={p} onOpen={onOpenPending} />)}
       {flights.map((f) => <Flying key={f.key} flight={f} onDone={onFlightDone} />)}
     </group>
   );

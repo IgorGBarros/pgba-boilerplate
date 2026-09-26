@@ -15,6 +15,7 @@ from agency.views import (
     MetricsAgentsView,
     MetricsBudgetsView,
     WSTicketView,
+    KnowledgeUsageView,
 )
 
 router = DefaultRouter()
@@ -33,4 +34,5 @@ urlpatterns = [
     path("metrics/agents/", MetricsAgentsView.as_view(), name="agency-metrics-agents"),
     path("metrics/budgets/", MetricsBudgetsView.as_view(), name="agency-metrics-budgets"),
     path("ws-ticket/", WSTicketView.as_view(), name="agency-ws-ticket"),
+    path("knowledge-usage/", KnowledgeUsageView.as_view(), name="agency-knowledge-usage"),
 ]

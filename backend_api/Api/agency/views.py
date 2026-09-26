@@ -30,6 +30,7 @@ from agency.services import (
     get_sector_metrics,
     get_agent_metrics,
     get_budget_status,
+    knowledge_usage,
 )
 
 
@@ -466,3 +467,20 @@ class WSTicketView(APIView):
         from agency.ws_ticket import issue_ticket
         ticket = issue_ticket(request.user.id)
         return Response({"ticket": ticket})
+
+class KnowledgeUsageView(TenantContextMixin, APIView):
+    """
+    GET /api/v1/agency/knowledge-usage/?document=<id> — quais agentes usaram
+    uma nota (ingestion.Document) como contexto de resposta, com contagem e
+    última vez. Alimenta "Consultada por" no Cérebro do Escritório 3D.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not getattr(request, "tenant_id", None):
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+        document = request.query_params.get("document", "")
+        if not document.isdigit():
+            return Response({"detail": "Informe ?document=<id numérico>."}, status=400)
+        return Response(knowledge_usage(request.tenant_id, int(document)))

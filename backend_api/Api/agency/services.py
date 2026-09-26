@@ -18,7 +18,7 @@ import os
 
 from decimal import Decimal
 
-from django.db.models import Sum, Count, Avg
+from django.db.models import Sum, Count, Avg, Max
 from django.utils import timezone
 
 from agency.models import Sector, Agent, AgentInteraction, SectorMessage, Project, PendingApproval
@@ -67,6 +67,59 @@ def _rag_scope_for(agent: Agent) -> list[int] | None:
     return []
 
 
+def resolve_agent_llm(agent: Agent) -> tuple[str, str | None]:
+    """
+    Qual provedor/modelo de IA este agente usa, nesta ordem:
+
+      1. `Agent.default_provider` (exceção individual, ex: um agente de teste);
+      2. `Sector.default_provider` (ex: Desenvolvimento → "anthropic");
+      3. provedor ativo do tenant (`harness.get_active_provider`, ex: Groq).
+
+    Quando o provedor vem do agente ou do setor ele é FIXO: se a credencial
+    dele não estiver configurada, `harness.chat_completion` levanta
+    `ProviderConfigError` — nunca cai em silêncio no provedor do tenant.
+    "Setor de Desenvolvimento só com Claude" tem que significar isso, não
+    "com Claude quando der, Groq quando não der".
+
+    Modelo: o do mesmo nível que fixou o provedor; `None` = `default_model`
+    da credencial do provedor (resolvido em `harness.chat_completion`).
+    """
+    from harness.providers import get_active_provider
+
+    if agent.default_provider:
+        return agent.default_provider, agent.default_model or None
+    sector = agent.sector
+    if sector is not None and sector.default_provider:
+        return sector.default_provider, sector.default_model or None
+    return get_active_provider(agent.tenant_id), None
+
+
+def knowledge_usage(tenant_id, document_id: int) -> list[dict]:
+    """
+    Quais agentes usaram um `ingestion.Document` como contexto de resposta
+    (AgentInteraction.source_document_ids), com contagem e última vez.
+    Só registra a partir de quando o campo existe — consultas antigas não
+    aparecem (não dá pra reconstruir quais notas foram usadas antes).
+    """
+    rows = (
+        AgentInteraction.objects
+        .filter(tenant_id=tenant_id, source_document_ids__contains=[document_id])
+        .values("agent_id", "agent__name", "agent__sector__name")
+        .annotate(count=Count("id"), last_at=Max("created_at"))
+        .order_by("-last_at")
+    )
+    return [
+        {
+            "agent_id": r["agent_id"],
+            "agent_name": r["agent__name"],
+            "sector_name": r["agent__sector__name"],
+            "count": r["count"],
+            "last_at": r["last_at"],
+        }
+        for r in rows
+    ]
+
+
 def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = True) -> dict:
     """
     Ponto de entrada: um Agent faz uma pergunta via `orchestration`, e o
@@ -86,12 +139,15 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
     agent.current_task = question[:255]
     agent.save(update_fields=["work_status", "current_task"])
 
+    provider, model = resolve_agent_llm(agent)
     result = answer_question(
         tenant_id, question,
         use_rag_context=use_rag_context,
         rag_source_ids=_rag_scope_for(agent),
         policy_check=make_policy_check(agent),
         agent_instructions=agent.instructions or "",
+        provider=provider,
+        model=model,
     )
 
     if result.get("status") == "pending_approval" and result.get("function_called"):
@@ -107,7 +163,7 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
         broadcast_pending_approval_update(pending)
 
     tokens = _estimate_tokens(question) + _estimate_tokens(result.get("answer", ""))
-    price_table = APPROX_PRICE_PER_1K_TOKENS.get(agent.default_provider, Decimal("0.005"))
+    price_table = APPROX_PRICE_PER_1K_TOKENS.get(provider, Decimal("0.005"))
     cost = (Decimal(tokens) / Decimal(1000)) * price_table
 
     AgentInteraction.objects.create(
@@ -117,6 +173,11 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
         answer=result.get("answer", ""),
         tokens_used=tokens,
         estimated_cost_usd=cost,
+        source_document_ids=sorted({
+            s["document_id"]
+            for s in result.get("sources") or []
+            if s.get("document_id") is not None
+        }),
     )
 
     agent.work_status = Agent.WorkStatus.IDLE

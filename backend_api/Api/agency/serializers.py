@@ -4,16 +4,35 @@ from rest_framework import serializers
 from agency.models import Sector, Agent, SectorMessage, Project, PendingApproval, PolicyRule, Task, TaskSnapshot
 
 
+def _validate_provider(value: str) -> str:
+    """Só provedores que o harness sabe chamar (vazio = padrão do tenant)."""
+    from harness.models import AIProviderCredential
+
+    if value and value not in AIProviderCredential.Provider.values:
+        valid = ", ".join(AIProviderCredential.Provider.values)
+        raise serializers.ValidationError(f"Provedor desconhecido. Use um de: {valid} (ou vazio).")
+    return value
+
+
 class SectorSerializer(serializers.ModelSerializer):
     agents_count = serializers.IntegerField(source="agents.count", read_only=True)
+    # O frontend (Escritório 3D, etiqueta do setor) já esperava este campo —
+    # sem ele todo setor aparecia "sem cérebro configurado".
+    knowledge_source_name = serializers.CharField(
+        source="knowledge_source.name", read_only=True, default=None,
+    )
 
     class Meta:
         model = Sector
         fields = [
             "id", "name", "slug", "description", "monthly_budget_usd",
-            "knowledge_source", "agents_count", "created_at",
+            "knowledge_source", "knowledge_source_name", "agents_count",
+            "default_provider", "default_model", "created_at",
         ]
-        read_only_fields = ["id", "slug", "agents_count", "created_at"]
+        read_only_fields = ["id", "slug", "agents_count", "knowledge_source_name", "created_at"]
+
+    def validate_default_provider(self, value):
+        return _validate_provider(value)
 
 
 class AgentSerializer(serializers.ModelSerializer):
@@ -37,6 +56,9 @@ class AgentSerializer(serializers.ModelSerializer):
             "id", "sector_name", "work_status", "current_task",
             "backlog_tasks", "last_active_at", "created_at",
         ]
+
+    def validate_default_provider(self, value):
+        return _validate_provider(value)
 
     def validate(self, attrs):
         access_level = attrs.get("access_level", getattr(self.instance, "access_level", Agent.AccessLevel.OPERATIONAL))

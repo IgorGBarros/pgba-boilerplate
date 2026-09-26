@@ -94,6 +94,13 @@ AGENTS = [
 ]
 
 
+# Provedor de IA fixo por setor (vazio = provedor ativo do tenant). Ver
+# agency.services.resolve_agent_llm e a migração 0011.
+SECTOR_AI_PROVIDER = {
+    "Desenvolvimento": "anthropic",
+}
+
+
 class Command(BaseCommand):
     help = "Cria os setores e agentes iniciais do MVP (Agentic Enterprise OS, secoes 45-46)."
 
@@ -114,6 +121,9 @@ class Command(BaseCommand):
             except Sector.DoesNotExist:
                 sector = Sector.objects.create(
                     tenant_id=tenant_id, name=name, description=description,
+                    # Desenvolvimento usa só Claude; demais, o provedor do tenant.
+                    # Só na criação — nunca sobrescreve escolha feita depois.
+                    default_provider=SECTOR_AI_PROVIDER.get(name, ""),
                 )
                 created = True
             sectors_by_name[name] = sector

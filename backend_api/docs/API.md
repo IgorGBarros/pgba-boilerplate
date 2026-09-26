@@ -294,6 +294,20 @@ nome do repositório).
 `status` é `ok` (\<80%), `warn` (80–99%), `over` (≥100%) ou
 `sem_orcamento` (setor sem `monthly_budget_usd` definido).
 
+### `GET knowledge-usage/?document={id}`
+
+Quais agentes usaram um `ingestion.Document` como contexto de resposta
+(`AgentInteraction.source_document_ids`), agregado por agente:
+`[{"agent_id", "agent_name", "sector_name", "count", "last_at"}]`.
+Só conta interações a partir da versão que passou a registrar isso.
+
+### Modelo de IA por setor
+
+`GET/PATCH sectors/{id}/` expõe `default_provider` (`anthropic`, `groq`,
+`openai`, `openrouter`, `ollama` ou vazio = provedor do tenant) e
+`default_model`. Provedor desconhecido → `400`. Ver "Modelo de IA por
+setor" no `CLAUDE.md`.
+
 ### Tempo real (WebSocket)
 
 ```

@@ -48,7 +48,7 @@ def _norm(s: str) -> str:
     return s.strip().lower().removesuffix(".md")
 
 
-def _excerpt(content: str) -> str:
+def note_excerpt(content: str) -> str:
     """Começo da nota em texto corrido (sem marcação Markdown) pra prévia no grafo."""
     text = _FENCE.sub(" ", content or "")
     text = _WIKI_TEXT.sub(lambda m: (m.group(2) or m.group(1)).split("#")[0], text)
@@ -63,6 +63,8 @@ def build_knowledge_graph(documents) -> dict:
     """
     `documents`: iterável de objetos com id, source_id, title, external_id,
     content, metadata, status, updated_at. Devolve {nodes, edges, unresolved}.
+    Se `metadata` já traz "links" e "excerpt" (gravados em index_document),
+    `content` nem é lido — pode vir vazio.
 
     Resolução de link igual ao Obsidian, na ordem: caminho relativo exato
     (sem .md) → nome do arquivo → título. Link pra nota que não existe (ou
@@ -86,7 +88,13 @@ def build_knowledge_graph(documents) -> dict:
     edges: set[tuple[int, int]] = set()
     unresolved = 0
     for d in docs:
-        targets = extract_wikilinks(d.content or "")
+        # Links/trecho gravados na indexação (index_document); nota antiga,
+        # indexada antes disso, cai no cálculo a partir do conteúdo.
+        meta = d.metadata or {}
+        if "links" in meta and "excerpt" in meta:
+            targets, excerpt = list(meta["links"] or []), str(meta["excerpt"] or "")
+        else:
+            targets, excerpt = extract_wikilinks(d.content or ""), note_excerpt(d.content or "")
         for t in targets:
             key = _norm(t)
             target_id = (
@@ -111,7 +119,7 @@ def build_knowledge_graph(documents) -> dict:
             "tags": list(metadata.get("tags") or []),
             "status": d.status,
             "updated_at": d.updated_at.isoformat() if d.updated_at else None,
-            "excerpt": _excerpt(d.content or ""),
+            "excerpt": excerpt,
         })
 
     return {
