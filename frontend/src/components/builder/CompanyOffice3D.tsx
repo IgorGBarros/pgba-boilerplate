@@ -12,12 +12,18 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, Environment, Lightformer, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import {
-  listAgents, listSectors, listTasks, patchAgentAutonomy,
-  type Agent, type Sector, type Task, ApiError,
+  listAgents, listSectorMessages, listSectors, listTasks, patchAgentAutonomy,
+  type Agent, type Sector, type SectorMessage, type Task, ApiError,
 } from "@/lib/api";
 import { BrainHub, type BrainLink } from "./office3d/BrainHub";
+import { ENVELOPE_COLORS, Envelopes, type Flight, type PendingEnvelope, type V3 } from "./office3d/Envelopes";
 import { SectorCard, type SectorStats } from "./office3d/SectorCard";
 import { IsoCamera, type CamMode } from "./office3d/IsoCamera";
+import {
+  DESK_SEAT_Z, IDLE_X_RANGE, MEETING_SEATS,
+  ceoDeskLayout, deskLayout, seatLaneLocal, frontToOutside, frontToSeat, hallway, meetingEntry, meetingExit, outsideToFront, roomNav, seatToFront,
+  type NavGrid, type Pt, type RoomNav, type Seat,
+} from "./office3d/navigation";
 import { floorTexture, labelTexture, screenTexture, type FloorPattern, type ScreenKind } from "./office3d/textures";
 import { useRealtime } from "@/lib/useRealtime";
 import {
@@ -39,7 +45,7 @@ import {
 
 const ROOM_W         = 9;
 const ROOM_D         = 8;
-const ROOM_GAP_X     = 0;    // Salas conectadas — sem gap lateral
+const ROOM_GAP_X     = 2.2;  // Corredor vertical entre colunas de salas (rota entre fileiras)
 const ROOM_GAP_Z     = 2.2;
 const ROOMS_PER_ROW  = 3;
 const WALL_H         = 2.6;  // Paredes do fundo/esquerda (altura cheia)
@@ -48,8 +54,6 @@ const SLAB_H         = 0.32; // Espessura da laje elevada de cada sala
 const WALL_T         = 0.2;
 const DOOR_W         = 1.9;
 const CORRIDOR_D     = 3.6;
-const DIVIDER_H      = 0.9;  // Meia-parede entre salas adjacentes
-const DIVIDER_OPENING = 2.4; // Abertura de passagem entre salas
 const WALK_SPEED       = 3.6;
 const LABEL_DF         = 0.026; // distanceFactor p/ Html com câmera ortográfica (escala = zoom × df)
 const ARRIVAL_THRESHOLD = 0.14;
@@ -106,13 +110,6 @@ const STATUS_COLOR_3D = {
   meeting: "#a78bfa", blocked: "#f87171", paused: "#facc15",
 } as const;
 
-// Cadeiras menores para sala de reunião integrada
-const MEETING_CHAIRS_SMALL: Array<[number, number]> = [
-  [-2.4, -1.1], [-0.8, -1.1], [0.8, -1.1], [2.4, -1.1],
-  [-2.4,  1.1], [-0.8,  1.1], [0.8,  1.1], [2.4,  1.1],
-  [-3.5, 0], [3.5, 0],
-];
-
 const SKIN_TONES  = ["#f5c6a0", "#e8b88a", "#d4956b", "#c68642", "#8d5524"];
 const HAIR_COLORS = ["#2d1810", "#5c3a2e", "#1a1a1a", "#4a3728", "#8b6914"];
 
@@ -128,41 +125,6 @@ function roomCenter(index: number): [number, number] {
 // unidades de distância, com um vazio no meio da planta).
 function corridorZ(numRows: number) {
   return (numRows - 1) * (ROOM_D + ROOM_GAP_Z) + ROOM_D / 2 + CORRIDOR_D / 2 + 0.25;
-}
-
-function roomDoorVec(cx: number, cz: number): THREE.Vector3 {
-  return new THREE.Vector3(cx, 0, cz + ROOM_D / 2 + 0.22);
-}
-
-function buildPath(
-  fromDoor: THREE.Vector3,
-  toDoor: THREE.Vector3,
-  targetPos: THREE.Vector3,
-  corrZ: number,
-): THREE.Vector3[] {
-  const dx = Math.abs(fromDoor.x - toDoor.x);
-  const dz = Math.abs(fromDoor.z - toDoor.z);
-  const dist = dx + dz;
-
-  if (dist < 1.0) return [targetPos.clone()];
-
-  if (dist < ROOM_W + ROOM_GAP_X + 2) {
-    return [
-      fromDoor.clone(),
-      new THREE.Vector3(fromDoor.x, 0, corrZ),
-      new THREE.Vector3(toDoor.x, 0, corrZ),
-      toDoor.clone(),
-      targetPos.clone(),
-    ];
-  }
-
-  return [
-    fromDoor.clone(),
-    new THREE.Vector3(fromDoor.x, 0, corrZ),
-    new THREE.Vector3(toDoor.x, 0, corrZ),
-    toDoor.clone(),
-    targetPos.clone(),
-  ];
 }
 
 function inferRoomType(name: string): "tech" | "design" | "ceo" | "meeting" | "control" | "payment" | "mercado" | "generic" {
@@ -990,9 +952,28 @@ function StatusRing({ color, isWorking }: { color: string; isWorking: boolean })
   );
 }
 
-// ─── Sistema de movimento com waypoints ──────────────────────────────────────
+// ─── Sistema de movimento: rotas por pontos de passagem (office3d/navigation) ─
+//
+// O agente tem sempre um lugar "de verdade" (`where`): na cadeira, na faixa
+// livre da frente da sala (à toa) ou numa cadeira da sala de reunião. Toda
+// troca de lugar é uma rota montada por navigation.ts, que só usa trechos
+// que existem na planta (corredor entre mesas → frente da sala → porta →
+// passeio → corredor vertical → ...). Uma mudança de status durante uma
+// caminhada espera o agente chegar ao destino atual — nunca "teleporta" nem
+// corta caminho atravessando parede.
 
-type RoomBounds = { minX: number; maxX: number; minZ: number; maxZ: number };
+type Where = "seat" | "front" | "meeting";
+
+interface AgentNav {
+  seat: Seat;
+  room: RoomNav;
+}
+
+interface MeetingRoute {
+  key: string;        // muda quando a cadeira/sala muda
+  toSeat: Pt[];       // do lado de fora da porta do agente até a cadeira da reunião
+  fromSeat: Pt[];     // da cadeira da reunião até o lado de fora da porta do agente
+}
 
 type MovState = {
   pos: THREE.Vector3;
@@ -1002,30 +983,26 @@ type MovState = {
   walkPhase: number;
   facingAngle: number;
   idleTimer: number;
-  isSitting: boolean;
+  where: Where;
+  dest: Where;
+  exitFromMeeting: Pt[] | null;
 };
+
+const toVecs = (pts: Pt[]) => pts.map(([x, z]) => new THREE.Vector3(x, 0, z));
 
 // ─── Avatar voxel ─────────────────────────────────────────────────────────────
 
 function AgentAvatar3D({
   agent,
-  homePos,
-  meetingPos,
-  fromDoor,
-  meetingDoor,
+  nav,
+  meeting,
   meetingCenter,
-  corrZ,
-  roomBounds,
   onSelect,
 }: {
   agent: OfficeAgent;
-  homePos: [number, number, number];
-  meetingPos: [number, number, number] | null;
-  fromDoor: THREE.Vector3;
-  meetingDoor: THREE.Vector3;
+  nav: AgentNav;
+  meeting: MeetingRoute | null;
   meetingCenter: [number, number];
-  corrZ: number;
-  roomBounds: RoomBounds;
   onSelect: (a: OfficeAgent) => void;
 }) {
   const groupRef    = useRef<THREE.Group>(null!);
@@ -1040,107 +1017,117 @@ function AgentAvatar3D({
   const hair = HAIR_COLORS[agent.id % HAIR_COLORS.length]!;
   const shirt = agent.appearance.shirtColor;
 
-  const prevStatus = useRef(agent.status);
-  const prevMeetingPos = useRef<string>("null");
-
   const movRef = useRef<MovState>({
-    pos: new THREE.Vector3(...homePos),
+    pos: new THREE.Vector3(nav.seat.pos[0], 0, nav.seat.pos[1]),
     waypoints: [],
     wpIdx: 0,
     isMoving: false,
     walkPhase: Math.random() * Math.PI * 2,
-    facingAngle: 0,
-    idleTimer: 1 + Math.random() * 3,
-    isSitting: agent.status === "working",
+    facingAngle: Math.PI,
+    idleTimer: 4 + Math.random() * 8,
+    where: "seat",
+    dest: "seat",
+    exitFromMeeting: null,
   });
+
+  const go = (mv: MovState, pts: Pt[], dest: Where) => {
+    mv.waypoints = toVecs(pts);
+    mv.wpIdx = 0;
+    mv.isMoving = mv.waypoints.length > 0;
+    mv.dest = dest;
+    if (!mv.isMoving) mv.where = dest;
+  };
 
   useFrame((_, delta) => {
     const g = groupRef.current;
     const mv = movRef.current;
     if (!g) return;
-
     const status = agent.status;
-    const mPosKey = meetingPos ? meetingPos.join(",") : "null";
+    const { seat, room } = nav;
 
-    if (status !== prevStatus.current || mPosKey !== prevMeetingPos.current) {
-      const prev = prevStatus.current;
-      prevStatus.current = status;
-      prevMeetingPos.current = mPosKey;
-
-      if (status === "meeting" && meetingPos) {
-        const toDoor = meetingDoor.clone();
-        const path = buildPath(fromDoor, toDoor, new THREE.Vector3(...meetingPos), corrZ);
-        mv.waypoints = path;
-        mv.wpIdx = 0;
-        mv.isMoving = path.length > 0;
-        mv.isSitting = false;
-      } else if (status !== "meeting" && prev === "meeting") {
-        const toDoor = fromDoor.clone();
-        const path = buildPath(meetingDoor, toDoor, new THREE.Vector3(...homePos), corrZ);
-        mv.waypoints = path;
-        mv.wpIdx = 0;
-        mv.isMoving = path.length > 0;
-        mv.isSitting = false;
-      } else if (status === "working") {
-        mv.waypoints = [new THREE.Vector3(...homePos)];
-        mv.wpIdx = 0;
-        mv.isMoving = true;
-        mv.isSitting = false;
-      } else {
-        mv.isSitting = false;
-        mv.idleTimer = 0.5;
+    // 1) Decide a próxima rota — só quando parado (termina a caminhada atual antes)
+    if (!mv.isMoving) {
+      const wantsMeeting = status === "meeting" && meeting !== null;
+      if (wantsMeeting && mv.where !== "meeting") {
+        const out = mv.where === "seat"
+          ? [...seatToFront(seat, room, room.cx), room.inside, room.outside]
+          : frontToOutside(room);
+        mv.exitFromMeeting = meeting.fromSeat;
+        go(mv, [...out, ...meeting.toSeat], "meeting");
+      } else if (!wantsMeeting && mv.where === "meeting") {
+        go(mv, [...(mv.exitFromMeeting ?? []), ...outsideToFront(room), ...frontToSeat(seat, room)], "seat");
+      } else if (status !== "idle" && mv.where === "front") {
+        // Recebeu trabalho (ou pausou) enquanto estava à toa: volta pra mesa
+        go(mv, frontToSeat(seat, room), "seat");
+      } else if (mv.where === "seat") {
+        const dx = mv.pos.x - seat.pos[0], dz = mv.pos.z - seat.pos[1];
+        if (dx * dx + dz * dz > 0.01) {
+          // A mesa mudou de lugar (entrou/saiu agente no setor): vai pela faixa da frente
+          go(mv, [[mv.pos.x, room.frontZ], ...frontToSeat(seat, room)], "seat");
+        } else if (status === "idle") {
+          mv.idleTimer -= delta;
+          if (mv.idleTimer <= 0) {
+            const x = room.cx + IDLE_X_RANGE[0] + Math.random() * (IDLE_X_RANGE[1] - IDLE_X_RANGE[0]);
+            go(mv, seatToFront(seat, room, x), "front");
+            mv.idleTimer = 3 + Math.random() * 5;
+          }
+        }
+      } else if (mv.where === "front" && status === "idle") {
+        mv.idleTimer -= delta;
+        if (mv.idleTimer <= 0) {
+          if (Math.random() < 0.45) {
+            go(mv, frontToSeat(seat, room), "seat");
+            mv.idleTimer = 6 + Math.random() * 10;
+          } else {
+            const x = room.cx + IDLE_X_RANGE[0] + Math.random() * (IDLE_X_RANGE[1] - IDLE_X_RANGE[0]);
+            go(mv, [[x, room.frontZ]], "front");
+            mv.idleTimer = 2 + Math.random() * 4;
+          }
+        }
       }
     }
 
-    if (mv.isMoving && mv.waypoints.length > 0) {
+    // 2) Anda até o próximo ponto
+    if (mv.isMoving) {
       const wp = mv.waypoints[mv.wpIdx];
-      if (!wp) { mv.isMoving = false; return; }
-
-      const dir = wp.clone().sub(mv.pos);
-      dir.y = 0;
-      const dist = dir.length();
-
-      if (dist < ARRIVAL_THRESHOLD) {
-        mv.pos.copy(wp);
-        mv.wpIdx++;
-        if (mv.wpIdx >= mv.waypoints.length) {
-          mv.isMoving  = false;
-          mv.walkPhase = 0;
-          mv.isSitting = status === "working" || status === "meeting";
-          mv.idleTimer = status === "idle" || status === "thinking" ? 1.5 + Math.random() * 3 : 0;
-        }
+      if (!wp) {
+        mv.isMoving = false;
+        mv.where = mv.dest;
       } else {
-        const step = Math.min(WALK_SPEED * delta, dist);
-        dir.normalize();
-        mv.pos.addScaledVector(dir, step);
-        mv.facingAngle = Math.atan2(dir.x, dir.z);
-        mv.walkPhase += delta * 7;
-      }
-    } else if (status === "idle" || status === "thinking" || status === "paused") {
-      mv.idleTimer -= delta;
-      if (mv.idleTimer <= 0 && !mv.isMoving) {
-        const m = 1.4;
-        const tx = roomBounds.minX + m + Math.random() * Math.max(0.1, roomBounds.maxX - roomBounds.minX - m * 2);
-        const tz = roomBounds.minZ + m + Math.random() * Math.max(0.1, roomBounds.maxZ - roomBounds.minZ - m * 2);
-        mv.waypoints = [new THREE.Vector3(tx, 0, tz)];
-        mv.wpIdx = 0;
-        mv.isMoving = true;
-        mv.isSitting = false;
+        const dir = wp.clone().sub(mv.pos);
+        dir.y = 0;
+        const dist = dir.length();
+        if (dist < ARRIVAL_THRESHOLD) {
+          mv.pos.copy(wp);
+          mv.wpIdx++;
+          if (mv.wpIdx >= mv.waypoints.length) {
+            mv.isMoving = false;
+            mv.walkPhase = 0;
+            mv.where = mv.dest;
+          }
+        } else {
+          const step = Math.min(WALK_SPEED * delta, dist);
+          dir.normalize();
+          mv.pos.addScaledVector(dir, step);
+          mv.facingAngle = Math.atan2(dir.x, dir.z);
+          mv.walkPhase += delta * 7;
+        }
       }
     }
 
     // Publica posição mundial para animação de portas
     agentPosR.current[agent.id] = mv.pos;
 
-    const sit = mv.isSitting && !mv.isMoving;
+    const sit = !mv.isMoving && (mv.where === "seat" || mv.where === "meeting");
     g.position.set(mv.pos.x, sit ? 0.04 : 0, mv.pos.z);
     if (mv.isMoving) {
       g.rotation.y = mv.facingAngle;
-    } else if (sit) {
-      // Sentado: de frente pro monitor (parede do fundo) ou pro centro da mesa de reunião
-      const target = status === "meeting"
+    } else {
+      // Sentado: de frente pro monitor (parede do fundo) ou pro centro da mesa de reunião.
+      // Na faixa da frente (à toa): de frente pra câmera, "olhando o escritório".
+      const target = mv.where === "meeting"
         ? Math.atan2(meetingCenter[0] - mv.pos.x, meetingCenter[1] - mv.pos.z)
-        : Math.PI;
+        : mv.where === "seat" ? Math.PI : 0.6;
       let diff = target - g.rotation.y;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       g.rotation.y += diff * Math.min(1, delta * 8);
@@ -1168,7 +1155,7 @@ function AgentAvatar3D({
   return (
     <group
       ref={groupRef}
-      position={homePos}
+      position={[nav.seat.pos[0], 0, nav.seat.pos[1]]}
       onClick={(e) => { e.stopPropagation(); onSelect(agent); }}
     >
       {/* Sombra e anel de status ficam fora do grupo escalado */}
@@ -1308,10 +1295,10 @@ function WalkwaySlab({ x, z, w, d, color = "#e4ddd0" }: { x: number; z: number; 
 function CorridorFloor({ corrZ, gridW }: { corrZ: number; gridW: number }) {
   return (
     <group>
-      <WalkwaySlab x={gridW / 2 - ROOM_W / 2} z={corrZ} w={gridW + 6} d={CORRIDOR_D} />
+      <WalkwaySlab x={gridW / 2 - ROOM_W / 2} z={corrZ} w={gridW + ROOM_GAP_X * 2} d={CORRIDOR_D} />
       {/* Faixa-guia central */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[gridW / 2 - ROOM_W / 2, -0.03, corrZ]}>
-        <planeGeometry args={[gridW + 5, 0.07]} />
+        <planeGeometry args={[gridW + ROOM_GAP_X * 2 - 1, 0.07]} />
         <meshBasicMaterial color="#b9ae9a" transparent opacity={0.7} />
       </mesh>
     </group>
@@ -1328,40 +1315,6 @@ type DeskSpec = {
   active: boolean;
   lead: boolean;
 };
-
-/**
- * Posição das mesas dentro de uma sala (coordenada local). Cada agente ganha
- * a PRÓPRIA mesa, virada pra parede do fundo — o agente senta na cadeira em
- * (x, z + DESK_SEAT_Z). Faixa da frente (z > ~2.3) fica livre pra decoração
- * e pro caminho até a porta.
- */
-const DESK_SEAT_Z = 0.72;
-
-function deskLayout(total: number): { slots: Array<[number, number]>; width: number } {
-  const n = Math.max(total, 1);
-  const cols = n <= 3 ? n : n <= 6 ? 3 : 4;
-  const rows = Math.ceil(n / cols);
-  const spacingX = cols === 4 ? 2.05 : 2.6;
-  const width = cols === 4 ? 1.5 : 1.6;
-  const spacingZ = rows <= 2 ? 2.3 : Math.max(1.6, 5.4 / rows);
-  const slots: Array<[number, number]> = [];
-  for (let i = 0; i < n; i++) {
-    const r = Math.floor(i / cols);
-    const inRow = r === rows - 1 ? n - r * cols : cols;
-    const c = i % cols;
-    const x = (c - (inRow - 1) / 2) * spacingX;
-    const z = -2.7 + r * spacingZ;
-    slots.push([x, z]);
-  }
-  return { slots, width };
-}
-
-/** Sala CEO: mesa executiva pro primeiro, mesas laterais pros demais. */
-function ceoDeskLayout(total: number): Array<[number, number]> {
-  const slots: Array<[number, number]> = [[0.8, -2.2]];
-  for (let i = 1; i < total; i++) slots.push([3.3, -2.6 + (i - 1) * 2.1]);
-  return slots;
-}
 
 function DeskNameplate({ name, lead, accent }: { name: string; lead: boolean; accent: string }) {
   const label = (lead ? "★ " : "") + name.toUpperCase();
@@ -1395,16 +1348,12 @@ const SCREEN_KIND: Record<string, ScreenKind> = {
 function Room({
   sector,
   index,
-  col,
-  totalCols,
   isMeetingRoom = false,
   desks,
   onRoomClick,
 }: {
   sector: Sector;
   index: number;
-  col: number;
-  totalCols: number;
   isMeetingRoom?: boolean;
   desks: DeskSpec[];
   onRoomClick: (id: number, name: string) => void;
@@ -1416,10 +1365,6 @@ function Room({
   const halfW = ROOM_W / 2;
   const halfD = ROOM_D / 2;
 
-  // Geometria dos vãos de passagem entre salas adjacentes
-  const divSegLen = (ROOM_D - DIVIDER_OPENING) / 2;
-  const divSeg1Z  = -((halfD + DIVIDER_OPENING / 2) / 2);
-  const divSeg2Z  =   (halfD + DIVIDER_OPENING / 2) / 2;
 
   const floorColor = getRoomFloor(type);
   const floorTex = useMemo(
@@ -1456,38 +1401,21 @@ function Room({
         <meshStandardMaterial color={CAP} />
       </mesh>
 
-      {/* Parede esquerda: cheia na primeira sala da fileira; meia-parede com passagem entre salas */}
-      {col === 0 ? (
-        <>
-          <mesh position={[-halfW, WALL_H / 2, 0]} castShadow receiveShadow>
-            <boxGeometry args={[WALL_T, WALL_H, ROOM_D]} />
-            <meshStandardMaterial color={palette.wall} />
-          </mesh>
-          <mesh position={[-halfW, WALL_H + 0.03, 0]}>
-            <boxGeometry args={[WALL_T + 0.04, 0.06, ROOM_D + 0.02]} />
-            <meshStandardMaterial color={CAP} />
-          </mesh>
-        </>
-      ) : (
-        <>
-          <mesh position={[-halfW, DIVIDER_H / 2, divSeg1Z]} castShadow>
-            <boxGeometry args={[WALL_T, DIVIDER_H, divSegLen]} />
-            <meshStandardMaterial color={palette.wall} />
-          </mesh>
-          <mesh position={[-halfW, DIVIDER_H / 2, divSeg2Z]} castShadow>
-            <boxGeometry args={[WALL_T, DIVIDER_H, divSegLen]} />
-            <meshStandardMaterial color={palette.wall} />
-          </mesh>
-        </>
-      )}
+      {/* Parede esquerda — altura cheia (cada sala é um bloco; entre colunas há corredor) */}
+      <mesh position={[-halfW, WALL_H / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[WALL_T, WALL_H, ROOM_D]} />
+        <meshStandardMaterial color={palette.wall} />
+      </mesh>
+      <mesh position={[-halfW, WALL_H + 0.03, 0]}>
+        <boxGeometry args={[WALL_T + 0.04, 0.06, ROOM_D + 0.02]} />
+        <meshStandardMaterial color={CAP} />
+      </mesh>
 
-      {/* Parede direita em corte (só na última sala da fileira) */}
-      {col === totalCols - 1 && (
-        <mesh position={[halfW, FRONT_WALL_H / 2, 0]} castShadow>
-          <boxGeometry args={[WALL_T, FRONT_WALL_H, ROOM_D]} />
-          <meshStandardMaterial color={palette.wall} />
-        </mesh>
-      )}
+      {/* Parede direita em corte (baixa) — deixa ver dentro com a câmera isométrica */}
+      <mesh position={[halfW, FRONT_WALL_H / 2, 0]} castShadow>
+        <boxGeometry args={[WALL_T, FRONT_WALL_H, ROOM_D]} />
+        <meshStandardMaterial color={palette.wall} />
+      </mesh>
 
       {/* Parede da frente em corte, com vão da porta */}
       <mesh position={[-(halfW - frontSegW / 2), FRONT_WALL_H / 2, halfD]} castShadow>
@@ -1558,12 +1486,8 @@ function Room({
       {type === "meeting" && (
         <>
           <OvalMeetingTable />
-          {([
-            [-2.4, -1.55, 0], [-0.8, -1.55, 0], [0.8, -1.55, 0], [2.4, -1.55, 0],
-            [-2.4,  1.55, Math.PI], [-0.8, 1.55, Math.PI], [0.8, 1.55, Math.PI], [2.4, 1.55, Math.PI],
-            [-3.3, 0, Math.PI / 2], [3.3, 0, -Math.PI / 2],
-          ] as [number, number, number][]).map(([x2, z2, rot], i) => (
-            <PixelChair key={i} x={x2} z={z2} color="#2f3440" rotation={rot} />
+          {MEETING_SEATS.map((c, i) => (
+            <PixelChair key={i} x={c.x} z={c.z} color="#2f3440" rotation={c.rot} />
           ))}
           {/* Tela de projeção na parede do fundo */}
           <mesh position={[0, 1.35, -halfD + WALL_T + 0.03]}>
@@ -1598,7 +1522,7 @@ function Room({
 
       {type === "design" && (
         <>
-          <DesignTable x={-2.6} z={3.1} color="#f0e8d8" />
+          <DesignTable x={-2.6} z={3.25} color="#f0e8d8" />
           <Whiteboard x={3.0} z={-halfD + WALL_T + 0.1} />
           <Plant x={3.8} z={3.3} tall />
           <mesh position={[1.2, 0.62, 3.1]} castShadow>
@@ -1694,10 +1618,22 @@ function InterRowPassage({ rows, gridW }: { rows: number; gridW: number }) {
   for (let r = 1; r < rows; r++) {
     const z = r * (ROOM_D + ROOM_GAP_Z) - ROOM_GAP_Z / 2 - ROOM_D / 2;
     passages.push(
-      <WalkwaySlab key={r} x={gridW / 2 - ROOM_W / 2} z={z} w={gridW} d={ROOM_GAP_Z} color="#ebe5da" />,
+      <WalkwaySlab key={r} x={gridW / 2 - ROOM_W / 2} z={z} w={gridW + ROOM_GAP_X * 2} d={ROOM_GAP_Z} color="#ebe5da" />,
     );
   }
   return <>{passages}</>;
+}
+
+/** Corredores verticais (entre colunas e nas bordas) — por onde se troca de fileira. */
+function Aisles({ rows, cols, corrZ }: { rows: number; cols: number; corrZ: number }) {
+  const top = -ROOM_D / 2;
+  const bottom = corrZ - CORRIDOR_D / 2;
+  const els: JSX.Element[] = [];
+  for (let c = -1; c < cols; c++) {
+    const x = c * (ROOM_W + ROOM_GAP_X) + ROOM_W / 2 + ROOM_GAP_X / 2;
+    els.push(<WalkwaySlab key={c} x={x} z={(top + bottom) / 2} w={ROOM_GAP_X} d={bottom - top} color="#ebe5da" />);
+  }
+  return rows > 0 ? <>{els}</> : null;
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -1711,6 +1647,8 @@ export default function CompanyOffice3D() {
   const [sectors,   setSectors]   = useState<Sector[]>([]);
   const [rawAgents, setRawAgents] = useState<Agent[]>([]);
   const [tasks,     setTasks]     = useState<Task[]>([]);
+  const [messages,  setMessages]  = useState<SectorMessage[]>([]);
+  const [flights,   setFlights]   = useState<Flight[]>([]);
   const [error,   setError]     = useState<string | null>(null);
   const [loading, setLoading]   = useState(true);
 
@@ -1745,10 +1683,14 @@ export default function CompanyOffice3D() {
       try {
         const [s, a] = await Promise.all([listSectors(), listAgents()]);
         // Tasks só alimentam os KPIs dos cartões — falha aqui não derruba o escritório
-        const t = await listTasks().catch(() => null);
+        const [t, m] = await Promise.all([
+          listTasks().catch(() => null),
+          listSectorMessages().catch(() => null),
+        ]);
         if (!cancelled) {
           setSectors(s); setRawAgents(a); setError(null);
           if (t) setTasks(t);
+          if (m) setMessages(m);
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof ApiError ? err.message : "Falha ao carregar.");
@@ -1762,7 +1704,7 @@ export default function CompanyOffice3D() {
     return () => { cancelled = true; clearInterval(iv); };
   }, [paused, speed]);
 
-  const { connected, lastAgentEvent, lastTaskEvent } = useRealtime();
+  const { connected, lastAgentEvent, lastTaskEvent, lastSectorMessageEvent } = useRealtime();
 
   const addLog = useCallback((agent: OfficeAgent, action: string) => {
     setActivityLogs((prev) => [
@@ -1779,6 +1721,15 @@ export default function CompanyOffice3D() {
         : [...prev, lastAgentEvent],
     );
   }, [lastAgentEvent]);
+
+  useEffect(() => {
+    if (!lastSectorMessageEvent) return;
+    setMessages((prev) =>
+      prev.some((m) => m.id === lastSectorMessageEvent.id)
+        ? prev.map((m) => (m.id === lastSectorMessageEvent.id ? lastSectorMessageEvent : m))
+        : [lastSectorMessageEvent, ...prev],
+    );
+  }, [lastSectorMessageEvent]);
 
   useEffect(() => {
     if (!lastTaskEvent) return;
@@ -1831,13 +1782,14 @@ export default function CompanyOffice3D() {
   const gridW              = cols * (ROOM_W + ROOM_GAP_X) - ROOM_GAP_X;
   const CORR_Z             = corridorZ(rows);
 
-  const [ceoCX, ceoCZ]    = roomCenter(CEO_ROOM_INDEX);
-  const ceoDoor            = roomDoorVec(ceoCX, ceoCZ);
-
   const meetingRoomIndex   = sectors.length + 1;
   const [meetingCX, meetingCZ] = roomCenter(meetingRoomIndex);
-  const meetingRoomPos: [number, number, number] = [meetingCX, 0, meetingCZ];
-  const meetingDoor        = roomDoorVec(meetingCX, meetingCZ);
+
+  // Grade de navegação (office3d/navigation.ts) — mesma geometria das salas
+  const navGrid = useMemo<NavGrid>(() => ({
+    cols: ROOMS_PER_ROW, rows, roomW: ROOM_W, roomD: ROOM_D,
+    gapX: ROOM_GAP_X, gapZ: ROOM_GAP_Z, corridorZ: CORR_Z, doorW: DOOR_W,
+  }), [rows, CORR_Z]);
 
   // Praça do Cérebro: logo à frente do corredor, centralizada na planta
   const sceneCX  = (cols - 1) * (ROOM_W + ROOM_GAP_X) / 2;
@@ -1845,7 +1797,7 @@ export default function CompanyOffice3D() {
   const minZ     = -ROOM_D / 2;
   const maxZ     = brainPos[1] + 2.6;
   const sceneCZ  = (minZ + maxZ) / 2;
-  const extent: [number, number] = [gridW + 2, maxZ - minZ];
+  const extent: [number, number] = [gridW + ROOM_GAP_X * 2, maxZ - minZ];
 
   const meetingAgentList = useMemo(
     () => officeAgents.filter((a) => meetingAgentIds.has(a.id)),
@@ -1854,9 +1806,10 @@ export default function CompanyOffice3D() {
 
   // Mesas por sala (coordenada local) + casa de cada agente (coordenada mundial).
   // Ordem: CEO, depois orquestradores, depois operacionais — o líder fica na 1ª mesa.
-  const { desksByRoom, homeById } = useMemo(() => {
+  const { desksByRoom, seatById, roomIdxById } = useMemo(() => {
     const desksByRoom = new Map<number, DeskSpec[]>();
-    const homeById = new Map<number, [number, number]>();
+    const seatById = new Map<number, Seat>();
+    const roomIdxById = new Map<number, number>();
     const byRoom = new Map<number, OfficeAgent[]>();
     for (const a of officeAgents) {
       const isCeoRoom = a.access_level === "ceo" || a.access_level === "general_orchestrator";
@@ -1869,12 +1822,16 @@ export default function CompanyOffice3D() {
     const rank = (a: OfficeAgent) => (a.access_level === "ceo" ? 0 : a.isOrchestrator ? 1 : 2);
     for (const [roomIdx, list] of byRoom) {
       list.sort((a, b) => rank(a) - rank(b) || a.id - b.id);
-      const slots = roomIdx === CEO_ROOM_INDEX ? ceoDeskLayout(list.length) : deskLayout(list.length).slots;
+      const isCeo = roomIdx === CEO_ROOM_INDEX;
+      const layout = deskLayout(list.length);
+      const slots = isCeo ? ceoDeskLayout(list.length) : layout.slots;
       const [rcx, rcz] = roomCenter(roomIdx);
       desksByRoom.set(roomIdx, list.map((a, i) => {
         const [x, z] = slots[i] ?? [0, 0];
-        const seat = DESK_SEAT_Z + (roomIdx === CEO_ROOM_INDEX && i === 0 ? 0.5 : 0);
-        homeById.set(a.id, [rcx + x, rcz + z + seat]);
+        const seatZ = DESK_SEAT_Z + (isCeo && i === 0 ? 0.5 : 0);
+        const laneLocal = seatLaneLocal(isCeo, i, x, layout.spacingX);
+        seatById.set(a.id, { pos: [rcx + x, rcz + z + seatZ], laneX: rcx + laneLocal });
+        roomIdxById.set(a.id, roomIdx);
         return {
           agentId: a.id,
           name: a.name.split(" ").slice(0, 2).join(" "),
@@ -1884,8 +1841,107 @@ export default function CompanyOffice3D() {
         };
       }));
     }
-    return { desksByRoom, homeById };
+    return { desksByRoom, seatById, roomIdxById };
   }, [officeAgents, sectors]);
+
+  // Rota até a sala de reunião (e de volta) para quem foi convocado
+  const meetingRoutes = useMemo(() => {
+    const map = new Map<number, MeetingRoute>();
+    const mNav = roomNav(navGrid, meetingRoomIndex);
+    meetingAgentList.forEach((a, mIdx) => {
+      const own = roomNav(navGrid, roomIdxById.get(a.id) ?? CEO_ROOM_INDEX);
+      map.set(a.id, {
+        key: `${meetingRoomIndex}:${mIdx}`,
+        toSeat: [...hallway(navGrid, own, mNav), ...meetingEntry(mNav, mIdx)],
+        fromSeat: [...meetingExit(mNav, mIdx), ...hallway(navGrid, mNav, own)],
+      });
+    });
+    return map;
+  }, [meetingAgentList, navGrid, meetingRoomIndex, roomIdxById]);
+
+  // ─── Envelopes entre setores (SectorMessage) ───────────────────────────────
+  // "Caixa de correio" de cada sala: logo acima da porta, onde o envelope
+  // espera / pousa. Sempre visível na câmera isométrica (parede da frente baixa).
+  const mailbox = useCallback((roomIdx: number): V3 => {
+    const [rcx, rcz] = roomCenter(roomIdx);
+    return [rcx, FRONT_WALL_H + 1.1, rcz + ROOM_D / 2 - 0.2];
+  }, []);
+  const sectorRoomIdx = useCallback((sectorId: number) => {
+    const i = sectors.findIndex((s) => s.id === sectorId);
+    return i >= 0 ? i + 1 : null;
+  }, [sectors]);
+
+  const pendingEnvelopes = useMemo<PendingEnvelope[]>(() => {
+    // Fila por porta de origem, mais antiga primeiro (embaixo da pilha)
+    const byRoom = new Map<number, SectorMessage[]>();
+    for (const m of messages) {
+      const from = roomIdxById.get(m.from_agent);
+      if (m.status !== "pending" || from == null) continue;
+      byRoom.set(from, [...(byRoom.get(from) ?? []), m]);
+    }
+    const out: PendingEnvelope[] = [];
+    for (const [roomIdx, list] of byRoom) {
+      list.sort((a, b) => a.created_at.localeCompare(b.created_at));
+      list.slice(0, 3).forEach((m, k) => out.push({
+        id: m.id,
+        at: mailbox(roomIdx),
+        label: `→ ${m.to_sector_name}${list.length > 1 ? ` · ${list.length} na fila` : ""}`,
+        content: m.content,
+        stackIndex: k,
+      }));
+    }
+    return out;
+  }, [messages, roomIdxById, mailbox]);
+
+  // Detecta transições pending → answered/rejected e dispara o voo
+  const seenStatusRef = useRef<Map<number, string> | null>(null);
+  useEffect(() => {
+    const first = seenStatusRef.current === null;
+    const seen = seenStatusRef.current ?? new Map<number, string>();
+    const now = Date.now();
+    const newFlights: Flight[] = [];
+    for (const m of messages) {
+      const prev = seen.get(m.id);
+      seen.set(m.id, m.status);
+      const justChanged = prev === "pending" && m.status !== "pending";
+      // no primeiro carregamento, só anima o que acabou de acontecer (≤ 20s)
+      const fresh = first && m.answered_at != null && now - new Date(m.answered_at).getTime() < 20_000;
+      if (!justChanged && !fresh) continue;
+      const from = roomIdxById.get(m.from_agent);
+      const to = sectorRoomIdx(m.to_sector);
+      if (from == null) continue;
+      const origin = mailbox(from);
+      if (m.status === "rejected" || to == null) {
+        const up: V3 = [origin[0], origin[1] + 1.2, origin[2]];
+        newFlights.push({
+          key: `${m.id}:rejected`, label: "✕ sem mediação", ending: "drop",
+          legs: [{ from: origin, to: up, color: ENVELOPE_COLORS.rejected }],
+        });
+        continue;
+      }
+      // Sempre passa por quem mediou — setor nunca fala direto com outro setor
+      const viaIdx = m.relayed_by != null ? roomIdxById.get(m.relayed_by) : undefined;
+      const stops: V3[] = [origin];
+      if (viaIdx != null && viaIdx !== from && viaIdx !== to) stops.push(mailbox(viaIdx));
+      stops.push(mailbox(to));
+      const legs = stops.slice(1).map((p, i) => ({ from: stops[i]!, to: p, color: ENVELOPE_COLORS.request }));
+      const back = [...stops].reverse();
+      const replyLegs = back.slice(1).map((p, i) => ({ from: back[i]!, to: p, color: ENVELOPE_COLORS.reply }));
+      newFlights.push({
+        key: `${m.id}:answered`,
+        label: m.relayed_by_name ? `via ${m.relayed_by_name.split(" ")[0]}` : m.to_sector_name,
+        legs: [...legs, ...replyLegs],
+      });
+    }
+    seenStatusRef.current = seen;
+    if (newFlights.length) {
+      setFlights((f) => [...f.filter((x) => !newFlights.some((n) => n.key === x.key)), ...newFlights]);
+    }
+  }, [messages, roomIdxById, sectorRoomIdx, mailbox]);
+
+  const handleFlightDone = useCallback((key: string) => {
+    setFlights((f) => f.filter((x) => x.key !== key));
+  }, []);
 
   // KPIs reais por setor (agentes + tasks)
   const statsBySector = useMemo(() => {
@@ -1981,10 +2037,6 @@ export default function CompanyOffice3D() {
     </div>
   );
 
-  const rowColsOf = (idx: number) => {
-    const roomRow = Math.floor(idx / ROOMS_PER_ROW);
-    return roomRow === rows - 1 ? totalRooms - roomRow * ROOMS_PER_ROW : cols;
-  };
 
   const roomEntries: Array<{ key: string | number; sector: Sector; idx: number; meeting?: boolean }> = [
     { key: "ceo", sector: ceoRoomSector, idx: CEO_ROOM_INDEX },
@@ -2114,6 +2166,7 @@ export default function CompanyOffice3D() {
 
             {/* Passagens entre fileiras e corredor principal */}
             <InterRowPassage rows={rows} gridW={gridW} />
+            <Aisles rows={rows} cols={cols} corrZ={CORR_Z} />
             <CorridorFloor corrZ={CORR_Z} gridW={gridW} />
 
             {/* Praça do Cérebro, ligada ao corredor */}
@@ -2132,8 +2185,6 @@ export default function CompanyOffice3D() {
                 key={key}
                 sector={sector}
                 index={idx}
-                col={idx % ROOMS_PER_ROW}
-                totalCols={rowColsOf(idx)}
                 isMeetingRoom={meeting}
                 desks={meeting ? [] : desksByRoom.get(idx) ?? []}
                 onRoomClick={handleRoomClick}
@@ -2158,55 +2209,21 @@ export default function CompanyOffice3D() {
               );
             })}
 
+            {/* Envelopes entre setores (SectorMessage) */}
+            <Envelopes pending={pendingEnvelopes} flights={flights} onFlightDone={handleFlightDone} />
+
             {/* Agentes */}
             {officeAgents.map((agent) => {
-              const isCeoRoom =
-                agent.access_level === "ceo" || agent.access_level === "general_orchestrator";
-
-              let cx: number, cz: number;
-              let fromDoor: THREE.Vector3;
-
-              if (isCeoRoom) {
-                [cx, cz] = [ceoCX, ceoCZ];
-                fromDoor = ceoDoor;
-              } else {
-                const sIdx = sectors.findIndex((s) => s.id === agent.sectorId);
-                const pos  = sIdx >= 0 ? roomCenter(sIdx + 1) : roomCenter(CEO_ROOM_INDEX);
-                cx = pos[0]; cz = pos[1];
-                fromDoor = roomDoorVec(cx, cz);
-              }
-
-              const [hx, hz] = homeById.get(agent.id) ?? [cx, cz];
-              const homePos: [number, number, number] = [hx, 0, hz];
-
-              const mIdx = meetingAgentList.findIndex((a) => a.id === agent.id);
-              const meetingPos: [number, number, number] | null =
-                mIdx >= 0
-                  ? [
-                      meetingRoomPos[0] + (MEETING_CHAIRS_SMALL[mIdx % MEETING_CHAIRS_SMALL.length]?.[0] ?? 0),
-                      0,
-                      meetingRoomPos[2] + (MEETING_CHAIRS_SMALL[mIdx % MEETING_CHAIRS_SMALL.length]?.[1] ?? 0),
-                    ]
-                  : null;
-
-              const roomBounds: RoomBounds = {
-                minX: cx - ROOM_W / 2 + 1.5,
-                maxX: cx + ROOM_W / 2 - 1.5,
-                minZ: cz - ROOM_D / 2 + 1.5,
-                maxZ: cz + ROOM_D / 2 - 1.5,
-              };
-
+              const seat = seatById.get(agent.id);
+              if (!seat) return null;
+              const room = roomNav(navGrid, roomIdxById.get(agent.id) ?? CEO_ROOM_INDEX);
               return (
                 <AgentAvatar3D
                   key={agent.id}
                   agent={agent}
-                  homePos={homePos}
-                  meetingPos={meetingPos}
-                  fromDoor={fromDoor}
-                  meetingDoor={meetingDoor}
+                  nav={{ seat, room }}
+                  meeting={meetingRoutes.get(agent.id) ?? null}
                   meetingCenter={[meetingCX, meetingCZ]}
-                  corrZ={CORR_Z}
-                  roomBounds={roomBounds}
                   onSelect={handleAgentClick}
                 />
               );

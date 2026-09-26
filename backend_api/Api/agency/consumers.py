@@ -1,7 +1,7 @@
 # backend_api/Api/agency/consumers.py
 """
 Um grupo Channels por tenant (`tenant_{uuid}`) — todo update de
-Task/Agent daquele tenant chega pra qualquer cliente conectado, sem
+Task/Agent/PendingApproval/SectorMessage daquele tenant chega pra qualquer cliente conectado, sem
 polling. Ver `agency/realtime.py` para quem publica, `agency/ws_auth.py`
 para como a conexão se autentica (JWT via query string, não header).
 """
@@ -32,4 +32,7 @@ class AgencyConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json(event["data"])
 
     async def pending_approval_update(self, event):
+        await self.send_json(event["data"])
+
+    async def sector_message_update(self, event):
         await self.send_json(event["data"])
