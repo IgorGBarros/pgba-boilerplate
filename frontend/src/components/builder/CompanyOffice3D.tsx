@@ -17,12 +17,12 @@ import {
 } from "@/lib/api";
 import { BrainHub, type BrainLink } from "./office3d/BrainHub";
 import { BrainGraph } from "./office3d/BrainGraph";
-import { ENVELOPE_COLORS, Envelopes, type Flight, type PendingEnvelope, type V3 } from "./office3d/Envelopes";
+import { ENVELOPE_COLORS, EnvelopeMesh, Envelopes, type Flight, type PendingEnvelope, type V3 } from "./office3d/Envelopes";
 import { SectorCard, type SectorStats } from "./office3d/SectorCard";
 import { IsoCamera, type CamMode } from "./office3d/IsoCamera";
 import {
   DESK_SEAT_Z, IDLE_X_RANGE, MEETING_SEATS,
-  ceoDeskLayout, deskLayout, seatLaneLocal, frontToOutside, frontToSeat, hallway, meetingEntry, meetingExit, outsideToFront, roomNav, seatToFront,
+  ceoDeskLayout, deskLayout, seatLaneLocal, frontToOutside, frontToSeat, hallway, errandRoute, meetingEntry, meetingExit, outsideToFront, roomNav, seatToFront,
   type NavGrid, type Pt, type RoomNav, type Seat,
 } from "./office3d/navigation";
 import { floorTexture, labelTexture, screenTexture, type FloorPattern, type ScreenKind } from "./office3d/textures";
@@ -979,6 +979,15 @@ interface AgentNav {
   room: RoomNav;
 }
 
+/** Recado de mediador (SectorMessage respondida): rota porta a porta + o que ele carrega em cada trecho. */
+interface Errand {
+  key: string;
+  route: Pt[];        // do lado de fora da porta do agente, porta a porta, de volta pra fora da porta dele
+  stopAt: number[];   // índices em `route` onde ele entra na sala e espera
+  /** O que carrega ANTES da 1ª parada, entre paradas e depois da última (length = stopAt.length + 1). */
+  legs: Array<{ color: string; label: string } | null>;
+}
+
 interface MeetingRoute {
   key: string;        // muda quando a cadeira/sala muda
   toSeat: Pt[];       // do lado de fora da porta do agente até a cadeira da reunião
@@ -996,7 +1005,14 @@ type MovState = {
   where: Where;
   dest: Where;
   exitFromMeeting: Pt[] | null;
+  // recado em andamento (índices já deslocados pro array de waypoints)
+  errandKey: string | null;
+  errandStops: number[];
+  errandLegs: Errand["legs"];
+  dwell: number;
 };
+
+const ERRAND_DWELL_S = 1.2;
 
 const toVecs = (pts: Pt[]) => pts.map(([x, z]) => new THREE.Vector3(x, 0, z));
 
@@ -1007,12 +1023,16 @@ function AgentAvatar3D({
   nav,
   meeting,
   meetingCenter,
+  errand,
+  onErrandDone,
   onSelect,
 }: {
   agent: OfficeAgent;
   nav: AgentNav;
   meeting: MeetingRoute | null;
   meetingCenter: [number, number];
+  errand: Errand | null;
+  onErrandDone: (key: string) => void;
   onSelect: (a: OfficeAgent) => void;
 }) {
   const groupRef    = useRef<THREE.Group>(null!);
@@ -1038,7 +1058,14 @@ function AgentAvatar3D({
     where: "seat",
     dest: "seat",
     exitFromMeeting: null,
+    errandKey: null,
+    errandStops: [],
+    errandLegs: [],
+    dwell: 0,
   });
+  // O que está carregando agora (muda só na troca de trecho — setState raro)
+  const [carry, setCarry] = useState<{ color: string; label: string } | null>(null);
+  const carryRef = useRef<{ color: string; label: string } | null>(null);
 
   const go = (mv: MovState, pts: Pt[], dest: Where) => {
     mv.waypoints = toVecs(pts);
@@ -1055,10 +1082,27 @@ function AgentAvatar3D({
     const status = agent.status;
     const { seat, room } = nav;
 
+    // 0) Recado terminado (chegou de volta na mesa): libera o próximo da fila
+    if (!mv.isMoving && mv.errandKey) {
+      const done = mv.errandKey;
+      mv.errandKey = null;
+      mv.errandStops = [];
+      onErrandDone(done);
+    }
+
     // 1) Decide a próxima rota — só quando parado (termina a caminhada atual antes)
     if (!mv.isMoving) {
       const wantsMeeting = status === "meeting" && meeting !== null;
-      if (wantsMeeting && mv.where !== "meeting") {
+      if (errand && mv.where !== "meeting" && !wantsMeeting) {
+        // Recado: sai da sala, vai porta a porta, volta pra mesa
+        const out = mv.where === "seat"
+          ? [...seatToFront(seat, room, room.cx), room.inside, room.outside]
+          : frontToOutside(room);
+        go(mv, [...out, ...errand.route, ...outsideToFront(room), ...frontToSeat(seat, room)], "seat");
+        mv.errandKey = errand.key;
+        mv.errandStops = errand.stopAt.map((i) => i + out.length);
+        mv.errandLegs = errand.legs;
+      } else if (wantsMeeting && mv.where !== "meeting") {
         const out = mv.where === "seat"
           ? [...seatToFront(seat, room, room.cx), room.inside, room.outside]
           : frontToOutside(room);
@@ -1097,8 +1141,21 @@ function AgentAvatar3D({
       }
     }
 
-    // 2) Anda até o próximo ponto
-    if (mv.isMoving) {
+    // Envelope carregado: qual trecho do recado ele está percorrendo
+    // (uma parada só conta como "feita" depois da espera dentro da porta — é ali que ele entrega/recebe)
+    const legIdx = mv.errandKey
+      ? mv.errandStops.filter((i) => mv.wpIdx > i + 1 || (mv.wpIdx === i + 1 && mv.dwell <= 0)).length
+      : -1;
+    const nextCarry = mv.errandKey ? (mv.errandLegs[legIdx] ?? null) : null;
+    if (nextCarry !== carryRef.current) {
+      carryRef.current = nextCarry;
+      setCarry(nextCarry);
+    }
+
+    // 2) Anda até o próximo ponto (esperando um instante dentro da porta de cada parada)
+    if (mv.dwell > 0) {
+      mv.dwell -= delta;
+    } else if (mv.isMoving) {
       const wp = mv.waypoints[mv.wpIdx];
       if (!wp) {
         mv.isMoving = false;
@@ -1109,6 +1166,7 @@ function AgentAvatar3D({
         const dist = dir.length();
         if (dist < ARRIVAL_THRESHOLD) {
           mv.pos.copy(wp);
+          if (mv.errandStops.includes(mv.wpIdx)) mv.dwell = ERRAND_DWELL_S;
           mv.wpIdx++;
           if (mv.wpIdx >= mv.waypoints.length) {
             mv.isMoving = false;
@@ -1250,6 +1308,13 @@ function AgentAvatar3D({
         </mesh>
       </group>
 
+      {/* Envelope carregado durante o recado de mediação */}
+      {carry && (
+        <group position={[0.32, 1.05, 0]} rotation={[0, 0.6, -0.25]} scale={0.42}>
+          <EnvelopeMesh flap={carry.color} />
+        </group>
+      )}
+
       {/* Labels fora do grupo escalado, posições ajustadas para 0.65× */}
       <Html center distanceFactor={LABEL_DF} zIndexRange={[6, 0]} position={[0, 1.3, 0]} style={{ pointerEvents: "none", userSelect: "none" }}>
         <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 3, transform: "translateY(-30%)" }}>
@@ -1262,6 +1327,15 @@ function AgentAvatar3D({
             {isLead && <span style={{ color: "#d97706", marginRight: 4 }}>★</span>}
             {shortName}
           </div>
+          {carry && (
+            <div style={{
+              background: "rgba(255,255,255,0.96)", color: carry.color, fontSize: "9px", fontWeight: 600,
+              padding: "1px 6px", borderRadius: "999px", whiteSpace: "nowrap",
+              border: `1px solid ${carry.color}`,
+            }}>
+              ✉ {carry.label}
+            </div>
+          )}
           {isWorking && agent.currentTask !== "Sem tarefa ativa" && (
             <div style={{
               background: "rgba(236,253,245,0.96)", color: "#047857", fontSize: "9px",
@@ -1661,6 +1735,8 @@ export default function CompanyOffice3D() {
   const [tasks,     setTasks]     = useState<Task[]>([]);
   const [messages,  setMessages]  = useState<SectorMessage[]>([]);
   const [flights,   setFlights]   = useState<Flight[]>([]);
+  // Fila de recados por agente mediador (um de cada vez, na ordem em que chegaram)
+  const [errands,   setErrands]   = useState<Map<number, Errand[]>>(new Map());
   const [error,   setError]     = useState<string | null>(null);
   const [loading, setLoading]   = useState(true);
 
@@ -1913,6 +1989,7 @@ export default function CompanyOffice3D() {
     const seen = seenStatusRef.current ?? new Map<number, string>();
     const now = Date.now();
     const newFlights: Flight[] = [];
+    const newErrands: Array<[number, Errand]> = [];
     for (const m of messages) {
       const prev = seen.get(m.id);
       seen.set(m.id, m.status);
@@ -1932,8 +2009,27 @@ export default function CompanyOffice3D() {
         });
         continue;
       }
-      // Sempre passa por quem mediou — setor nunca fala direto com outro setor
-      const viaIdx = m.relayed_by != null ? roomIdxById.get(m.relayed_by) : undefined;
+      // Quem mediou vai A PÉ: busca na origem, leva ao destino, espera a
+      // resposta e traz de volta. Setor nunca fala direto com outro setor —
+      // o envelope só se move carregado pelo mediador.
+      const mediator = m.relayed_by != null ? officeAgents.find((a) => a.id === m.relayed_by) : undefined;
+      const mediatorRoom = m.relayed_by != null ? roomIdxById.get(m.relayed_by) : undefined;
+      if (mediator && mediatorRoom != null && mediator.status !== "meeting") {
+        const own = roomNav(navGrid, mediatorRoom);
+        const originNav = roomNav(navGrid, from);
+        const destNav = roomNav(navGrid, to);
+        const req = { color: ENVELOPE_COLORS.request, label: `→ ${m.to_sector_name}` };
+        const rep = { color: ENVELOPE_COLORS.reply, label: `↩ resposta` };
+        // Mediador que já está na sala de origem sai com o envelope na mão
+        const startsAtOrigin = mediatorRoom === from;
+        const stops = startsAtOrigin ? [destNav, originNav] : [originNav, destNav, originNav];
+        const legs = startsAtOrigin ? [req, rep, null] : [null, req, rep, null];
+        const { route, stopAt } = errandRoute(navGrid, own, stops);
+        newErrands.push([mediator.id, { key: `${m.id}:errand`, route, stopAt, legs }]);
+        continue;
+      }
+      // Mediador fora da planta (ou em reunião): o envelope voa, passando por ele
+      const viaIdx = mediatorRoom;
       const stops: V3[] = [origin];
       if (viaIdx != null && viaIdx !== from && viaIdx !== to) stops.push(mailbox(viaIdx));
       stops.push(mailbox(to));
@@ -1950,7 +2046,32 @@ export default function CompanyOffice3D() {
     if (newFlights.length) {
       setFlights((f) => [...f.filter((x) => !newFlights.some((n) => n.key === x.key)), ...newFlights]);
     }
+    if (newErrands.length) {
+      setErrands((prev) => {
+        const next = new Map(prev);
+        for (const [agentId, e] of newErrands) {
+          const q = next.get(agentId) ?? [];
+          if (!q.some((x) => x.key === e.key)) next.set(agentId, [...q, e]);
+        }
+        return next;
+      });
+    }
+  // officeAgents/navGrid só são lidos no momento da transição — o `seen`
+  // garante que cada mensagem gera um recado/voo uma única vez
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, roomIdxById, sectorRoomIdx, mailbox]);
+
+  const handleErrandDone = useCallback((key: string) => {
+    setErrands((prev) => {
+      const next = new Map(prev);
+      for (const [id, q] of next) {
+        if (q[0]?.key === key) {
+          if (q.length > 1) next.set(id, q.slice(1)); else next.delete(id);
+        }
+      }
+      return next;
+    });
+  }, []);
 
   const handleFlightDone = useCallback((key: string) => {
     setFlights((f) => f.filter((x) => x.key !== key));
@@ -2238,6 +2359,8 @@ export default function CompanyOffice3D() {
                   nav={{ seat, room }}
                   meeting={meetingRoutes.get(agent.id) ?? null}
                   meetingCenter={[meetingCX, meetingCZ]}
+                  errand={errands.get(agent.id)?.[0] ?? null}
+                  onErrandDone={handleErrandDone}
                   onSelect={handleAgentClick}
                 />
               );

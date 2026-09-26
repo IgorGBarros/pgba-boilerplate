@@ -28,7 +28,7 @@ export const ENVELOPE_COLORS = {
 
 const ENVELOPE_SCALE = 1.9;
 
-function EnvelopeMesh({ flap }: { flap: string }) {
+export function EnvelopeMesh({ flap }: { flap: string }) {
   const flapGeo = useMemo(() => {
     const s = new THREE.Shape();
     s.moveTo(-0.28, 0.18);

@@ -353,9 +353,15 @@ cruzar parede fora do vão da porta.
 **Envelopes entre setores** (`office3d/Envelopes.tsx` — a "Fase 2"
 combinada): mostram `SectorMessage` respeitando a regra "setor nunca fala
 direto com outro setor". Pendente = envelope parado piscando em cima da
-porta do setor de origem (a fila real, com contador); respondida = voa
-origem → sala de quem mediou (`relayed_by`) → destino, e a resposta
-(verde) volta pelo mesmo caminho; rejeitada = fica vermelho e cai na
+porta do setor de origem (a fila real, com contador); respondida = **quem
+mediou (`relayed_by`) vai a pé**: sai da mesa, entra na porta do setor de
+origem e pega o envelope, leva até o setor de destino, espera a resposta
+e traz o envelope verde de volta pra origem, depois volta pra mesa (rota
+de `navigation.errandRoute()`, mesmas regras de nunca atravessar parede;
+o envelope vai na mão dele, com etiqueta "✉ → destino" / "✉ ↩ resposta").
+Vários recados pro mesmo mediador entram numa fila, um de cada vez. Se o
+mediador não está na planta ou está em reunião, o envelope voa origem →
+sala dele → destino, como antes. Rejeitada = fica vermelho e cai na
 origem. Só anima transição vista ao vivo (ou com `answered_at` ≤ 20s no
 carregamento) — histórico antigo não fica voando.
 

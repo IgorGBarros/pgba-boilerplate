@@ -124,6 +124,37 @@ export function outsideToFront(room: RoomNav): Pt[] {
   return [room.inside, [room.cx, room.frontZ]];
 }
 
+// ─── Recado: mediador anda de porta em porta ─────────────────────────────────
+
+/**
+ * Rota de um "recado" (ex: orquestrador levando uma SectorMessage): sai do
+ * lado de fora da própria porta, visita cada sala de `stops` ENTRANDO pela
+ * porta (fora → dentro → fora) e volta pro lado de fora da própria porta.
+ * `stopAt` = índice, em `route`, do ponto "dentro da porta" de cada parada
+ * (onde o agente espera um instante). Não inclui o ponto de partida.
+ */
+export function errandRoute(g: NavGrid, own: RoomNav, stops: RoomNav[]): { route: Pt[]; stopAt: number[] } {
+  const route: Pt[] = [];
+  const stopAt: number[] = [];
+  let at = own;
+  for (const stop of stops) {
+    route.push(...hallway(g, at, stop), stop.inside);
+    stopAt.push(route.length - 1);
+    route.push(stop.outside);
+    at = stop;
+  }
+  route.push(...hallway(g, at, own));
+  // remove pontos repetidos em sequência (ex: já está na porta da parada)
+  const out: Pt[] = [];
+  const idxMap: number[] = [];
+  route.forEach((p, i) => {
+    const prev = out[out.length - 1];
+    if (!prev || prev[0] !== p[0] || prev[1] !== p[1]) out.push(p);
+    idxMap[i] = out.length - 1;
+  });
+  return { route: out, stopAt: stopAt.map((i) => idxMap[i]!) };
+}
+
 // ─── Mesas (uma por agente) ───────────────────────────────────────────────────
 
 /**
