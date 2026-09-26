@@ -1,4 +1,5 @@
 # backend_api/Api/agency/views.py
+from django.db.models import Count, Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -652,3 +653,60 @@ def _parse_when(raw: str | None):
     if timezone.is_naive(value):
         value = timezone.make_aware(value)
     return value
+
+
+class SourceAccessView(TenantContextMixin, APIView):
+    """
+    Quem pode consultar uma fonte (conector): GET ?source=<id>. Mesma regra de
+    services._rag_scope_for — CEO/Orquestrador-Geral veem tudo; os demais, as
+    fontes do próprio setor (principal + adicionais). Fica em `agency` porque
+    `ingestion` não sabe o que é setor.
+
+    POST {"source": id, "sectors": [ids]} define em quais setores a fonte
+    entra como ADICIONAL (o cérebro principal do setor não muda por aqui).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _source(self, request, source_id):
+        from ingestion.models import KnowledgeSource
+
+        return KnowledgeSource.objects.filter(
+            id=source_id, tenant_id=request.tenant_id, is_active=True
+        ).first()
+
+    def _payload(self, request, source):
+        sectors = Sector.objects.filter(tenant_id=request.tenant_id, is_active=True).annotate(
+            n_agents=Count("agents", filter=Q(agents__is_active=True))
+        ).prefetch_related("extra_knowledge_sources").order_by("name")
+        rows = []
+        for sector in sectors:
+            principal = sector.knowledge_source_id == source.id
+            extra = any(s.id == source.id for s in sector.extra_knowledge_sources.all())
+            rows.append({
+                "id": sector.id, "name": sector.name, "agents": sector.n_agents,
+                "access": "principal" if principal else "adicional" if extra else None,
+            })
+        full = Agent.objects.filter(
+            tenant_id=request.tenant_id, is_active=True,
+            access_level__in=[Agent.AccessLevel.CEO, Agent.AccessLevel.GENERAL_ORCHESTRATOR],
+        ).values_list("name", flat=True)
+        return {"source": source.id, "full_access": list(full), "sectors": rows}
+
+    def get(self, request):
+        source = self._source(request, request.query_params.get("source"))
+        if source is None:
+            return Response({"detail": "Fonte não encontrada."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(self._payload(request, source))
+
+    def post(self, request):
+        source = self._source(request, request.data.get("source"))
+        if source is None:
+            return Response({"detail": "Fonte não encontrada."}, status=status.HTTP_404_NOT_FOUND)
+        wanted = {int(i) for i in request.data.get("sectors") or [] if str(i).isdigit()}
+        for sector in Sector.objects.filter(tenant_id=request.tenant_id, is_active=True):
+            if sector.id in wanted and sector.knowledge_source_id != source.id:
+                sector.extra_knowledge_sources.add(source)
+            elif sector.id not in wanted:
+                sector.extra_knowledge_sources.remove(source)
+        return Response(self._payload(request, source))

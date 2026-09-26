@@ -9,6 +9,7 @@ from ingestion.views import (
     DocumentFileUploadView,
     RAGQueryView,
     KnowledgeGraphView,
+    WebhookReceiveView,
 )
 
 router = DefaultRouter()
@@ -20,5 +21,6 @@ urlpatterns = [
     path("documents/upload-file/", DocumentFileUploadView.as_view(), name="document-upload-file"),
     path("query/", RAGQueryView.as_view(), name="rag-query"),
     path("graph/", KnowledgeGraphView.as_view(), name="knowledge-graph"),
+    path("webhooks/<uuid:public_id>/", WebhookReceiveView.as_view(), name="knowledge-webhook"),
     path("", include(router.urls)),
 ]

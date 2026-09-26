@@ -51,9 +51,16 @@ def _rag_scope_for(agent: Agent) -> list[int] | None:
     """
     if agent.has_full_access:
         return None
-    if agent.sector and agent.sector.knowledge_source_id:
-        return [agent.sector.knowledge_source_id]
-    return []
+    if not agent.sector:
+        return []
+    return sector_source_ids(agent.sector)
+
+
+def sector_source_ids(sector) -> list[int]:
+    """Fontes que o setor pode consultar: o cérebro principal + as adicionais."""
+    ids = [sector.knowledge_source_id] if sector.knowledge_source_id else []
+    ids += [i for i in sector.extra_knowledge_sources.values_list("id", flat=True) if i not in ids]
+    return ids
 
 
 def resolve_agent_llm(agent: Agent) -> tuple[str, str | None]:

@@ -92,6 +92,7 @@ REST_FRAMEWORK = {
         "anon": "20/min",
         "user": "200/min",
         "auth": "10/min",
+        "webhook": "120/min",
     },
 }
 
@@ -123,6 +124,20 @@ AUTH_PASSWORD_VALIDATORS = [
 # 🛡️ LGPD
 CPF_SALT = os.environ.get("CPF_SALT", "dev_salt")
 ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "")
+
+# Conectores externos (ingestion.connectors): rede interna é bloqueada (anti-SSRF);
+# libere hosts específicos da sua rede aqui, separados por vírgula.
+CONNECTORS_ALLOWED_PRIVATE_HOSTS = os.environ.get("CONNECTORS_ALLOWED_PRIVATE_HOSTS", "")
+# SQLite só lê arquivos dentro desta pasta (vazio = SQLite desligado)
+CONNECTORS_SQLITE_ROOT = os.environ.get("CONNECTORS_SQLITE_ROOT", "")
+
+# Agendamentos do Celery Beat (serviço celery_beat do docker-compose)
+CELERY_BEAT_SCHEDULE = {
+    "conectores-sincronizacao-automatica": {
+        "task": "ingestion.tasks.sync_due_sources_task",
+        "schedule": 300.0,
+    },
+}
 DATA_RETENTION_DAYS = int(os.environ.get("DATA_RETENTION_DAYS", "730"))
 
 # 🌐 Frontend URL (usado em e-mails de reset de senha, etc.)

@@ -223,7 +223,11 @@ def semantic_search(
     # pgvector-django: CosineDistance anota a distância e permite ordenar
     from pgvector.django import CosineDistance
 
-    queryset = DocumentChunk.objects.filter(tenant_id=tenant_id)
+    # Documento excluído (sumiu da fonte) ou fonte desativada/excluída nunca
+    # entra na resposta de um agente.
+    queryset = DocumentChunk.objects.filter(
+        tenant_id=tenant_id, document__is_active=True, document__source__is_active=True
+    )
     if source_ids is not None:
         queryset = queryset.filter(document__source_id__in=source_ids)
 

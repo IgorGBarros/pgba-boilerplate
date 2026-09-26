@@ -67,3 +67,32 @@ def sync_all_obsidian_sources_task():
     for source in sources:
         sync_obsidian_source_task.delay(source.id)
     return {"sources_enqueued": sources.count()}
+
+
+@shared_task
+def sync_source_task(source_id, trigger="manual"):
+    """Sincroniza qualquer conector de conteúdo (ingestion.sync). Erro fica no SourceSyncRun."""
+    from ingestion.models import KnowledgeSource
+    from ingestion.sync import sync_source
+
+    source = KnowledgeSource.objects.filter(id=source_id, is_active=True).first()
+    if source is None:
+        return None
+    run = sync_source(source, trigger=trigger)
+    return {
+        "status": run.status,
+        "created": run.created,
+        "updated": run.updated,
+        "removed": run.removed,
+    }
+
+
+@shared_task
+def sync_due_sources_task():
+    """Beat (a cada 5 min): dispara as fontes com sincronização automática vencida."""
+    from ingestion.sync import sources_due
+
+    due = sources_due()
+    for source in due:
+        sync_source_task.delay(source.id, "schedule")
+    return {"sources_enqueued": len(due)}

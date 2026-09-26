@@ -83,6 +83,7 @@ import {
   type KnowledgeDocument,
   type AgentAccessLevel,
   ApiError,
+  sectorSourceIds,
 } from "@/lib/api";
 
 type SectorIconKey = "commercial" | "purchasing" | "finance" | "dev" | "ops" | "mercado";
@@ -190,6 +191,9 @@ function SectorKnowledgeDialog({
             <Badge variant={sector?.knowledge_source ? "default" : "secondary"}>
               {sector?.knowledge_source ? `RAG · ${sector.knowledge_source_name}` : "sem RAG"}
             </Badge>
+            {(sector?.extra_knowledge_source_names ?? []).map((n) => (
+              <Badge key={n} variant="secondary" title="Fonte adicional (Data Lake → Conectores → Quem acessa)">+ {n}</Badge>
+            ))}
             {sector?.monthly_budget_usd && parseFloat(sector.monthly_budget_usd) > 0 && (
               <Badge variant="secondary">
                 US$ {parseFloat(sector.monthly_budget_usd).toFixed(2)}/mês
@@ -1089,7 +1093,8 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
               const sectorAgents = [...(agentsBySector[sector.id] ?? [])].sort(
                 (a, b) => Number(b.access_level === "sector_orchestrator") - Number(a.access_level === "sector_orchestrator"),
               );
-              const hasRag = sector.knowledge_source !== null;
+              const hasRag = sectorSourceIds(sector).length > 0;
+              const extras = sector.extra_knowledge_source_names ?? [];
               const sectorModule = getSectorModule(sector.name);
               const m = metricBySector.get(sector.id);
               const working = sectorAgents.filter((a) => a.work_status === "working").length;
@@ -1143,7 +1148,13 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
                     >
                       <Chip tone={hasRag ? "ok" : "muted"}>
                         <Database className="size-3" />
-                        {hasRag ? sector.knowledge_source_name ?? "cérebro" : "sem cérebro"}
+                        {hasRag
+                          ? `${sector.knowledge_source_name ?? extras[0] ?? "cérebro"}${
+                              extras.length > (sector.knowledge_source_name ? 0 : 1)
+                                ? ` +${extras.length - (sector.knowledge_source_name ? 0 : 1)}`
+                                : ""
+                            }`
+                          : "sem cérebro"}
                       </Chip>
                     </button>
                   </div>

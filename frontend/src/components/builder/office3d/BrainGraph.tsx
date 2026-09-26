@@ -31,6 +31,7 @@ import {
   type KnowledgeUsage,
   type KnowledgeSource,
   type Sector,
+  sectorSourceIds,
 } from "@/lib/api";
 
 const PALETTE = [
@@ -437,7 +438,7 @@ export function BrainGraph({
   if (!open) return null;
 
   const selSource = selected ? sourceById.get(selected.source) : undefined;
-  const readers = selected ? sectors.filter((s) => s.knowledge_source === selected.source) : [];
+  const readers = selected ? sectors.filter((s) => sectorSourceIds(s).includes(selected.source)) : [];
   const vaultPath = typeof selSource?.config?.vault_path === "string" ? selSource.config.vault_path : "";
   const vaultName = vaultPath.split(/[\\/]/).filter(Boolean).pop() ?? "";
   const obsidianUrl = selected && selSource?.source_type === "obsidian" && vaultName

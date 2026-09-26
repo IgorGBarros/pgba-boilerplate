@@ -22,17 +22,47 @@ class SectorSerializer(serializers.ModelSerializer):
         source="knowledge_source.name", read_only=True, default=None,
     )
 
+    # Fontes adicionais (além do cérebro principal) — ex: Comercial = HubSpot + Slack
+    extra_knowledge_source_names = serializers.SerializerMethodField()
+    # Todas as fontes que os agentes do setor podem consultar (principal + adicionais)
+    knowledge_source_ids = serializers.SerializerMethodField()
+
     class Meta:
         model = Sector
         fields = [
             "id", "name", "slug", "description", "monthly_budget_usd",
-            "knowledge_source", "knowledge_source_name", "agents_count",
+            "knowledge_source", "knowledge_source_name", "extra_knowledge_sources",
+            "extra_knowledge_source_names", "knowledge_source_ids", "agents_count",
             "default_provider", "default_model", "created_at",
         ]
-        read_only_fields = ["id", "slug", "agents_count", "knowledge_source_name", "created_at"]
+        read_only_fields = [
+            "id", "slug", "agents_count", "knowledge_source_name", "extra_knowledge_source_names",
+            "knowledge_source_ids", "created_at",
+        ]
+
+    def get_extra_knowledge_source_names(self, obj) -> list[str]:
+        return [s.name for s in obj.extra_knowledge_sources.all() if s.is_active]
+
+    def get_knowledge_source_ids(self, obj) -> list[int]:
+        from agency.services import sector_source_ids
+
+        return sector_source_ids(obj)
 
     def validate_default_provider(self, value):
         return _validate_provider(value)
+
+    def _own_source(self, source):
+        request = self.context.get("request")
+        tenant_id = getattr(request, "tenant_id", None)
+        if source is not None and (source.tenant_id != tenant_id or not source.is_active):
+            raise serializers.ValidationError("Fonte de conhecimento não encontrada.")
+        return source
+
+    def validate_knowledge_source(self, value):
+        return self._own_source(value)
+
+    def validate_extra_knowledge_sources(self, value):
+        return [self._own_source(v) for v in value]
 
 
 class AgentSerializer(serializers.ModelSerializer):

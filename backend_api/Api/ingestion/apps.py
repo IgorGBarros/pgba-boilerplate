@@ -15,3 +15,11 @@ class IngestionConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "ingestion"
     verbose_name = "Ingestão & Memória (RAG)"
+
+    def ready(self):
+        # Consultas cadastradas nos conectores de banco/CRM viram funções do
+        # orchestration por tenant (ver ingestion.connectors.structured).
+        from ingestion.connectors.structured import catalog_provider
+        from orchestration.registry import register_catalog_provider
+
+        register_catalog_provider(catalog_provider)

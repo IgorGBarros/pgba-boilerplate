@@ -69,6 +69,31 @@ class QueryFunction:
 
 _REGISTRY: dict[str, QueryFunction] = {}
 
+# Catálogos dinâmicos: funções que dependem do tenant (ex: consultas que um
+# humano cadastrou num conector de banco — ingestion.connectors.structured).
+# Cada provedor é `(tenant_id, source_ids) -> list[QueryFunction]`; `source_ids`
+# é o mesmo escopo genérico da busca semântica (None = sem restrição) — este
+# módulo não sabe o que é setor nem conector, só repassa.
+_CATALOG_PROVIDERS: list[Callable] = []
+
+
+def register_catalog_provider(provider: Callable) -> None:
+    if provider not in _CATALOG_PROVIDERS:
+        _CATALOG_PROVIDERS.append(provider)
+
+
+def dynamic_functions(tenant_id, source_ids=None) -> list["QueryFunction"]:
+    if not tenant_id:
+        return []
+    out: list[QueryFunction] = []
+    for provider in _CATALOG_PROVIDERS:
+        try:
+            out.extend(provider(tenant_id, source_ids))
+        except Exception as exc:  # provedor quebrado nunca derruba a pergunta
+            name = getattr(provider, "__name__", provider)
+            logger.warning("Catálogo dinâmico falhou (%s): %s", name, exc)
+    return [fn for fn in out if fn.risk in RISK_LEVELS and fn.name not in _REGISTRY]
+
 
 def register_query_function(
     name: str,
@@ -97,34 +122,37 @@ def register_query_function(
     return decorator
 
 
-def get_function(name: str) -> QueryFunction | None:
-    return _REGISTRY.get(name)
+def get_function(name: str, tenant_id=None, source_ids=None) -> QueryFunction | None:
+    """Estática primeiro; com `tenant_id`, também as dinâmicas daquele tenant/escopo."""
+    if name in _REGISTRY:
+        return _REGISTRY[name]
+    return next((fn for fn in dynamic_functions(tenant_id, source_ids) if fn.name == name), None)
 
 
 def list_functions() -> list[QueryFunction]:
     return list(_REGISTRY.values())
 
 
-def catalog_for_prompt() -> str:
+def catalog_for_prompt(tenant_id=None, source_ids=None) -> str:
     """Serializa o catálogo de funções em texto para injetar no prompt do LLM."""
     lines = []
-    for fn in _REGISTRY.values():
+    for fn in [*_REGISTRY.values(), *dynamic_functions(tenant_id, source_ids)]:
         params = ", ".join(f"{k}: {v}" for k, v in fn.parameters.items()) or "sem parâmetros"
         lines.append(f"- {fn.name}({params}): {fn.description}")
     return "\n".join(lines)
 
 
-def execute(name: str, tenant_id, params: dict) -> dict:
+def execute(name: str, tenant_id, params: dict, source_ids=None) -> dict:
     """
     Executa uma função registrada. Único ponto de entrada de execução —
     tudo que chama uma QueryFunction passa por aqui, então é o único lugar
     que precisa garantir que `tenant_id` nunca vem do LLM.
     """
-    fn = get_function(name)
-    if fn is None:
-        raise LookupError(f"Função '{name}' não está registrada.")
     if not tenant_id:
         raise ValueError("execute() requer tenant_id explícito.")
+    fn = get_function(name, tenant_id, source_ids)
+    if fn is None:
+        raise LookupError(f"Função '{name}' não está registrada.")
     try:
         return fn.handler(tenant_id, **(params or {}))
     except TypeError as exc:
