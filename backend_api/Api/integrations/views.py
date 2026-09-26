@@ -5,19 +5,34 @@ credenciais (GitHub, n8n, Hostinger...), servidores (VPS), caixas de e-mail
 dos setores e e-mails de saída. Toda view é do tenant do usuário.
 """
 from django.db import transaction
+from django.db.models import Count
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.mixins import SoftDeleteViewMixin, TenantContextMixin
 from integrations import n8n, hostinger
-from integrations.email import PRESETS, EmailError, account_for_sector, test_account
-from integrations.models import EmailAccount, OutboundEmail, ServerConnection, ServiceCredential
+from integrations.email import (
+    PRESETS,
+    EmailError,
+    account_for_sector,
+    fetch_inbox,
+    test_account,
+)
+from integrations.models import (
+    EmailAccount,
+    InboundEmail,
+    OutboundEmail,
+    ServerConnection,
+    ServiceCredential,
+)
 from integrations.serializers import (
     EmailAccountSerializer,
+    InboundEmailSerializer,
     OutboundEmailSerializer,
     ServerConnectionSerializer,
     ServiceCredentialSerializer,
@@ -29,6 +44,12 @@ def _require_tenant(request):
     if not getattr(request, "tenant_id", None):
         return Response({"detail": "Acesso requer tenant válido"}, status=403)
     return None
+
+
+class MailPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = "page_size"
+    max_page_size = 200
 
 
 class _TenantViewSet(TenantContextMixin, viewsets.ModelViewSet):
@@ -247,6 +268,18 @@ class EmailAccountViewSet(SoftDeleteViewMixin, _TenantViewSet):
             tenant_id=request.tenant_id, status=OutboundEmail.Status.DRAFT
         ).values_list("sector_id", flat=True):
             drafts[row] = drafts.get(row, 0) + 1
+        unread = dict(
+            InboundEmail.objects.filter(tenant_id=request.tenant_id, is_active=True, is_read=False)
+            .values_list("sector_id")
+            .annotate(n=Count("id"))
+        )
+        sent = dict(
+            OutboundEmail.objects.filter(
+                tenant_id=request.tenant_id, status=OutboundEmail.Status.SENT
+            )
+            .values_list("sector_id")
+            .annotate(n=Count("id"))
+        )
         rows = []
         for s in sectors:
             acc = accounts.get(s.id)
@@ -262,6 +295,8 @@ class EmailAccountViewSet(SoftDeleteViewMixin, _TenantViewSet):
                     if acc
                     else None,
                     "drafts": drafts.get(s.id, 0),
+                    "unread": unread.get(s.id, 0),
+                    "sent": sent.get(s.id, 0),
                 }
             )
         default = accounts.get(None)
@@ -275,6 +310,16 @@ class EmailAccountViewSet(SoftDeleteViewMixin, _TenantViewSet):
                 "sectors": rows,
             }
         )
+
+    @action(detail=True, methods=["post"])
+    def fetch(self, request, pk=None):
+        """Busca os e-mails novos agora (IMAP, só leitura). O beat faz isso a cada 5 min."""
+        account = self.get_object()
+        try:
+            created = fetch_inbox(account)
+        except EmailError as exc:
+            return Response({"ok": False, "detail": str(exc)}, status=400)
+        return Response({"ok": True, "created": created, "detail": account.last_fetch_message})
 
     @action(detail=True, methods=["post"])
     def test(self, request, pk=None):
@@ -297,6 +342,7 @@ class EmailAccountViewSet(SoftDeleteViewMixin, _TenantViewSet):
 class OutboundEmailViewSet(_TenantViewSet):
     queryset = OutboundEmail.objects.select_related("sector", "account")
     serializer_class = OutboundEmailSerializer
+    pagination_class = MailPagination
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
@@ -360,3 +406,33 @@ class OutboundEmailViewSet(_TenantViewSet):
             email.status, email.updated_at = OutboundEmail.Status.CANCELLED, timezone.now()
             email.save()
         return Response(self.get_serializer(email).data, status=status.HTTP_200_OK)
+
+
+# ─── E-mails recebidos ───────────────────────────────────────────────────────
+
+
+class InboundEmailViewSet(SoftDeleteViewMixin, _TenantViewSet):
+    """Caixa de entrada: lista (filtro por setor / não lidos), abrir, marcar lido, arquivar."""
+
+    queryset = InboundEmail.objects.select_related("sector", "account").prefetch_related("replies")
+    serializer_class = InboundEmailSerializer
+    pagination_class = MailPagination
+    http_method_names = ["get", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        p = self.request.query_params
+        if p.get("sector"):
+            qs = qs.filter(sector_id=p["sector"])
+        if p.get("unread") in ("1", "true"):
+            qs = qs.filter(is_read=False)
+        if p.get("search"):
+            from django.db.models import Q
+
+            term = p["search"][:100]
+            qs = qs.filter(
+                Q(subject__icontains=term)
+                | Q(from_address__icontains=term)
+                | Q(body__icontains=term)
+            )
+        return qs

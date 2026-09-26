@@ -21,6 +21,7 @@ from agency.views import (
     SourceAccessView,
     TimelineView,
     DailySummaryView,
+    EmailReplyView,
 )
 
 router = DefaultRouter()
@@ -49,6 +50,7 @@ urlpatterns = [
     path("source-access/", SourceAccessView.as_view(), name="agency-source-access"),
     path("timeline/", TimelineView.as_view(), name="agency-timeline"),
     path("daily-summary/", DailySummaryView.as_view(), name="agency-daily-summary"),
+    path("email-reply/", EmailReplyView.as_view(), name="agency-email-reply"),
     path(
         "daily-summary/save/", DailySummaryView.as_view(), {"action": "save"},
         name="agency-daily-summary-save",

@@ -2944,10 +2944,20 @@ export interface EmailAccount {
   configured: boolean;
   last_check_at: string | null;
   last_check_message: string;
+  last_fetch_at: string | null;
+  last_fetch_message: string;
 }
 export interface EmailOverview {
   default_account: EmailAccount | null;
-  sectors: { sector: { id: number; name: string }; agents: string[]; account: EmailAccount | null; drafts: number }[];
+  sectors: {
+    sector: { id: number; name: string };
+    agents: string[];
+    account: EmailAccount | null;
+    drafts: number;
+    /** Recebidos ainda não lidos. */
+    unread: number;
+    sent: number;
+  }[];
 }
 export async function getEmailOverview(): Promise<EmailOverview> {
   return request<EmailOverview>("/api/v1/integrations/email-accounts/overview/");
@@ -2992,11 +3002,50 @@ export interface OutboundEmail {
   sent_at: string | null;
   error: string;
   created_at: string;
+  in_reply_to: number | null;
+  /** Texto escrito por um agente (uma pessoa revisou e enviou). */
+  written_by_ai: boolean;
 }
-export async function listOutboundEmails(status?: string): Promise<OutboundEmail[]> {
-  return requestList<OutboundEmail>(`/api/v1/integrations/outbound-emails/${status ? `?status=${status}` : ""}`);
+export async function listOutboundEmails(status?: string, sector?: number): Promise<OutboundEmail[]> {
+  const qs = new URLSearchParams();
+  if (status) qs.set("status", status);
+  if (sector) qs.set("sector", String(sector));
+  return requestList<OutboundEmail>(`/api/v1/integrations/outbound-emails/?${qs}`);
 }
-export async function createOutboundEmail(data: Pick<OutboundEmail, "sector" | "to" | "subject" | "body"> & { cc?: string[] }): Promise<OutboundEmail> {
+
+export interface InboundEmail {
+  id: number;
+  sector: number | null;
+  sector_name: string;
+  to_address: string;
+  message_id: string;
+  from_address: string;
+  from_name: string;
+  to: string[];
+  cc: string[];
+  subject: string;
+  body: string;
+  received_at: string;
+  is_read: boolean;
+  replies: { id: number; status: OutboundEmail["status"]; written_by_ai: boolean; requested_by: string; approved_by: string; sent_at: string | null }[];
+}
+export async function listInboundEmails(sector?: number, search = ""): Promise<InboundEmail[]> {
+  const qs = new URLSearchParams({ page_size: "100" });
+  if (sector) qs.set("sector", String(sector));
+  if (search.trim()) qs.set("search", search.trim());
+  return requestList<InboundEmail>(`/api/v1/integrations/inbound-emails/?${qs}`);
+}
+export async function markInboundRead(id: number, is_read = true): Promise<InboundEmail> {
+  return request<InboundEmail>(`/api/v1/integrations/inbound-emails/${id}/`, { method: "PATCH", body: JSON.stringify({ is_read }) });
+}
+export async function fetchMailbox(accountId: number): Promise<{ ok: boolean; created: number; detail: string }> {
+  return request(`/api/v1/integrations/email-accounts/${accountId}/fetch/`, { method: "POST" });
+}
+/** A IA do setor escreve a resposta — volta como rascunho pra uma pessoa revisar e enviar. */
+export async function draftAiReply(inbound: number, instructions = ""): Promise<OutboundEmail> {
+  return request<OutboundEmail>("/api/v1/agency/email-reply/", { method: "POST", body: JSON.stringify({ inbound, instructions }) });
+}
+export async function createOutboundEmail(data: Pick<OutboundEmail, "sector" | "to" | "subject" | "body"> & { cc?: string[]; in_reply_to?: number }): Promise<OutboundEmail> {
   return request<OutboundEmail>("/api/v1/integrations/outbound-emails/", { method: "POST", body: JSON.stringify(data) });
 }
 export async function updateOutboundEmail(id: number, data: Partial<Pick<OutboundEmail, "to" | "cc" | "subject" | "body">>): Promise<OutboundEmail> {

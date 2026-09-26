@@ -890,6 +890,23 @@ Aparência. API em `/api/v1/integrations/` (`integrations/views.py`).
   rascunho continua. Nunca sai por outra caixa sem dizer. Quando sai,
   `integrations.signals.email_sent` avisa quem criou (pela `origin`):
   `compras` marca a cotação/pedido como "enviado" (`compras.services.ao_enviar_email`).
+- **Caixa de entrada** (`InboundEmail`): IMAP **só leitura** (`select(readonly)`
+  + `BODY.PEEK[]` — nunca marca lido nem apaga no servidor), só UIDs novos
+  (`EmailAccount.imap_last_uid`), HTML vira texto. Beat a cada 5 min
+  (`integrations.tasks.fetch_inboxes_task`) + `email-accounts/{id}/fetch/`.
+  Não entra na busca semântica (não é `ingestion.Document`).
+- **IA responde e-mail**: `POST /api/v1/agency/email-reply/ {inbound, instructions?}`
+  (`agency/email_reply.py`) — o agente do setor (operacional, senão o
+  orquestrador; IA do setor) escreve com o e-mail + RAG escopado do setor.
+  O corpo recebido entra higienizado e marcado como DADO (`<email>`), nunca
+  instrução; o agente não chama função. Sai RASCUNHO (`written_by_ai`,
+  `in_reply_to` → `In-Reply-To`/`References` no envio); uma pessoa envia.
+  Custo em `record_interaction`.
+- **Organograma**: envelope em cada cartão de setor com os não lidos
+  (`email-accounts/overview/` → `unread`, a cada 60s; bolinha azul = rascunho
+  esperando) → `admin/SectorMailbox.tsx`: Recebidos (ler marca lido, "Responder
+  com IA" com orientação opcional ou "Responder eu mesmo"), Enviados (quem
+  escreveu — IA ou pessoa — e quem aprovou) e Rascunhos.
 - **Compras → fornecedor**: `orcamentos/{id}/rascunho-email/` (pedido de
   cotação com os itens) e `pedidos/{id}/rascunho-email/` (pedido fechado),
   pela caixa do setor Compras; na tela, `EmailDraftButton` abre o editor pra

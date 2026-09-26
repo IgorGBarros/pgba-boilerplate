@@ -8,6 +8,7 @@ router = DefaultRouter()
 router.register("servers", views.ServerConnectionViewSet, basename="server")
 router.register("email-accounts", views.EmailAccountViewSet, basename="email-account")
 router.register("outbound-emails", views.OutboundEmailViewSet, basename="outbound-email")
+router.register("inbound-emails", views.InboundEmailViewSet, basename="inbound-email")
 
 urlpatterns = [
     path("credentials/", views.CredentialListView.as_view(), name="credentials"),

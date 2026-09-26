@@ -172,6 +172,10 @@ class EmailAccount(TenantMixin, SoftDeleteMixin, models.Model):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     last_check_at = models.DateTimeField(null=True, blank=True)
     last_check_message = models.CharField(max_length=500, blank=True)
+    # Caixa de entrada (IMAP): último UID já trazido — a próxima busca só pega os novos
+    imap_last_uid = models.BigIntegerField(default=0)
+    last_fetch_at = models.DateTimeField(null=True, blank=True)
+    last_fetch_message = models.CharField(max_length=500, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -196,6 +200,43 @@ class EmailAccount(TenantMixin, SoftDeleteMixin, models.Model):
     @property
     def configured(self) -> bool:
         return bool(self.address and self.smtp_host and self.password_encrypted)
+
+
+class InboundEmail(TenantMixin, SoftDeleteMixin, models.Model):
+    """
+    E-mail RECEBIDO na caixa de um setor (IMAP, só leitura — nada é apagado
+    nem marcado como lido no servidor). Fica aqui pra equipe e pra IA do setor
+    responder; não entra na busca semântica (não é ingestion.Document).
+    """
+
+    account = models.ForeignKey(EmailAccount, on_delete=models.CASCADE, related_name="inbound")
+    sector = models.ForeignKey(
+        "agency.Sector", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="inbound_emails",
+    )
+    uid = models.BigIntegerField()
+    message_id = models.CharField(max_length=255, blank=True, db_index=True)
+    from_address = models.CharField(max_length=255, blank=True)
+    from_name = models.CharField(max_length=255, blank=True)
+    to = models.JSONField(default=list, blank=True)
+    cc = models.JSONField(default=list, blank=True)
+    subject = models.CharField(max_length=255, blank=True)
+    body = models.TextField(blank=True)
+    received_at = models.DateTimeField(default=timezone.now, db_index=True)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = "E-mail recebido"
+        verbose_name_plural = "E-mails recebidos"
+        ordering = ["-received_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["account", "uid"], name="uniq_inbound_uid_per_account")
+        ]
+        indexes = [models.Index(fields=["tenant_id", "sector", "is_read"])]
+
+    def __str__(self):
+        return f"{self.subject} ← {self.from_address}"
 
 
 class OutboundEmail(TenantMixin, AuditMixin, models.Model):
@@ -234,6 +275,12 @@ class OutboundEmail(TenantMixin, AuditMixin, models.Model):
     sent_at = models.DateTimeField(null=True, blank=True)
     error = models.CharField(max_length=500, blank=True)
     message_id = models.CharField(max_length=255, blank=True)
+    # Resposta a um e-mail recebido (vai com In-Reply-To/References)
+    in_reply_to = models.ForeignKey(
+        InboundEmail, on_delete=models.SET_NULL, null=True, blank=True, related_name="replies"
+    )
+    # Texto escrito por um agente (a pessoa ainda revisa e envia)
+    written_by_ai = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "E-mail de saída"
