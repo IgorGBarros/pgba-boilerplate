@@ -487,11 +487,11 @@ export function DataLakeView({ onBack }: { onBack: () => void }) {
       {/* ── Page Header ─────────────────────────────────────────────────────── */}
       <div className="rounded-xl bg-gradient-to-r from-violet-600/20 via-purple-600/10 to-transparent border border-violet-500/20 px-5 py-4">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="shrink-0 grid size-8 place-items-center rounded-md text-violet-300 hover:text-violet-100 hover:bg-violet-500/20 transition-colors">
+          <button onClick={onBack} className="shrink-0 grid size-8 place-items-center rounded-md text-violet-700 dark:text-violet-300 hover:text-violet-100 hover:bg-violet-500/20 transition-colors">
             <ArrowLeft className="size-4" />
           </button>
           <div className="flex items-center gap-3 min-w-0">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-violet-500/20 text-violet-300">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-violet-500/20 text-violet-700 dark:text-violet-300">
               <Database className="size-5" />
             </span>
             <div>

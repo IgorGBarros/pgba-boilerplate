@@ -269,20 +269,32 @@ Endpoints de métricas (`/api/v1/agency/metrics/overview|sectors|agents|budgets/
 e de comunicação (`/api/v1/agency/sector-messages/request|{id}/relay/`) —
 ver `docs/API.md` para o contrato completo.
 
-**Visão 2D (KPIs + lista)**:
-`frontend/src/components/builder/CompanyOverview.tsx` (dentro do Studio,
-aba "Empresa") — painel com polling mostrando `work_status` (bolinha
-verde pulsando = `working`, com `current_task`) agrupado por setor, mais
-KPIs agregados (total de agentes, trabalhando agora, custo total). Como
-`ask_as_agent` é síncrono, um agente só fica `working` pela duração da
-própria chamada — pode ser rápido demais para o poll pegar; por isso todo
-agente também mostra `last_active_at` (anotado via
-`Max("interactions__created_at")` no `AgentViewSet`), a última interação
-registrada, para não parecer "sempre ocioso" por causa do timing do poll.
+**Navegação e tema da tela principal** (`frontend/src/App.tsx` +
+`pages/Studio.tsx`, `lib/navigation.ts`): uma barra só no header —
+**Empresa · Escritório 3D · Conhecimento · Projetos** (Gerar abre a partir
+de Projetos; "Páginas geradas", configurações e tema ficam à direita). As
+tarefas vivem dentro dos agentes, então Tarefas, Aprovações (com contador
+ao vivo) e Atividade são sub-abas de **Empresa**, ao lado do Organograma —
+não abas soltas no topo. O tema claro/escuro usa a paleta do Escritório 3D
+(creme/pedra: `#f1eee8`/`#faf8f4` no claro, `#161412`/`#1f1c19` no escuro,
+tokens em `src/index.css`); telas novas usam só os tokens semânticos
+(`bg-surface`, `text-muted-foreground`, `border-border`...), nunca
+`slate-*`/`zinc-*`/`white/10` fixos, que só funcionam num dos temas.
+
+**Organograma (visão 2D)**: `frontend/src/components/empresa/overview.tsx`
+(Empresa → Organograma) — Empresa → CEO/Orquestrador-Geral → cartões de
+setor (faixa de cor por índice, como as salas da planta; chips de módulo,
+IA do setor e cérebro; equipe com avatar e bolinha de `work_status`, a
+tarefa atual em verde quando `working`; rodapé com custo do mês e barra
+de orçamento), mais KPIs (agentes, trabalhando, pausados, custo do mês) e
+indicador de tempo real. Como `ask_as_agent` é síncrono, um agente só
+fica `working` pela duração da própria chamada; por isso o
+`AgentViewSet` também anota `last_active_at`
+(`Max("interactions__created_at")`), a última interação registrada.
 
 **Visão 3D (Fase 3 — planta isométrica)**:
-`frontend/src/components/builder/CompanyOffice3D.tsx` (aba "Escritório
-3D" do Studio) + `builder/office3d/` — Three.js via
+`frontend/src/components/builder/CompanyOffice3D.tsx` (item "Escritório
+3D" do header) + `builder/office3d/` — Three.js via
 `@react-three/fiber`/`@react-three/drei`, carregado sob demanda
 (`React.lazy`, ~1MB só quem abre a aba paga). Cada `Sector` vira uma sala
 (posição determinística em grade, cor fixa por índice — nunca aleatória);
@@ -375,8 +387,8 @@ CEO/Orquestrador-Geral ficam na sala CEO, e há uma Sala de Reunião fixa.
   `task`/`agent` do WebSocket). Clicar abre o `RoomModal`. Já foi um cartão
   grande fixo em pixel — com 12+ setores cobria o escritório inteiro.
 - **Barra de vista no topo da cena** (Isométrica/Planta/Frontal, Cartões,
-  Fios, zoom −/+/⌂): no Studio o container tem `calc(100vh - 152px)` e o
-  rodapé do canvas podia ficar fora da tela — por isso não fica embaixo.
+  Fios, zoom −/+/⌂): o container tem `calc(100vh - 56px)` (só o header)
+  e o rodapé do canvas pode ficar fora da tela — por isso não fica embaixo.
   O `IsoCamera` reserva essa faixa ao enquadrar; o `OrbitControls` não
   recebe `target` por prop (seria reaplicado a cada re-render).
 - **Colunas de salas adaptáveis** (`roomColumns`): até 5 colunas conforme

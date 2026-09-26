@@ -1891,11 +1891,11 @@ export function ERPView({ onBack, defaultTab = "compras" }: { onBack: () => void
     <div className="space-y-6">
       <div className="rounded-xl bg-gradient-to-r from-emerald-600/20 via-green-600/10 to-transparent border border-emerald-500/20 px-5 py-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0 text-emerald-300 hover:text-emerald-100 hover:bg-emerald-500/20">
+          <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0 text-emerald-700 dark:text-emerald-300 hover:text-emerald-100 hover:bg-emerald-500/20">
             <ArrowLeft className="size-4" />
           </Button>
           <div className="flex items-center gap-3 min-w-0">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-500/20 text-emerald-300">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
               <Layers className="size-5" />
             </span>
             <div>
@@ -1904,7 +1904,7 @@ export function ERPView({ onBack, defaultTab = "compras" }: { onBack: () => void
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10">
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10">
               <RefreshCw size={13} /> Sincronizar
             </Button>
             <Button size="sm" className="h-8 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white border-0">

@@ -66,37 +66,37 @@ const STATUS_CONFIG: Record<
 > = {
   created: {
     label: "Aguardando",
-    badge: "bg-zinc-500/20 text-zinc-300 border border-zinc-600/30",
-    accent: "bg-zinc-500",
+    badge: "bg-secondary text-foreground border border-border",
+    accent: "bg-muted-foreground",
     icon: <Circle className="size-3" />,
   },
   in_progress: {
     label: "Executando",
-    badge: "bg-blue-500/20 text-blue-300 border border-blue-500/30",
+    badge: "bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/30",
     accent: "bg-blue-500",
     icon: <Loader2 className="size-3 animate-spin" />,
   },
   adapted: {
     label: "Adaptada",
-    badge: "bg-violet-500/20 text-violet-300 border border-violet-500/30",
+    badge: "bg-violet-500/20 text-violet-700 dark:text-violet-300 border border-violet-500/30",
     accent: "bg-violet-500",
     icon: <RotateCcw className="size-3" />,
   },
   paused_ceo: {
     label: "Em revisão",
-    badge: "bg-amber-500/20 text-amber-300 border border-amber-500/30",
+    badge: "bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30",
     accent: "bg-amber-400",
     icon: <Pause className="size-3" />,
   },
   approved: {
     label: "Aprovada",
-    badge: "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30",
+    badge: "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30",
     accent: "bg-emerald-500",
     icon: <CheckCircle2 className="size-3" />,
   },
   rejected: {
     label: "Rejeitada",
-    badge: "bg-red-500/20 text-red-400 border border-red-500/30",
+    badge: "bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30",
     accent: "bg-red-500",
     icon: <XCircle className="size-3" />,
   },
@@ -111,20 +111,20 @@ const COL_HEADER: Record<string, string> = {
 };
 
 const COL_ICON: Record<string, React.ReactNode> = {
-  backlog:   <Circle className="size-3.5 text-zinc-400" />,
-  execucao:  <Loader2 className="size-3.5 animate-spin text-blue-400" />,
-  revisao:   <Pause className="size-3.5 text-amber-400" />,
-  concluido: <CheckCircle2 className="size-3.5 text-emerald-400" />,
+  backlog:   <Circle className="size-3.5 text-muted-foreground" />,
+  execucao:  <Loader2 className="size-3.5 animate-spin text-blue-600 dark:text-blue-400" />,
+  revisao:   <Pause className="size-3.5 text-amber-600 dark:text-amber-400" />,
+  concluido: <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />,
 };
 
 // Paleta de setor determinística (funciona nos dois temas)
 const SECTOR_PALETTE = [
-  "bg-violet-500/15 text-violet-300 border border-violet-500/25",
-  "bg-cyan-500/15 text-cyan-300 border border-cyan-500/25",
-  "bg-rose-500/15 text-rose-300 border border-rose-500/25",
-  "bg-emerald-500/15 text-emerald-300 border border-emerald-500/25",
-  "bg-orange-500/15 text-orange-300 border border-orange-500/25",
-  "bg-indigo-500/15 text-indigo-300 border border-indigo-500/25",
+  "bg-violet-500/15 text-violet-700 dark:text-violet-300 border border-violet-500/25",
+  "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/25",
+  "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25",
+  "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25",
+  "bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/25",
+  "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25",
 ];
 
 function sectorColor(name: string | null): string {
@@ -242,7 +242,7 @@ function TaskDetailModal({
                       href={task.project_github_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1 font-medium text-xs text-blue-400 hover:underline"
+                      className="flex items-center gap-1 font-medium text-xs text-blue-600 dark:text-blue-400 hover:underline"
                     >
                       {task.project_name}
                       <ExternalLink className="size-3" />
@@ -557,12 +557,12 @@ export function Tasks({ onNewTask }: { onNewTask: (sector?: string) => void }) {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Helpdesk interno"
-        description="Arraste os cards entre colunas ou clique para ver detalhes e executar ações."
+        title="Tarefas de todos os setores"
+        description="As mesmas tarefas que aparecem em cada agente e no quadro da sala do Escritório 3D — arraste entre colunas ou clique para agir."
         action={
           <div className="flex items-center gap-3">
             {totalActive > 0 && (
-              <span className="flex items-center gap-1.5 rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-400 border border-blue-500/25">
+              <span className="flex items-center gap-1.5 rounded-full bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-600 dark:text-blue-400 border border-blue-500/25">
                 <Loader2 className="size-3 animate-spin" />
                 {totalActive} em execução
               </span>

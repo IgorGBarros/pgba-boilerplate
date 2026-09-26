@@ -164,10 +164,10 @@ const PHASE_LABELS: Record<CyclePhase, string> = {
 };
 
 const PHASE_COLORS: Record<CyclePhase, string> = {
-  pre:     "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-  trading: "bg-green-500/20 text-green-400 border-green-500/30",
-  post:    "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  closed:  "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
+  pre:     "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
+  trading: "bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/30",
+  post:    "bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30",
+  closed:  "bg-secondary text-muted-foreground border-border",
 };
 
 function fmtPrice(price: number, currency: string) {
@@ -181,8 +181,8 @@ function fmtPrice(price: number, currency: string) {
 }
 
 function pctColor(pct: number) {
-  if (pct > 0) return "text-green-400";
-  if (pct < 0) return "text-red-400";
+  if (pct > 0) return "text-green-600 dark:text-green-400";
+  if (pct < 0) return "text-red-600 dark:text-red-400";
   return "text-muted-foreground";
 }
 
@@ -444,7 +444,7 @@ function PriceCard({
       <div className="flex items-center justify-between gap-2 mb-1">
         <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{sym.label}</span>
         {ticker ? (
-          up ? <TrendingUp className="size-3 text-green-400 shrink-0" /> : <TrendingDown className="size-3 text-red-400 shrink-0" />
+          up ? <TrendingUp className="size-3 text-green-600 dark:text-green-400 shrink-0" /> : <TrendingDown className="size-3 text-red-600 dark:text-red-400 shrink-0" />
         ) : null}
       </div>
       {ticker ? (
@@ -522,9 +522,9 @@ function GuardianPanel() {
   return (
     <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 p-4 flex flex-col gap-2">
       <div className="flex items-center gap-1.5">
-        <Shield className="size-3.5 text-orange-400" />
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-orange-400">Guardião · Limites</p>
-        <Badge variant="outline" className="ml-auto text-[9px] px-1.5 border-orange-500/30 text-orange-400 leading-none">
+        <Shield className="size-3.5 text-orange-600 dark:text-orange-400" />
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-orange-600 dark:text-orange-400">Guardião · Limites</p>
+        <Badge variant="outline" className="ml-auto text-[9px] px-1.5 border-orange-500/30 text-orange-600 dark:text-orange-400 leading-none">
           veto absoluto
         </Badge>
       </div>
@@ -532,7 +532,7 @@ function GuardianPanel() {
         {limits.map(({ label, value }) => (
           <div key={label} className="flex items-center justify-between text-[11px] gap-2">
             <span className="text-muted-foreground">{label}</span>
-            <span className="font-mono font-medium text-orange-300 tabular-nums shrink-0">{value}</span>
+            <span className="font-mono font-medium text-orange-700 dark:text-orange-300 tabular-nums shrink-0">{value}</span>
           </div>
         ))}
       </div>
@@ -581,14 +581,14 @@ function CycleBar({ phase }: { phase: CyclePhase }) {
 function AgentRoleIcon({ role, name }: { role: string; name: string }) {
   const n = (role + name).toLowerCase();
   if (n.includes("orquestr"))                           return <Brain      className="size-3.5 text-primary"         />;
-  if (n.includes("guardião") || n.includes("risco"))   return <Shield     className="size-3.5 text-orange-400"      />;
-  if (n.includes("executor"))                           return <Zap        className="size-3.5 text-yellow-400"      />;
-  if (n.includes("auditor"))                            return <CheckCircle className="size-3.5 text-blue-400"       />;
-  if (n.includes("estrateg"))                           return <TrendingUp  className="size-3.5 text-green-400"      />;
-  if (n.includes("coletor") || n.includes("dados"))    return <Activity   className="size-3.5 text-purple-400"      />;
-  if (n.includes("macro"))                              return <BarChart2  className="size-3.5 text-cyan-400"        />;
-  if (n.includes("técnico") || n.includes("tecnico"))  return <TrendingDown className="size-3.5 text-pink-400"      />;
-  if (n.includes("fluxo"))                              return <Activity   className="size-3.5 text-indigo-400"      />;
+  if (n.includes("guardião") || n.includes("risco"))   return <Shield     className="size-3.5 text-orange-600 dark:text-orange-400"      />;
+  if (n.includes("executor"))                           return <Zap        className="size-3.5 text-yellow-600 dark:text-yellow-400"      />;
+  if (n.includes("auditor"))                            return <CheckCircle className="size-3.5 text-blue-600 dark:text-blue-400"       />;
+  if (n.includes("estrateg"))                           return <TrendingUp  className="size-3.5 text-green-600 dark:text-green-400"      />;
+  if (n.includes("coletor") || n.includes("dados"))    return <Activity   className="size-3.5 text-purple-600 dark:text-purple-400"      />;
+  if (n.includes("macro"))                              return <BarChart2  className="size-3.5 text-cyan-600 dark:text-cyan-400"        />;
+  if (n.includes("técnico") || n.includes("tecnico"))  return <TrendingDown className="size-3.5 text-pink-600 dark:text-pink-400"      />;
+  if (n.includes("fluxo"))                              return <Activity   className="size-3.5 text-indigo-600 dark:text-indigo-400"      />;
   return <Users className="size-3.5 text-muted-foreground" />;
 }
 
@@ -909,9 +909,9 @@ export function SectorDetailPage({
       {/* Cycle bar */}
       {isMercado && phase !== "closed" && <CycleBar phase={phase} />}
       {isMercado && phase === "closed" && (
-        <div className="rounded-xl border border-zinc-500/20 bg-zinc-500/5 px-4 py-3 flex items-center gap-3">
-          <AlertTriangle className="size-4 text-zinc-400" />
-          <p className="text-sm text-zinc-400">Mercado fechado — próximo ciclo às 07h00 BRT</p>
+        <div className="rounded-xl border border-border bg-secondary px-4 py-3 flex items-center gap-3">
+          <AlertTriangle className="size-4 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Mercado fechado — próximo ciclo às 07h00 BRT</p>
         </div>
       )}
 
@@ -1054,7 +1054,7 @@ export function SectorDetailPage({
             </div>
             <div className="rounded-xl border border-border bg-card px-4 py-3">
               <p className="text-xs text-muted-foreground">Trabalhando agora</p>
-              <p className="text-2xl font-bold mt-1 text-green-400">
+              <p className="text-2xl font-bold mt-1 text-green-600 dark:text-green-400">
                 {loading ? "—" : agents.filter((a) => a.work_status === "working").length}
               </p>
             </div>

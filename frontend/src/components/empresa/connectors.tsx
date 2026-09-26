@@ -62,7 +62,7 @@ const CONNECTORS: ConnectorDef[] = [
     label: "REST API",
     description: "Qualquer API HTTP com suporte a GET/POST",
     icon: <Code2 className="size-5" />,
-    color: "text-blue-400",
+    color: "text-blue-600 dark:text-blue-400",
     canSync: true,
     fields: [
       { key: "url", label: "URL base", type: "url", placeholder: "https://api.exemplo.com/v1", required: true },
@@ -77,7 +77,7 @@ const CONNECTORS: ConnectorDef[] = [
     label: "Banco SQL",
     description: "PostgreSQL, MySQL, SQLite via queries pré-aprovadas",
     icon: <Database className="size-5" />,
-    color: "text-emerald-400",
+    color: "text-emerald-600 dark:text-emerald-400",
     fields: [
       { key: "host", label: "Host", type: "text", placeholder: "db.exemplo.com", required: true },
       { key: "port", label: "Porta", type: "number", placeholder: "5432" },
@@ -92,7 +92,7 @@ const CONNECTORS: ConnectorDef[] = [
     label: "Google Sheets",
     description: "Leitura de planilhas via Google Sheets API",
     icon: <FileSpreadsheet className="size-5" />,
-    color: "text-green-400",
+    color: "text-green-600 dark:text-green-400",
     canSync: true,
     fields: [
       { key: "spreadsheet_id", label: "ID da planilha", type: "text", placeholder: "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms", required: true },
@@ -105,7 +105,7 @@ const CONNECTORS: ConnectorDef[] = [
     label: "Slack",
     description: "Canais e mensagens via Slack Bot API",
     icon: <MessageSquare className="size-5" />,
-    color: "text-purple-400",
+    color: "text-purple-600 dark:text-purple-400",
     canSync: true,
     fields: [
       { key: "bot_token", label: "Bot Token", type: "password", placeholder: "xoxb-...", required: true },
@@ -118,7 +118,7 @@ const CONNECTORS: ConnectorDef[] = [
     label: "Notion",
     description: "Páginas e databases do Notion via Integration Token",
     icon: <BookOpen className="size-5" />,
-    color: "text-orange-400",
+    color: "text-orange-600 dark:text-orange-400",
     canSync: true,
     fields: [
       { key: "integration_token", label: "Integration Token", type: "password", placeholder: "secret_...", required: true },
@@ -157,7 +157,7 @@ const CONNECTORS: ConnectorDef[] = [
     label: "E-mail (IMAP)",
     description: "Leitura de caixa de entrada via IMAP",
     icon: <Mail className="size-5" />,
-    color: "text-red-400",
+    color: "text-red-600 dark:text-red-400",
     canSync: true,
     fields: [
       { key: "host", label: "Host IMAP", type: "text", placeholder: "imap.gmail.com", required: true },
@@ -173,7 +173,7 @@ const CONNECTORS: ConnectorDef[] = [
     label: "Webhook",
     description: "Recebe dados via POST de sistemas externos",
     icon: <Webhook className="size-5" />,
-    color: "text-yellow-400",
+    color: "text-yellow-600 dark:text-yellow-400",
     fields: [
       { key: "secret", label: "Webhook Secret", type: "password" },
       { key: "expected_field", label: "Campo de conteúdo", type: "text", placeholder: "text" },
@@ -184,7 +184,7 @@ const CONNECTORS: ConnectorDef[] = [
     label: "URL / Web Scraping",
     description: "Extrai conteúdo de páginas web",
     icon: <Globe className="size-5" />,
-    color: "text-cyan-400",
+    color: "text-cyan-600 dark:text-cyan-400",
     canSync: true,
     fields: [
       { key: "url", label: "URL", type: "url", placeholder: "https://docs.minha-empresa.com", required: true },
@@ -197,7 +197,7 @@ const CONNECTORS: ConnectorDef[] = [
     label: "Obsidian",
     description: "Vault do Obsidian via caminho no servidor",
     icon: <BookOpen className="size-5" />,
-    color: "text-violet-400",
+    color: "text-violet-600 dark:text-violet-400",
     canSync: true,
     fields: [
       { key: "vault_path", label: "Caminho do vault", type: "text", placeholder: "/vaults/minha-empresa", required: true },
@@ -210,7 +210,7 @@ const CONNECTORS: ConnectorDef[] = [
     label: "Upload manual",
     description: "PDF, TXT e Markdown via upload direto",
     icon: <Upload className="size-5" />,
-    color: "text-pink-400",
+    color: "text-pink-600 dark:text-pink-400",
     fields: [],
   },
 ];
@@ -222,13 +222,13 @@ const connectorByType = Object.fromEntries(CONNECTORS.map((c) => [c.source_type,
 function StatusBadge({ source }: { source: KnowledgeSource }) {
   if (!source.is_active) return <Badge variant="secondary" className="text-xs">Inativo</Badge>;
   if (source.last_synced_at) return (
-    <Badge className="text-xs gap-1 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+    <Badge className="text-xs gap-1 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
       <CheckCircle2 className="size-3" />
       Sincronizado
     </Badge>
   );
   return (
-    <Badge className="text-xs gap-1 bg-yellow-500/15 text-yellow-400 border-yellow-500/30">
+    <Badge className="text-xs gap-1 bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30">
       <Clock className="size-3" />
       Pendente
     </Badge>
@@ -329,7 +329,7 @@ function ConfigDialog({ def, initial, onClose, onSaved }: ConfigDialogProps) {
             <div key={field.key} className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 {field.label}
-                {field.required && <span className="text-red-400 ml-1">*</span>}
+                {field.required && <span className="text-red-600 dark:text-red-400 ml-1">*</span>}
               </label>
               <Input
                 type={field.type === "password" ? "password" : "text"}
@@ -346,7 +346,7 @@ function ConfigDialog({ def, initial, onClose, onSaved }: ConfigDialogProps) {
           )}
 
           {testResult && (
-            <div className={`flex items-start gap-2 rounded-lg p-3 text-sm border ${testResult.ok ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-red-500/10 border-red-500/30 text-red-400"}`}>
+            <div className={`flex items-start gap-2 rounded-lg p-3 text-sm border ${testResult.ok ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400" : "bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400"}`}>
               {testResult.ok ? <CheckCircle2 className="size-4 shrink-0 mt-0.5" /> : <AlertCircle className="size-4 shrink-0 mt-0.5" />}
               <span>{testResult.message}</span>
             </div>
@@ -424,7 +424,7 @@ function ConnectorCard({ source, onEdit, onDelete, onSync, syncing }: ConnectorC
         <button
           onClick={onDelete}
           title="Remover"
-          className="grid size-8 place-items-center rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+          className="grid size-8 place-items-center rounded-md text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 transition-colors"
         >
           <Trash2 className="size-4" />
         </button>

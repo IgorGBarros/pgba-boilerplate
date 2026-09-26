@@ -47,11 +47,11 @@ const daysUntil = (d: string | null) => {
 
 function StatusBadgeProcesso({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    em_andamento: { label: "Em andamento", cls: "border-blue-500/40 text-blue-400 bg-blue-500/10" },
-    ganho:        { label: "Ganho",        cls: "border-emerald-500/40 text-emerald-400 bg-emerald-500/10" },
-    perdido:      { label: "Perdido",      cls: "border-red-500/40 text-red-400 bg-red-500/10" },
-    acordo:       { label: "Acordo",       cls: "border-violet-500/40 text-violet-400 bg-violet-500/10" },
-    arquivado:    { label: "Arquivado",    cls: "border-slate-500/40 text-slate-400 bg-slate-500/10" },
+    em_andamento: { label: "Em andamento", cls: "border-blue-500/40 text-blue-600 dark:text-blue-400 bg-blue-500/10" },
+    ganho:        { label: "Ganho",        cls: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10" },
+    perdido:      { label: "Perdido",      cls: "border-red-500/40 text-red-600 dark:text-red-400 bg-red-500/10" },
+    acordo:       { label: "Acordo",       cls: "border-violet-500/40 text-violet-600 dark:text-violet-400 bg-violet-500/10" },
+    arquivado:    { label: "Arquivado",    cls: "border-border text-muted-foreground bg-secondary" },
   };
   const { label, cls } = map[status] ?? { label: status, cls: "" };
   return <span className={`rounded border px-2 py-0.5 text-[10px] font-medium ${cls}`}>{label}</span>;
@@ -59,19 +59,19 @@ function StatusBadgeProcesso({ status }: { status: string }) {
 
 function RiscoBadge({ risco }: { risco: string }) {
   const map: Record<string, string> = {
-    alto:  "border-red-500/40 text-red-400 bg-red-500/10",
-    medio: "border-amber-500/40 text-amber-400 bg-amber-500/10",
-    baixo: "border-emerald-500/40 text-emerald-400 bg-emerald-500/10",
+    alto:  "border-red-500/40 text-red-600 dark:text-red-400 bg-red-500/10",
+    medio: "border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10",
+    baixo: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10",
   };
   return <span className={`rounded border px-1.5 py-0.5 text-[10px] font-medium capitalize ${map[risco] ?? ""}`}>{risco}</span>;
 }
 
 function UrgenciaBadge({ urgencia }: { urgencia: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    critica: { label: "Crítica", cls: "border-red-500/40 text-red-400 bg-red-500/10" },
-    alta:    { label: "Alta",    cls: "border-amber-500/40 text-amber-400 bg-amber-500/10" },
-    media:   { label: "Média",   cls: "border-blue-500/40 text-blue-400 bg-blue-500/10" },
-    baixa:   { label: "Baixa",   cls: "border-slate-500/40 text-slate-400 bg-slate-500/10" },
+    critica: { label: "Crítica", cls: "border-red-500/40 text-red-600 dark:text-red-400 bg-red-500/10" },
+    alta:    { label: "Alta",    cls: "border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10" },
+    media:   { label: "Média",   cls: "border-blue-500/40 text-blue-600 dark:text-blue-400 bg-blue-500/10" },
+    baixa:   { label: "Baixa",   cls: "border-border text-muted-foreground bg-secondary" },
   };
   const { label, cls } = map[urgencia] ?? { label: urgencia, cls: "" };
   return <span className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{label}</span>;
@@ -148,7 +148,7 @@ function TabProcessos({ processos }: { processos: Processo[] }) {
                       <td className="px-4 py-3 tabular-nums text-xs font-medium">{fmtBRL(parseFloat(p.valor_causa || "0"))}</td>
                       <td className="px-4 py-3 text-xs whitespace-nowrap">
                         {p.prazo_proximo ? (
-                          <span className={days != null && days <= 7 ? "text-red-400 font-medium" : days != null && days <= 21 ? "text-amber-400" : "text-muted-foreground"}>
+                          <span className={days != null && days <= 7 ? "text-red-600 dark:text-red-400 font-medium" : days != null && days <= 21 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>
                             {fmtDate(p.prazo_proximo)}{days != null ? ` (${days}d)` : ""}
                           </span>
                         ) : "—"}
@@ -211,10 +211,10 @@ function TabContratos({ contratos }: { contratos: ContratoJuridico[] }) {
                       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{c.partes}</td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{c.tipo}</td>
                       <td className="px-4 py-3 tabular-nums text-xs">{fmtBRL(parseFloat(c.valor_anual || "0"))}</td>
-                      <td className={`px-4 py-3 text-xs whitespace-nowrap ${isExpirando ? "text-amber-400 font-medium" : "text-muted-foreground"}`}>{fmtDate(c.data_fim)}</td>
+                      <td className={`px-4 py-3 text-xs whitespace-nowrap ${isExpirando ? "text-amber-600 dark:text-amber-400 font-medium" : "text-muted-foreground"}`}>{fmtDate(c.data_fim)}</td>
                       <td className="px-4 py-3 text-xs capitalize text-muted-foreground">{c.renovacao}</td>
                       <td className="px-4 py-3">
-                        <span className={`rounded border px-2 py-0.5 text-[10px] font-medium ${isExpirando ? "border-amber-500/40 text-amber-400 bg-amber-500/10" : "border-emerald-500/40 text-emerald-400 bg-emerald-500/10"}`}>
+                        <span className={`rounded border px-2 py-0.5 text-[10px] font-medium ${isExpirando ? "border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10" : "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"}`}>
                           {isExpirando ? "Expirando" : "Vigente"}
                         </span>
                       </td>
@@ -262,7 +262,7 @@ function TabPrazos({ prazos }: { prazos: Prazo[] }) {
           return (
             <div key={p.id} className={`flex items-center gap-4 px-4 py-4 ${isUrgent ? "bg-red-500/5" : ""}`}>
               <div className="flex flex-col items-center w-14 shrink-0">
-                <span className={`text-lg font-bold tabular-nums leading-tight ${days != null && days <= 3 ? "text-red-400" : days != null && days <= 10 ? "text-amber-400" : "text-foreground"}`}>
+                <span className={`text-lg font-bold tabular-nums leading-tight ${days != null && days <= 3 ? "text-red-600 dark:text-red-400" : days != null && days <= 10 ? "text-amber-600 dark:text-amber-400" : "text-foreground"}`}>
                   {days != null ? days : "—"}
                 </span>
                 <span className="text-[10px] text-muted-foreground">dias</span>
@@ -301,13 +301,13 @@ export function JuridicoView({ onBack }: { onBack: () => void }) {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="rounded-xl bg-gradient-to-r from-slate-600/20 via-purple-600/10 to-transparent border border-slate-500/20 px-5 py-4">
+      <div className="rounded-xl bg-gradient-to-r from-secondary via-purple-600/10 to-transparent border border-border px-5 py-4">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="shrink-0 grid size-8 place-items-center rounded-md text-slate-300 hover:text-slate-100 hover:bg-slate-500/20 transition-colors">
+          <button onClick={onBack} className="shrink-0 grid size-8 place-items-center rounded-md text-foreground hover:text-foreground hover:bg-secondary transition-colors">
             <ArrowLeft className="size-4" />
           </button>
           <div className="flex items-center gap-3 min-w-0">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-slate-500/20 text-slate-300">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-foreground">
               <Scale className="size-5" />
             </span>
             <div>
@@ -316,10 +316,10 @@ export function JuridicoView({ onBack }: { onBack: () => void }) {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs border-slate-500/30 text-slate-300 hover:bg-slate-500/10">
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs border-border text-foreground hover:bg-secondary">
               <Filter size={12} /> Filtros
             </Button>
-            <Button size="sm" className="h-8 gap-1.5 text-xs bg-slate-600 hover:bg-slate-700 text-white border-0">
+            <Button size="sm" className="h-8 gap-1.5 text-xs bg-primary hover:bg-primary/90 text-primary-foreground border-0">
               <ChevronRight size={12} /> Novo Processo
             </Button>
           </div>

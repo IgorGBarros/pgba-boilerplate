@@ -73,20 +73,20 @@ interface StageConfig {
 }
 
 const STAGES: StageConfig[] = [
-  { id: "prospeccao",   label: "Prospecção",     color: "bg-blue-500/10 border-blue-500/30",     headerColor: "bg-blue-500/20 text-blue-400" },
-  { id: "qualificacao", label: "Qualificação",   color: "bg-violet-500/10 border-violet-500/30", headerColor: "bg-violet-500/20 text-violet-400" },
-  { id: "proposta",     label: "Proposta",       color: "bg-amber-500/10 border-amber-500/30",   headerColor: "bg-amber-500/20 text-amber-400" },
-  { id: "negociacao",   label: "Negociação",     color: "bg-orange-500/10 border-orange-500/30", headerColor: "bg-orange-500/20 text-orange-400" },
+  { id: "prospeccao",   label: "Prospecção",     color: "bg-blue-500/10 border-blue-500/30",     headerColor: "bg-blue-500/20 text-blue-600 dark:text-blue-400" },
+  { id: "qualificacao", label: "Qualificação",   color: "bg-violet-500/10 border-violet-500/30", headerColor: "bg-violet-500/20 text-violet-600 dark:text-violet-400" },
+  { id: "proposta",     label: "Proposta",       color: "bg-amber-500/10 border-amber-500/30",   headerColor: "bg-amber-500/20 text-amber-600 dark:text-amber-400" },
+  { id: "negociacao",   label: "Negociação",     color: "bg-orange-500/10 border-orange-500/30", headerColor: "bg-orange-500/20 text-orange-600 dark:text-orange-400" },
   { id: "ganho",        label: "Fechado Ganho",  color: "bg-success/10 border-success/30",       headerColor: "bg-success/20 text-success" },
   { id: "perdido",      label: "Fechado Perdido",color: "bg-destructive/10 border-destructive/30",headerColor: "bg-destructive/20 text-destructive" },
 ];
 
 function stageBadgeVariant(stage: PipelineStage) {
   const map: Record<PipelineStage, string> = {
-    prospeccao:   "bg-blue-500/15 text-blue-400 border-blue-500/30",
-    qualificacao: "bg-violet-500/15 text-violet-400 border-violet-500/30",
-    proposta:     "bg-amber-500/15 text-amber-400 border-amber-500/30",
-    negociacao:   "bg-orange-500/15 text-orange-400 border-orange-500/30",
+    prospeccao:   "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
+    qualificacao: "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30",
+    proposta:     "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
+    negociacao:   "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
     ganho:        "bg-success/15 text-success border-success/30",
     perdido:      "bg-destructive/15 text-destructive border-destructive/30",
   };
@@ -106,13 +106,13 @@ function LeadStatusBadge({ status }: { status: LeadStatus }) {
     perdido:     "Perdido",
   };
   const styles: Record<LeadStatus, string> = {
-    novo:        "bg-blue-500/15 text-blue-400 border-blue-500/30",
-    contato:     "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    novo:        "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
+    contato:     "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
     qualificado: "bg-success/15 text-success border-success/30",
-    proposta:    "bg-violet-500/15 text-violet-400 border-violet-500/30",
-    negociacao:  "bg-orange-500/15 text-orange-400 border-orange-500/30",
+    proposta:    "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30",
+    negociacao:  "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
     ganho:       "bg-success/15 text-success border-success/30",
-    perdido:     "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+    perdido:     "bg-secondary text-muted-foreground border-border",
   };
   return (
     <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${styles[status]}`}>
@@ -133,10 +133,10 @@ function OriginBadge({ origem }: { origem: LeadOrigem }) {
   const styles: Record<LeadOrigem, string> = {
     site:          "bg-primary/10 text-primary border-primary/20",
     indicacao:     "bg-success/10 text-success border-success/20",
-    social:        "bg-pink-500/10 text-pink-400 border-pink-500/20",
-    evento:        "bg-amber-500/10 text-amber-400 border-amber-500/20",
-    cold_outreach: "bg-violet-500/10 text-violet-400 border-violet-500/20",
-    outro:         "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
+    social:        "bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/20",
+    evento:        "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+    cold_outreach: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
+    outro:         "bg-secondary text-muted-foreground border-border",
   };
   return (
     <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${styles[origem]}`}>
@@ -153,7 +153,7 @@ function ActivityIcon({ tipo }: { tipo: AtividadeCRM["tipo"] }) {
     return <span className={`${base} bg-success/10 text-success`}><Phone className="size-3.5" /></span>;
   if (tipo === "email")
     return <span className={`${base} bg-primary/10 text-primary`}><Mail className="size-3.5" /></span>;
-  return <span className={`${base} bg-violet-500/10 text-violet-400`}><Video className="size-3.5" /></span>;
+  return <span className={`${base} bg-violet-500/10 text-violet-600 dark:text-violet-400`}><Video className="size-3.5" /></span>;
 }
 
 // ── Deal Card ─────────────────────────────────────────────────────────────────
@@ -264,11 +264,11 @@ export function CRMView({ onBack }: { onBack: () => void }) {
       {/* ── Page Header ───────────────────────────────────────────────────── */}
       <div className="rounded-xl bg-gradient-to-r from-indigo-600/20 via-blue-600/10 to-transparent border border-indigo-500/20 px-5 py-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0 text-indigo-300 hover:text-indigo-100 hover:bg-indigo-500/20">
+          <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0 text-indigo-700 dark:text-indigo-300 hover:text-indigo-100 hover:bg-indigo-500/20">
             <ArrowLeft className="size-4" />
           </Button>
           <div className="flex items-center gap-3 min-w-0">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-indigo-500/20 text-indigo-300">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-indigo-500/20 text-indigo-700 dark:text-indigo-300">
               <Handshake className="size-5" />
             </span>
             <div>

@@ -261,7 +261,7 @@ function CustomFieldsManager({
               </div>
               <button
                 onClick={() => void handleDeleteDef(def.id)}
-                className="shrink-0 mb-0.5 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
+                className="shrink-0 mb-0.5 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-all"
                 title="Remover campo"
               >
                 <Trash2 className="size-3.5" />
@@ -323,8 +323,8 @@ function LeadCard({
             {lead.empresa && <p className="text-[11px] text-muted-foreground truncate">{lead.empresa}</p>}
           </div>
         </div>
-        {lead.stage_is_won && <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0 mt-0.5" />}
-        {lead.stage_is_lost && <XCircle className="size-3.5 text-red-400 shrink-0 mt-0.5" />}
+        {lead.stage_is_won && <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />}
+        {lead.stage_is_lost && <XCircle className="size-3.5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />}
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         {lead.valor_estimado
@@ -373,8 +373,8 @@ function DealCard({
           <p className="text-sm font-medium text-foreground truncate leading-tight">{deal.titulo}</p>
           {deal.empresa && <p className="text-[11px] text-muted-foreground truncate">{deal.empresa}</p>}
         </div>
-        {deal.stage_is_won && <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0 mt-0.5" />}
-        {deal.stage_is_lost && <XCircle className="size-3.5 text-red-400 shrink-0 mt-0.5" />}
+        {deal.stage_is_won && <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />}
+        {deal.stage_is_lost && <XCircle className="size-3.5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />}
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         {deal.valor
@@ -429,7 +429,7 @@ function ProjectCard({
           <p className="text-sm font-medium text-foreground truncate leading-tight">{project.titulo}</p>
           {project.empresa && <p className="text-[11px] text-muted-foreground truncate">{project.empresa}</p>}
         </div>
-        {project.stage_is_won && <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0 mt-0.5" />}
+        {project.stage_is_won && <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />}
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-muted-foreground">
@@ -878,9 +878,9 @@ function ConversationTab({ lead }: { lead: CRMLead }) {
     <div className="flex flex-col flex-1 overflow-hidden">
       {closingSuggested && (
         <div className="mx-4 mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2 shrink-0">
-          <CheckCircle2 className="size-4 text-emerald-400 shrink-0" />
-          <p className="text-xs text-emerald-400 flex-1">Agente detectou interesse! Considere converter em Deal.</p>
-          <button onClick={() => setClosingSuggested(false)} className="text-emerald-400/60 hover:text-emerald-400"><X className="size-3.5" /></button>
+          <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <p className="text-xs text-emerald-600 dark:text-emerald-400 flex-1">Agente detectou interesse! Considere converter em Deal.</p>
+          <button onClick={() => setClosingSuggested(false)} className="text-emerald-400/60 hover:text-emerald-600 dark:hover:text-emerald-400"><X className="size-3.5" /></button>
         </div>
       )}
       <div className="flex-1 overflow-y-auto p-4 space-y-1">
@@ -979,7 +979,7 @@ function ModalShell({
                 <button onClick={onEdit} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="Editar">
                   <Pencil className="size-3.5" />
                 </button>
-                <button onClick={() => setConfirmDelete(true)} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Excluir">
+                <button onClick={() => setConfirmDelete(true)} className="grid size-7 place-items-center rounded text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Excluir">
                   <Trash2 className="size-3.5" />
                 </button>
               </>
@@ -1698,7 +1698,7 @@ function StageConfigDialog({
                     {s.is_won && <Badge className="text-[10px] h-4 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">Ganho</Badge>}
                     {s.is_lost && <Badge className="text-[10px] h-4 bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30">Perdido</Badge>}
                     {!s.is_won && !s.is_lost && (
-                      <button onClick={() => void handleDelete(s.id)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all">
+                      <button onClick={() => void handleDelete(s.id)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-all">
                         <Trash2 className="size-3.5" />
                       </button>
                     )}
@@ -1866,8 +1866,8 @@ function ScraperModal({
                 <div className="flex items-center gap-2 min-w-0">
                   {(isRunning && !paused) && <Loader2 className="size-3.5 animate-spin text-primary shrink-0" />}
                   {paused && <span className="size-3.5 rounded-full bg-amber-400 shrink-0 inline-block" />}
-                  {isDone && <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />}
-                  {isFailed && <XCircle className="size-3.5 text-red-400 shrink-0" />}
+                  {isDone && <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />}
+                  {isFailed && <XCircle className="size-3.5 text-red-600 dark:text-red-400 shrink-0" />}
                   <span className="text-xs font-medium text-foreground truncate">
                     {isFailed
                       ? `Falhou: ${job.error_message || "erro desconhecido"}`

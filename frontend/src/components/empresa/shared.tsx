@@ -27,22 +27,24 @@ export function Metric({
   value,
   icon,
   tone,
+  hint,
 }: {
   label: string;
   value: string;
   icon?: ReactNode;
   tone?: "success" | "warning" | "default";
+  hint?: string;
 }) {
   return (
-    <div className="panel p-4">
+    <div className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{label}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
         {icon && (
           <span
             className={cn(
-              "text-muted-foreground",
-              tone === "success" && "text-success",
-              tone === "warning" && "text-warning"
+              "inline-flex size-7 items-center justify-center rounded-lg bg-secondary text-muted-foreground",
+              tone === "success" && "bg-success/10 text-success",
+              tone === "warning" && "bg-warning/10 text-warning"
             )}
           >
             {icon}
@@ -51,13 +53,14 @@ export function Metric({
       </div>
       <p
         className={cn(
-          "mt-2 text-2xl font-bold",
+          "mt-2 font-display text-2xl font-semibold tabular-nums tracking-tight",
           tone === "success" && "text-success",
           tone === "warning" && "text-warning"
         )}
       >
         {value}
       </p>
+      {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }

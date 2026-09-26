@@ -40,12 +40,12 @@ export default function KnowledgeChat() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Pergunte algo sobre a base de conhecimento..."
-          className="flex-1 rounded-card border border-white/10 bg-surface-raised px-4 py-2 text-sm outline-none focus:border-brand-500"
+          className="flex-1 rounded-card border border-border bg-elevated px-4 py-2 text-sm outline-none focus:border-ring"
         />
         <button
           type="submit"
           disabled={loading}
-          className="rounded-card bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:opacity-50"
+          className="rounded-card bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
         >
           {loading ? "Buscando..." : "Perguntar"}
         </button>
@@ -54,20 +54,20 @@ export default function KnowledgeChat() {
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       {answer && (
-        <div className="rounded-card border border-white/10 bg-surface-raised p-4">
+        <div className="rounded-card border border-border bg-elevated p-4">
           <p className="text-sm leading-relaxed">{answer}</p>
         </div>
       )}
 
       {sources.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Fontes</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Fontes</p>
           {sources.map((s, i) => (
-            <div key={i} className="rounded-card border border-white/5 bg-surface-raised/50 p-3 text-xs">
-              <p className="font-medium text-slate-300">
+            <div key={i} className="rounded-card border border-border bg-secondary p-3 text-xs">
+              <p className="font-medium text-foreground">
                 {s.document_title} · {s.source_name}
               </p>
-              <p className="mt-1 text-slate-500 line-clamp-2">{s.content}</p>
+              <p className="mt-1 text-muted-foreground line-clamp-2">{s.content}</p>
             </div>
           ))}
         </div>

@@ -42,7 +42,7 @@ const CHANNEL_META: Record<ChannelType, {
   telegram: {
     label: "Telegram",
     icon: Send,
-    color: "text-blue-400",
+    color: "text-blue-600 dark:text-blue-400",
     bg: "bg-blue-500/10",
     description: "Conecta um Telegram Bot. Mensagens criam leads e o agente responde no chat.",
     fields: [
@@ -55,7 +55,7 @@ const CHANNEL_META: Record<ChannelType, {
   landing_page: {
     label: "Landing Page",
     icon: Globe,
-    color: "text-violet-400",
+    color: "text-violet-600 dark:text-violet-400",
     bg: "bg-violet-500/10",
     description: "Endpoint público para formulários HTML. Copie a URL e use em qualquer landing page.",
     fields: [],
@@ -64,7 +64,7 @@ const CHANNEL_META: Record<ChannelType, {
   meta_ads: {
     label: "Meta Lead Ads",
     icon: Megaphone,
-    color: "text-orange-400",
+    color: "text-orange-600 dark:text-orange-400",
     bg: "bg-orange-500/10",
     description: "Recebe leads diretamente de anúncios no Facebook e Instagram.",
     fields: [

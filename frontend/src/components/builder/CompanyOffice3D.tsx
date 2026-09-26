@@ -2284,8 +2284,8 @@ export default function CompanyOffice3D() {
             vazam por cima do painel lateral quando o zoom aproxima */}
         <div className="relative min-w-0 flex-1 overflow-hidden" style={{ height: "100%" }}>
           {/* Barra de vista — no TOPO da cena, sempre visível: no Studio o
-              container tem altura calc(100vh - 152px) e o rodapé do canvas
-              podia ficar fora da tela, sumindo com estes botões. */}
+              container tem altura calc(100vh - 56px) (só o header) e o rodapé
+              do canvas pode ficar fora da tela em telas baixas. */}
           <div className="pointer-events-auto absolute left-1/2 top-2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-stone-200 bg-white/95 p-0.5 shadow-sm">
             {(["overview", "topdown", "front"] as CamMode[]).map((m) => (
               <button
