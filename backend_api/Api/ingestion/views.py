@@ -300,3 +300,48 @@ class RAGQueryView(TenantContextMixin, APIView):
                 result["answer_error"] = str(exc)
 
         return Response(result)
+
+class KnowledgeGraphView(TenantContextMixin, APIView):
+    """
+    Grafo das notas indexadas do tenant (o "Cérebro" do Escritório 3D):
+    nós = Documents, arestas = `[[wikilinks]]` do Obsidian resolvidos.
+
+    GET /api/v1/ingestion/graph/?source=<id>   (source opcional)
+
+    Nunca devolve o conteúdo inteiro — só um trecho curto por nota
+    (`excerpt`) pra prévia. Documento/fonte apagados (soft delete) ficam de
+    fora. Limite de GRAPH_MAX_NODES notas (as mais recentes), com
+    `truncated=true` quando cortou.
+    """
+
+    permission_classes = [IsAuthenticated]
+    GRAPH_MAX_NODES = 2000
+
+    def get(self, request):
+        from ingestion.graph import build_knowledge_graph
+
+        tenant_id = getattr(request, "tenant_id", None)
+        if not tenant_id:
+            return Response({"nodes": [], "edges": [], "unresolved": 0, "truncated": False})
+
+        qs = Document.objects.filter(
+            tenant_id=tenant_id, is_active=True, source__is_active=True,
+        ).only(
+            "id", "source_id", "title", "external_id", "content", "metadata",
+            "status", "updated_at",
+        ).order_by("-updated_at")
+
+        source_id = request.query_params.get("source")
+        if source_id:
+            if not source_id.isdigit():
+                return Response(
+                    {"detail": "source deve ser um id numérico."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            qs = qs.filter(source_id=int(source_id))
+
+        docs = list(qs[: self.GRAPH_MAX_NODES + 1])
+        truncated = len(docs) > self.GRAPH_MAX_NODES
+        graph = build_knowledge_graph(docs[: self.GRAPH_MAX_NODES])
+        graph["truncated"] = truncated
+        return Response(graph)

@@ -16,6 +16,7 @@ import {
   type Agent, type Sector, type SectorMessage, type Task, ApiError,
 } from "@/lib/api";
 import { BrainHub, type BrainLink } from "./office3d/BrainHub";
+import { BrainGraph } from "./office3d/BrainGraph";
 import { ENVELOPE_COLORS, Envelopes, type Flight, type PendingEnvelope, type V3 } from "./office3d/Envelopes";
 import { SectorCard, type SectorStats } from "./office3d/SectorCard";
 import { IsoCamera, type CamMode } from "./office3d/IsoCamera";
@@ -1672,6 +1673,7 @@ export default function CompanyOffice3D() {
   const [homeKey,        setHomeKey]        = useState(0);
   const [showCards,      setShowCards]      = useState(true);
   const [showWires,      setShowWires]      = useState(true);
+  const [brainOpen,      setBrainOpen]      = useState(false);
 
   // Intervalo de polling derivado do slider (não estado separado)
   const speed = AUTONOMY_SPEEDS[autonomySlider] ?? 30_000;
@@ -2059,12 +2061,10 @@ export default function CompanyOffice3D() {
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-[#f1eee8]">
       <OfficeTopBar
         agents={officeAgents} connected={connected} paused={paused}
-        autonomySlider={autonomySlider} zoom={zoom}
+        autonomySlider={autonomySlider}
         activityOpen={activityOpen} panelOpen={panelOpen}
         onTogglePause={() => setPaused((v) => !v)}
         onAutonomyChange={handleAutonomyChange}
-        onZoomIn={() => setZoom((v) => Math.min(v + 0.1, 2))}
-        onZoomOut={() => setZoom((v) => Math.max(v - 0.1, 0.3))}
         onCallMeeting={() => setMeetingOpen(true)}
         onEndMeeting={() => setMeetingAgentIds(new Set())}
         onToggleActivity={() => setActivityOpen((v) => !v)}
@@ -2189,6 +2189,7 @@ export default function CompanyOffice3D() {
               links={showWires ? brainLinks : []}
               sourcesCount={sourcesCount}
               lastActivity={lastBrainActivity}
+              onClick={() => setBrainOpen(true)}
             />
 
             {/* Salas */}
@@ -2258,6 +2259,9 @@ export default function CompanyOffice3D() {
 
         <AgentInfoPanel agents={officeAgents} open={panelOpen} onClose={() => setPanelOpen(false)} onAgentClick={handleAgentClick} />
       </div>
+
+      {/* Cérebro aberto: grafo das notas indexadas (Obsidian etc.) */}
+      <BrainGraph open={brainOpen} onClose={() => setBrainOpen(false)} sectors={sectors} />
 
       <AgentModal agent={selectedAgent} open={agentModalOpen} onClose={() => setAgentModalOpen(false)} />
       <RoomModal sectorId={selectedRoom?.id ?? null} sectorName={selectedRoom?.name ?? ""} agents={officeAgents} open={roomModalOpen} onClose={() => setRoomModalOpen(false)} />

@@ -37,6 +37,7 @@ Prefixo: `/api/v1/ingestion/`
 | `GET` | `documents/{id}/` | Detalhe de um documento |
 | `POST` | `documents/upload/` | Upload manual de um documento avulso (fora do fluxo Obsidian) |
 | `POST` | `query/` | Busca semântica + resposta opcional |
+| `GET` | `graph/?source={id}` | Grafo do "Cérebro": notas + `[[wikilinks]]` resolvidos (`source` opcional) |
 
 ### `POST sources/`
 
@@ -84,6 +85,28 @@ Resposta:
 Se `generate_answer=true` e não houver contexto suficiente, `answer`
 retorna o texto padrão de recusa (`harness.guardrails.NoAnswer.TEXT`) em
 vez de erro — a chamada em si é `200 OK`.
+
+### `GET graph/`
+
+Grafo das notas indexadas do tenant (usado pelo Cérebro do Escritório 3D).
+Nós = `Document` ativos de fontes ativas (no máximo 2000, os mais
+recentes); arestas = `[[wikilinks]]` do Obsidian resolvidos por caminho →
+nome do arquivo → título. Link pra nota fora do banco do tenant conta em
+`unresolved`, nunca vira nó. Só um trecho (`excerpt`, ≤ 280 caracteres)
+de cada nota — nunca o conteúdo inteiro.
+
+```json
+{
+  "nodes": [
+    {"id": 12, "title": "icp", "path": "30-Clientes/icp.md", "folder": "30-Clientes",
+     "source": 1, "tags": ["publico"], "status": "indexed",
+     "updated_at": "2026-09-01T12:00:00+00:00", "excerpt": "Cliente ideal: ..."}
+  ],
+  "edges": [[12, 15]],
+  "unresolved": 3,
+  "truncated": false
+}
+```
 
 ## `orchestration` — Q&A sobre dado estruturado
 
@@ -280,8 +303,9 @@ ws://<host>/ws/agency/?token=<JWT access token>
 Token vai na URL, não em header `Authorization` — WebSocket nativo do
 navegador não permite header customizado na conexão. Sem token válido,
 fecha com código `4001`. Um cliente conectado recebe todo evento de
-`Task`/`Agent`/`PendingApproval` do próprio tenant, formato `{"kind": "task"|"agent"|"pending_approval", ...}`
-(mesmo shape de `TaskSerializer`/`AgentSerializer`). Ver "Tempo real
+`Task`/`Agent`/`PendingApproval`/`SectorMessage` do próprio tenant, formato
+`{"kind": "task"|"agent"|"pending_approval"|"sector_message", ...}`
+(mesmo shape dos respectivos serializers). Ver "Tempo real
 (Django Channels)" no `CLAUDE.md` para o design completo.
 
 ## `integrations` — credenciais de infraestrutura/deploy

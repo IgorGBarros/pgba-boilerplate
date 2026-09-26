@@ -312,6 +312,33 @@ export interface KnowledgeDocument {
   updated_at: string;
 }
 
+/** Nó do grafo do "Cérebro": uma nota/documento indexado (só um trecho, nunca o conteúdo inteiro). */
+export interface KnowledgeGraphNode {
+  id: number;
+  title: string;
+  path: string;
+  folder: string;
+  source: number;
+  tags: string[];
+  status: DocumentStatus;
+  updated_at: string | null;
+  excerpt: string;
+}
+
+export interface KnowledgeGraph {
+  nodes: KnowledgeGraphNode[];
+  /** [de, para] — `[[wikilinks]]` do Obsidian resolvidos entre notas do tenant. */
+  edges: Array<[number, number]>;
+  /** Links para notas que não existem / não foram indexadas (privadas, fora de include_tags). */
+  unresolved: number;
+  truncated: boolean;
+}
+
+export async function getKnowledgeGraph(sourceId?: number): Promise<KnowledgeGraph> {
+  const query = sourceId ? `?source=${sourceId}` : "";
+  return request<KnowledgeGraph>(`/api/v1/ingestion/graph/${query}`);
+}
+
 export async function listDocuments(sourceId?: number): Promise<KnowledgeDocument[]> {
   const query = sourceId ? `?source=${sourceId}` : "";
   return requestList<KnowledgeDocument>(`/api/v1/ingestion/documents/${query}`);

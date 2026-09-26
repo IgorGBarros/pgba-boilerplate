@@ -301,6 +301,23 @@ CEO/Orquestrador-Geral ficam na sala CEO, e há uma Sala de Reunião fixa.
   setores com `knowledge_source`; fio tracejado cinza pra setor sem
   `knowledge_source` (o RAG dele devolve vazio, a planta não finge conexão).
   Pulsos correm pelo fio só enquanto algum agente do setor está `working`.
+- **Cérebro aberto** (`office3d/BrainGraph.tsx`): clicar no Cérebro abre
+  o grafo das notas indexadas, no espírito da Graph view do Obsidian —
+  nós = `ingestion.Document`, arestas = `[[wikilinks]]` resolvidos no
+  backend (`GET /api/v1/ingestion/graph/?source=<id>`, `ingestion/graph.py`,
+  funções puras; view filtra tenant e soft delete, devolve só um trecho de
+  cada nota, nunca o conteúdo inteiro). Links são extraídos do `content`
+  que o sync já grava — não precisa resync nem migration. Link pra nota
+  que não está no banco do tenant (inexistente, `private: true`, fora de
+  `include_tags`, de outro tenant) conta em `unresolved`, nunca vira nó.
+  O painel da nota mostra "quem pode consultar" pela MESMA regra de
+  `_rag_scope_for()` (CEO/Orquestrador-Geral + setores com aquele
+  `knowledge_source`) — não existe registro de "quem leu" por nota, então
+  a tela não inventa um. Layout de forças próprio, sem dependência nova.
+- **Moldura clara** (`OfficeOverlays.tsx`): barra superior só com o que é
+  da empresa (ao vivo, ocupação, comportamento, reunião, console,
+  painéis); zoom/vistas ficam só na barra da cena. Painéis de agentes
+  (agrupado por setor, com busca) e de atividade são cartões flutuantes.
 - **Etiquetas de KPI por setor** (`office3d/SectorCard.tsx`): uma linha só
   em cima da parede do fundo (nome, nº de agentes, ativos/pausados); o
   detalhe (cérebro do setor, Tasks fazendo/próximas/feitas) aparece no
