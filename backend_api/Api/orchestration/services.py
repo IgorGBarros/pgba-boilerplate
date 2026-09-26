@@ -84,6 +84,8 @@ def answer_question(
     rag_source_ids: list[int] | None = None,
     policy_check=None,
     agent_instructions: str = "",
+    provider: str | None = None,
+    model: str | None = None,
 ) -> dict:
     """
     Ponto de entrada único do módulo. Retorna:
@@ -102,6 +104,10 @@ def answer_question(
     Este módulo não sabe o que o callback verifica (nível de autonomia, regra
     de negócio, o que for) — quem decide isso é `agency.policy`, nunca aqui.
     Mantém a regra de dependência: vertical conhece core, nunca o contrário.
+
+    `provider`/`model`: sobrescrevem o provedor ativo do tenant nesta
+    chamada. Genérico de propósito — quem escolhe (ex: `agency`, pelo setor
+    do agente) é a vertical; este módulo só obedece.
     """
     if not tenant_id:
         raise ValueError("answer_question requer tenant_id explícito.")
@@ -109,11 +115,12 @@ def answer_question(
     start = time.monotonic()
     question = sanitize_user_input(question, source="orchestration")
     category, model_config = router.route(question)
-    provider = get_active_provider(tenant_id)
+    pinned_model = model or ""
+    provider = provider or get_active_provider(tenant_id)
     # AI_MODEL_CATALOG usa nomes de modelos Ollama — só repassar se o
     # provider ativo for Ollama; caso contrário, deixar vazio para que
     # chat_completion use cred.default_model (configurado no banco).
-    model = model_config.get("model", "") if provider == "ollama" else ""
+    model = pinned_model or (model_config.get("model", "") if provider == "ollama" else "")
 
     log = QueryLog(
         tenant_id=tenant_id, user=user, question=question,
@@ -169,7 +176,14 @@ def answer_question(
 
             chunks = semantic_search(question, tenant_id=tenant_id, top_k=3, source_ids=rag_source_ids)
             rag_context = build_context_prompt(chunks)
-            rag_sources = [{"document": c.document_title, "source": c.source_name} for c in chunks]
+            rag_sources = [
+                {
+                    "document": c.document_title,
+                    "source": c.source_name,
+                    "document_id": c.document_id,
+                }
+                for c in chunks
+            ]
         except Exception as exc:  # RAG é opcional: nunca derruba a resposta
             logger.info("RAG indisponível para orchestration: %s", exc)
 

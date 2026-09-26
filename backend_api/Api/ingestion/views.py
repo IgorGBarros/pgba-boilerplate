@@ -1,4 +1,6 @@
 # backend_api/Api/ingestion/views.py
+from types import SimpleNamespace
+
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -324,11 +326,11 @@ class KnowledgeGraphView(TenantContextMixin, APIView):
         if not tenant_id:
             return Response({"nodes": [], "edges": [], "unresolved": 0, "truncated": False})
 
+        # Sem `content`: links e trecho já vêm em metadata (index_document).
         qs = Document.objects.filter(
             tenant_id=tenant_id, is_active=True, source__is_active=True,
         ).only(
-            "id", "source_id", "title", "external_id", "content", "metadata",
-            "status", "updated_at",
+            "id", "source_id", "title", "external_id", "metadata", "status", "updated_at",
         ).order_by("-updated_at")
 
         source_id = request.query_params.get("source")
@@ -342,6 +344,22 @@ class KnowledgeGraphView(TenantContextMixin, APIView):
 
         docs = list(qs[: self.GRAPH_MAX_NODES + 1])
         truncated = len(docs) > self.GRAPH_MAX_NODES
-        graph = build_knowledge_graph(docs[: self.GRAPH_MAX_NODES])
+        docs = docs[: self.GRAPH_MAX_NODES]
+
+        # Notas indexadas antes de existir metadata["links"]: busca o conteúdo
+        # SÓ delas, numa query (nunca uma por nota, nem o vault inteiro).
+        legacy = [d.id for d in docs if not {"links", "excerpt"} <= set((d.metadata or {}).keys())]
+        content_by_id = dict(
+            Document.objects.filter(tenant_id=tenant_id, id__in=legacy).values_list("id", "content")
+        ) if legacy else {}
+        nodes = [
+            SimpleNamespace(
+                id=d.id, source_id=d.source_id, title=d.title, external_id=d.external_id,
+                metadata=d.metadata, status=d.status, updated_at=d.updated_at,
+                content=content_by_id.get(d.id, ""),
+            )
+            for d in docs
+        ]
+        graph = build_knowledge_graph(nodes)
         graph["truncated"] = truncated
         return Response(graph)

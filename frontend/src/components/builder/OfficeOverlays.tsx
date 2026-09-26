@@ -6,11 +6,12 @@ import { useEffect, useRef, useState } from "react";
 import {
   Activity,
   Crown,
-  CheckCircle2,
   ChevronRight,
   DoorOpen,
   Gauge,
+  Loader2,
   PanelRight,
+  ShieldAlert,
   Pause,
   Play,
   Send,
@@ -19,12 +20,15 @@ import {
   X,
 } from "lucide-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { getSectorMetrics, type Sector, type SectorMetric } from "@/lib/api";
+  ApiError,
+  askAsAgent,
+  getSectorMetrics,
+  updateSector,
+  type AgentAskResult,
+  type Sector,
+  type SectorMetric,
+} from "@/lib/api";
+import { PROVIDERS, PROVIDER_LABEL } from "./office3d/providers";
 import {
   getOrchestrators,
   getSectorAgents,
@@ -126,6 +130,8 @@ export function OfficeTopBar({
   onToggleActivity,
   onTogglePanel,
   onOpenConsole,
+  pendingApprovals = 0,
+  onOpenApprovals,
 }: {
   agents: OfficeAgent[];
   connected: boolean;
@@ -140,6 +146,8 @@ export function OfficeTopBar({
   onToggleActivity: () => void;
   onTogglePanel: () => void;
   onOpenConsole: () => void;
+  pendingApprovals?: number;
+  onOpenApprovals?: () => void;
 }) {
   const active = agents.filter((a) => a.status === "working" || a.status === "thinking").length;
   const inMeeting = agents.filter((a) => a.status === "meeting").length;
@@ -210,6 +218,17 @@ export function OfficeTopBar({
 
       {/* Ações */}
       <div className="ml-auto flex items-center gap-1.5">
+        {pendingApprovals > 0 && (
+          <button
+            type="button"
+            onClick={onOpenApprovals}
+            title="Ações bloqueadas pela política de autonomia esperando decisão humana"
+            className="flex items-center gap-1.5 rounded-full border border-orange-300 bg-orange-50 px-3 py-1 text-[11px] font-semibold text-orange-700 transition hover:bg-orange-100"
+          >
+            <ShieldAlert className="size-3.5" />
+            {pendingApprovals} {pendingApprovals === 1 ? "aprovação" : "aprovações"}
+          </button>
+        )}
         <button
           type="button"
           onClick={onCallMeeting}
@@ -269,61 +288,208 @@ export function OfficeTopBar({
   );
 }
 
+// ─── Moldura comum dos diálogos (tema claro, cobre só a área do escritório) ─────
+
+function OfficeDialog({
+  open,
+  onClose,
+  icon,
+  title,
+  subtitle,
+  width = "max-w-md",
+  children,
+  footer,
+}: {
+  open: boolean;
+  onClose: () => void;
+  icon?: React.ReactNode;
+  title: string;
+  subtitle?: React.ReactNode;
+  width?: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-stone-900/25 p-4" onClick={onClose}>
+      <div
+        className={`flex max-h-[88%] w-full ${width} flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#faf8f4] shadow-2xl`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3 border-b border-stone-200 px-4 py-3">
+          {icon}
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-800">{title}</p>
+            {subtitle && <div className="text-xs text-stone-500">{subtitle}</div>}
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full p-1 text-stone-400 hover:bg-stone-200 hover:text-stone-800">
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 text-xs text-stone-600">{children}</div>
+        {footer && <div className="flex items-center justify-end gap-2 border-t border-stone-200 px-4 py-2.5">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+function AgentAvatarDot({ agent, size = 28 }: { agent: OfficeAgent; size?: number }) {
+  return (
+    <span
+      className="relative flex shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+      style={{ background: agent.appearance.shirtColor, width: size, height: size }}
+    >
+      {agent.initials}
+      <span className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-white ${STATUS_DOT[agent.status]}`} />
+    </span>
+  );
+}
+
 // ─── Room Modal ────────────────────────────────────────────────────────────────
 
 export function RoomModal({
+  sector,
   sectorId,
   sectorName,
   agents,
   open,
   onClose,
+  onAgentClick,
+  onSectorUpdated,
 }: {
+  /** Setor real (null na sala CEO / reunião). */
+  sector: Sector | null;
   sectorId: number | null;
   sectorName: string;
   agents: OfficeAgent[];
   open: boolean;
   onClose: () => void;
+  onAgentClick?: (a: OfficeAgent) => void;
+  onSectorUpdated?: (s: Sector) => void;
 }) {
-  const roomAgents = agents.filter((a) => a.sectorId === sectorId);
+  // id -2 = sala CEO: quem não tem setor (CEO / Orquestrador-Geral)
+  const roomAgents = agents.filter((a) => (sectorId === -2 ? a.sectorId == null : a.sectorId === sectorId));
+  const [provider, setProvider] = useState("");
+  const [model, setModel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setProvider(sector?.default_provider ?? "");
+    setModel(sector?.default_model ?? "");
+    setSaveMsg(null);
+  }, [open, sector]);
+
+  const dirty = !!sector && (provider !== (sector.default_provider ?? "") || model !== (sector.default_model ?? ""));
+
+  const save = async () => {
+    if (!sector) return;
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      const updated = await updateSector(sector.id, { default_provider: provider, default_model: model });
+      onSectorUpdated?.(updated);
+      setSaveMsg({ ok: true, text: "Salvo. As próximas chamadas deste setor já usam essa IA." });
+    } catch (e) {
+      setSaveMsg({ ok: false, text: e instanceof ApiError ? e.message : "Falha ao salvar." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const working = roomAgents.filter((a) => a.status === "working").length;
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[400px]">
-        <DialogHeader>
-          <DialogTitle>Sala: {sectorName}</DialogTitle>
-        </DialogHeader>
-        <div className="mt-2 space-y-2">
-          {roomAgents.length === 0 && (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              Nenhum agente nesta sala
-            </p>
-          )}
-          {roomAgents.map((agent) => (
-            <div key={agent.id} className="flex items-center gap-3 rounded-lg bg-secondary p-3">
-              <span className={`size-2.5 shrink-0 rounded-full ${STATUS_DOT[agent.status]}`} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{agent.name}</p>
-                <p className="truncate text-xs text-muted-foreground">{agent.currentTask}</p>
-              </div>
-              <span className="shrink-0 text-[10px] font-medium text-muted-foreground">
-                {STATUS_LABELS[agent.status]}
+    <OfficeDialog
+      open={open}
+      onClose={onClose}
+      icon={<span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-stone-200 text-stone-700"><DoorOpen className="size-4" /></span>}
+      title={`Sala · ${sectorName}`}
+      subtitle={`${roomAgents.length} ${roomAgents.length === 1 ? "agente" : "agentes"} · ${working} trabalhando`}
+    >
+      <div className="space-y-1">
+        {roomAgents.length === 0 && <p className="py-4 text-center text-stone-400">Nenhum agente nesta sala.</p>}
+        {roomAgents.map((agent) => (
+          <button
+            key={agent.id}
+            type="button"
+            onClick={() => onAgentClick?.(agent)}
+            className="flex w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-left hover:bg-white"
+          >
+            <AgentAvatarDot agent={agent} />
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-1 text-[12px] font-medium text-stone-900">
+                {(agent.isOrchestrator || agent.access_level === "ceo") && <Crown className="size-3 text-amber-500" />}
+                <span className="truncate">{agent.name}</span>
               </span>
-            </div>
-          ))}
+              <span className="block truncate text-[10px] text-stone-500">
+                {agent.status === "working" ? <span className="text-emerald-700">{agent.currentTask}</span> : `${STATUS_LABELS[agent.status]} · ${agent.role}`}
+              </span>
+            </span>
+            <ChevronRight className="size-3 text-stone-300" />
+          </button>
+        ))}
+      </div>
+
+      {sector && (
+        <div className="mt-4 rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-500">IA do setor</p>
+          <p className="mb-2 text-[11px] text-stone-500">
+            Fixar um provedor faz todos os agentes do setor usarem só ele — sem cair em outro se a chave faltar.
+            A chave de API continua em <code>configure_ai_provider</code>.
+          </p>
+          <div className="flex gap-2">
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className="h-8 flex-1 rounded-lg border border-stone-200 bg-white px-2 text-xs text-stone-800"
+            >
+              <option value="">Padrão do tenant</option>
+              {PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABEL[p]}</option>)}
+            </select>
+            <input
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={!provider}
+              placeholder={provider ? "modelo (opcional)" : "—"}
+              className="h-8 flex-1 rounded-lg border border-stone-200 bg-white px-2 font-mono text-[11px] text-stone-800 disabled:bg-stone-50"
+            />
+          </div>
+          {saveMsg && (
+            <p className={`mt-2 rounded px-2 py-1 text-[11px] ${saveMsg.ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{saveMsg.text}</p>
+          )}
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={save}
+              disabled={!dirty || saving}
+              className="rounded-full bg-stone-900 px-3 py-1 text-[11px] font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
+            >
+              {saving ? "Salvando…" : "Salvar IA do setor"}
+            </button>
+          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      )}
+    </OfficeDialog>
   );
 }
 
 // ─── Agent Modal ───────────────────────────────────────────────────────────────
 
-const seniorityLabel: Record<string, string> = {
-  ceo: "👑 CEO",
-  general_orchestrator: "🥇 Orq. Geral",
-  sector_orchestrator: "🥈 Orq. Setor",
-  operational: "🥉 Operacional",
+const LEVEL_LABEL: Record<string, string> = {
+  ceo: "CEO",
+  general_orchestrator: "Orquestrador-Geral",
+  sector_orchestrator: "Orquestrador de setor",
+  operational: "Operacional",
 };
+const AUTONOMY_LABEL = ["Observador", "Recomendador", "Executor supervisionado", "Executor por política", "Autônomo"];
 
 export function AgentModal({
   agent,
@@ -334,49 +500,89 @@ export function AgentModal({
   open: boolean;
   onClose: () => void;
 }) {
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState<AgentAskResult | null>(null);
+  const [askError, setAskError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setQuestion(""); setAnswer(null); setAskError(null); setAsking(false);
+  }, [open, agent?.id]);
+
   if (!agent) return null;
+
+  const ask = async () => {
+    if (!question.trim()) return;
+    setAsking(true); setAnswer(null); setAskError(null);
+    try {
+      setAnswer(await askAsAgent(agent.id, question.trim()));
+    } catch (e) {
+      setAskError(e instanceof ApiError ? e.message : "Falha ao perguntar ao agente.");
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  const rows: Array<[string, React.ReactNode]> = [
+    ["Status", <span key="s" className="flex items-center gap-1.5"><span className={`size-2 rounded-full ${STATUS_DOT[agent.status]}`} />{STATUS_LABELS[agent.status]}</span>],
+    ["Nível", LEVEL_LABEL[agent.access_level] ?? agent.access_level],
+    ["Autonomia", AUTONOMY_LABEL[agent.autonomy_level] ?? agent.autonomy_level],
+    ["Setor", agent.sectorId == null ? "Diretoria (sem setor)" : agent.sectorName],
+    ["Tarefa atual", agent.currentTask],
+  ];
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[380px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            <div
-              className="flex size-12 items-center justify-center rounded-full text-sm font-bold text-white"
-              style={{ backgroundColor: agent.appearance.shirtColor }}
-            >
-              {agent.initials}
-            </div>
-            <div>
-              <p className="text-base font-bold">{agent.name}</p>
-              <p className="text-xs font-normal text-muted-foreground">{agent.role}</p>
-            </div>
-          </DialogTitle>
-        </DialogHeader>
-        <div className="mt-2 space-y-3">
-          <div className="flex items-center justify-between rounded-lg bg-secondary p-3">
-            <span className="text-xs text-muted-foreground">Status</span>
-            <div className="flex items-center gap-1.5">
-              <span className={`size-2.5 rounded-full ${STATUS_DOT[agent.status]}`} />
-              <span className="text-xs font-semibold">{STATUS_LABELS[agent.status]}</span>
-            </div>
+    <OfficeDialog
+      open={open}
+      onClose={onClose}
+      icon={<AgentAvatarDot agent={agent} size={32} />}
+      title={agent.name}
+      subtitle={agent.role}
+    >
+      <dl className="divide-y divide-stone-100 rounded-xl border border-stone-200 bg-white">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex items-center justify-between gap-3 px-3 py-2">
+            <dt className="text-[11px] text-stone-500">{k}</dt>
+            <dd className="text-right text-[12px] font-medium text-stone-800">{v}</dd>
           </div>
-          <div className="flex items-center justify-between rounded-lg bg-secondary p-3">
-            <span className="text-xs text-muted-foreground">Nível</span>
-            <span className="text-xs font-semibold">
-              {seniorityLabel[agent.access_level] ?? agent.access_level}
-            </span>
-          </div>
-          <div className="flex items-center justify-between rounded-lg bg-secondary p-3">
-            <span className="text-xs text-muted-foreground">Setor</span>
-            <span className="text-xs font-semibold">{agent.sectorName}</span>
-          </div>
-          <div className="rounded-lg bg-secondary p-3">
-            <span className="text-xs text-muted-foreground">Tarefa Atual</span>
-            <p className="mt-1 text-sm font-medium">{agent.currentTask}</p>
-          </div>
+        ))}
+      </dl>
+
+      <div className="mt-4">
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-500">Perguntar a este agente</p>
+        <p className="mb-2 text-[11px] text-stone-500">
+          Resposta de verdade, com o cérebro e a IA do setor dele. Ações acima da autonomia dele viram aprovação pendente.
+        </p>
+        <div className="flex gap-2">
+          <input
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !asking && ask()}
+            placeholder="Ex: qual o status das entregas desta semana?"
+            className="h-8 flex-1 rounded-lg border border-stone-200 bg-white px-2.5 text-xs text-stone-800 outline-none focus:border-stone-400"
+          />
+          <button
+            type="button"
+            onClick={ask}
+            disabled={asking || !question.trim()}
+            className="flex items-center gap-1 rounded-lg bg-stone-900 px-3 text-xs font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
+          >
+            {asking ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+          </button>
         </div>
-      </DialogContent>
-    </Dialog>
+        {askError && <p className="mt-2 rounded bg-red-50 px-2 py-1 text-red-700">{askError}</p>}
+        {answer && (
+          <div className={`mt-2 rounded-xl border px-3 py-2 ${answer.status === "pending_approval" ? "border-orange-200 bg-orange-50" : "border-stone-200 bg-white"}`}>
+            <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-stone-800">{answer.answer}</p>
+            {answer.function_called && <p className="mt-1 font-mono text-[10px] text-stone-400">função: {answer.function_called}</p>}
+            {answer.sources.length > 0 && (
+              <p className="mt-1 text-[10px] text-stone-500">Fontes: {answer.sources.map((s) => s.document).join(" · ")}</p>
+            )}
+          </div>
+        )}
+      </div>
+    </OfficeDialog>
   );
 }
 
@@ -412,44 +618,8 @@ function useDrag(initialX: number, initialY: number) {
 
 // ─── Meeting Modal ─────────────────────────────────────────────────────────────
 
-function TinyAvatar({
-  agent,
-  selected,
-  disabled,
-}: {
-  agent: OfficeAgent;
-  selected: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <div
-      className={`relative flex size-10 items-center justify-center rounded-full text-[10px] font-bold transition-all ${
-        disabled
-          ? "cursor-not-allowed opacity-30"
-          : selected
-          ? "scale-110 ring-2 ring-primary"
-          : "opacity-60"
-      }`}
-      style={{ backgroundColor: agent.appearance.shirtColor }}
-    >
-      <span className="text-white">{agent.initials}</span>
-      {agent.isOrchestrator && (
-        <Crown className="absolute -left-1 -top-1 size-3.5 text-yellow-400" />
-      )}
-      {selected && (
-        <CheckCircle2 className="absolute -right-1 -top-1 size-4 fill-primary-foreground text-primary" />
-      )}
-    </div>
-  );
-}
-
-function agentResponse(agent: OfficeAgent): string {
-  if (agent.access_level === "ceo")
-    return "Entendido. Vou alinhar com os stakeholders e garantir os recursos necessários.";
-  if (agent.isOrchestrator)
-    return "Vou coordenar o fluxo e distribuir as tarefas para minha equipe.";
-  return "Entendido! Vou começar imediatamente e reportar o progresso.";
-}
+/** Quantos participantes respondem cada mensagem (cada resposta = 1 chamada de IA real). */
+const MEETING_MAX_ANSWERS = 6;
 
 export function MeetingModal({
   open,
@@ -467,39 +637,34 @@ export function MeetingModal({
   onEndMeeting?: () => void;
 }) {
   const [meetingType, setMeetingType] = useState<MeetingType>("all-sectors");
-  const [selectedSectorId, setSelectedSectorId] = useState<number | null>(
-    sectors[0]?.id ?? null,
-  );
+  const [selectedSectorId, setSelectedSectorId] = useState<number | null>(sectors[0]?.id ?? null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [messages, setMessages] = useState<MeetingMessage[]>([]);
+  const [messages, setMessages] = useState<Array<MeetingMessage & { pending?: boolean; failed?: boolean }>>([]);
   const [input, setInput] = useState("");
   const [meetingStarted, setMeetingStarted] = useState(false);
+  const [waiting, setWaiting] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Reset ao abrir
   useEffect(() => {
     if (!open) return;
     setSelectedIds([]);
     setMessages([]);
     setInput("");
     setMeetingStarted(false);
+    setWaiting(0);
     setMeetingType("all-sectors");
     if (sectors.length > 0) setSelectedSectorId(sectors[0]!.id);
   }, [open, sectors]);
 
-  // Auto-seleção baseada no tipo de reunião e regras hierárquicas (CLAUDE.md §7)
+  // Auto-seleção pelas regras hierárquicas (CLAUDE.md §7)
   useEffect(() => {
     if (meetingStarted) return;
     if (meetingType === "all-sectors") {
-      const ids = getOrchestrators(agents).map((a) => a.id);
-      setSelectedIds(ids);
+      setSelectedIds(getOrchestrators(agents).map((a) => a.id));
     } else if (selectedSectorId != null) {
       const orch = getSectorOrchestrator(agents, selectedSectorId);
       const operacionais = getSectorAgents(agents, selectedSectorId);
-      setSelectedIds([
-        ...(orch ? [orch.id] : []),
-        ...operacionais.map((a) => a.id),
-      ]);
+      setSelectedIds([...(orch ? [orch.id] : []), ...operacionais.map((a) => a.id)]);
     }
   }, [meetingType, selectedSectorId, agents, meetingStarted]);
 
@@ -512,220 +677,156 @@ export function MeetingModal({
       const a = agents.find((x) => x.id === id);
       if (a && !a.isOrchestrator && a.access_level !== "ceo") return;
     }
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
+
+  const system = (message: string) => ({
+    id: crypto.randomUUID(), agentId: "system", agentName: "Sistema", message, timestamp: new Date(), type: "system" as const,
+  });
 
   const startMeeting = () => {
     if (selectedIds.length === 0) return;
     setMeetingStarted(true);
     onStartMeeting?.(selectedIds);
-    const names = agents
-      .filter((a) => selectedIds.includes(a.id))
-      .map((a) => a.name)
-      .join(", ");
-    const typeLabel =
-      meetingType === "all-sectors"
-        ? "🌐 Reunião Geral (Orquestradores)"
-        : `📋 Reunião do setor: ${sectors.find((s) => s.id === selectedSectorId)?.name ?? ""}`;
-    setMessages([
-      {
-        id: crypto.randomUUID(),
-        agentId: "system",
-        agentName: "Sistema",
-        message: `${typeLabel}\nParticipantes: ${names}`,
-        timestamp: new Date(),
-        type: "system",
-      },
-    ]);
+    const names = agents.filter((a) => selectedIds.includes(a.id)).map((a) => a.name).join(", ");
+    const typeLabel = meetingType === "all-sectors"
+      ? "Reunião geral (orquestradores)"
+      : `Reunião do setor ${sectors.find((s) => s.id === selectedSectorId)?.name ?? ""}`;
+    setMessages([system(`${typeLabel} · participantes: ${names}`)]);
   };
 
   const endMeeting = () => {
+    setMessages((prev) => [...prev, system("Reunião encerrada. Agentes voltando às suas salas.")]);
+    onEndMeeting?.();
+    setTimeout(onClose, 1500);
+  };
+
+  // Cada participante responde DE VERDADE (POST agents/{id}/ask/ — mesma IA,
+  // cérebro e política de autonomia do agente). Antes eram frases fixas
+  // geradas no navegador, sem nenhuma chamada ao backend.
+  const sendMessage = () => {
+    const text = input.trim();
+    if (!text || waiting > 0) return;
+    setInput("");
+    const responders = agents.filter((a) => selectedIds.includes(a.id)).slice(0, MEETING_MAX_ANSWERS);
+    const placeholders = responders.map((a) => ({
+      id: `${Date.now()}-${a.id}`, agentId: String(a.id), agentName: a.name,
+      message: "pensando…", timestamp: new Date(), type: "response" as const, pending: true,
+    }));
     setMessages((prev) => [
       ...prev,
-      {
-        id: crypto.randomUUID(),
-        agentId: "system",
-        agentName: "Sistema",
-        message: "📍 Reunião encerrada. Agentes retornando às suas salas.",
-        timestamp: new Date(),
-        type: "system",
-      },
+      { id: crypto.randomUUID(), agentId: "user", agentName: "Você", message: text, timestamp: new Date(), type: "task" },
+      ...(selectedIds.length > MEETING_MAX_ANSWERS
+        ? [system(`Só os ${MEETING_MAX_ANSWERS} primeiros participantes respondem cada mensagem (cada resposta é uma chamada de IA).`)]
+        : []),
+      ...placeholders,
     ]);
-    onEndMeeting?.();
-    setTimeout(onClose, 1800);
+    setWaiting(responders.length);
+    responders.forEach((a, i) => {
+      const pid = placeholders[i]!.id;
+      askAsAgent(a.id, text)
+        .then((r) => {
+          const suffix = r.status === "pending_approval" ? "\n⚠ Precisa de aprovação humana antes de executar." : "";
+          setMessages((prev) => prev.map((m) => (m.id === pid ? { ...m, message: r.answer + suffix, pending: false, timestamp: new Date() } : m)));
+        })
+        .catch((e) => {
+          const msg = e instanceof ApiError ? e.message : "não conseguiu responder agora";
+          setMessages((prev) => prev.map((m) => (m.id === pid ? { ...m, message: `(erro: ${msg})`, pending: false, failed: true } : m)));
+        })
+        .finally(() => setWaiting((w) => w - 1));
+    });
   };
 
-  const sendMessage = () => {
-    if (!input.trim()) return;
-    const userMsg: MeetingMessage = {
-      id: crypto.randomUUID(),
-      agentId: "user",
-      agentName: "CEO",
-      message: input,
-      timestamp: new Date(),
-      type: "task",
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    const selected = agents.filter((a) => selectedIds.includes(a.id));
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        ...selected.slice(0, 4).map((a, i) => ({
-          id: crypto.randomUUID(),
-          agentId: String(a.id),
-          agentName: a.name,
-          message: agentResponse(a),
-          timestamp: new Date(Date.now() + (i + 1) * 800),
-          type: "response" as const,
-        })),
-      ]);
-    }, 1000);
-    setInput("");
-  };
-
-  const visibleAgents =
-    meetingType === "all-sectors"
-      ? agents.filter((a) => a.isOrchestrator || a.access_level === "ceo")
-      : agents.filter(
-          (a) => a.sectorId === selectedSectorId || a.access_level === "ceo",
-        );
+  const visibleAgents = meetingType === "all-sectors"
+    ? agents.filter((a) => a.isOrchestrator || a.access_level === "ceo")
+    : agents.filter((a) => a.sectorId === selectedSectorId || a.access_level === "ceo");
 
   const { pos, onMouseDown } = useDrag(
-    Math.max(0, window.innerWidth / 2 - 325),
+    Math.max(0, window.innerWidth / 2 - 310),
     Math.max(0, window.innerHeight / 2 - 300),
   );
 
   if (!open) return null;
 
+  const agentById = new Map(agents.map((a) => [String(a.id), a]));
+
   return (
     <div
-      style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 9999, width: 650, maxHeight: "85vh" }}
-      className="flex flex-col rounded-xl border border-border bg-background shadow-2xl"
+      style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 9999, width: 620, maxHeight: "85vh" }}
+      className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#faf8f4] text-stone-700 shadow-2xl"
     >
-      {/* Barra de título arrastável */}
       <div
-        className="flex cursor-grab items-center gap-2 rounded-t-xl border-b border-border bg-secondary/80 px-4 py-3 select-none active:cursor-grabbing"
+        className="flex cursor-grab select-none items-center gap-2 border-b border-stone-200 px-4 py-2.5 active:cursor-grabbing"
         onMouseDown={onMouseDown}
+        title="Arraste para ver os agentes indo até a sala de reunião"
       >
-        <Users className="size-5 text-primary" />
-        <span className="flex-1 text-sm font-bold">
-          {meetingStarted ? "Reunião em Andamento" : "Convocar Reunião"}
+        <Users className="size-4 text-stone-600" />
+        <span className="flex-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-800">
+          {meetingStarted ? "Reunião em andamento" : "Convocar reunião"}
         </span>
-        <button type="button" onClick={onClose} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+        <button type="button" onClick={onClose} className="rounded-full p-1 text-stone-400 hover:bg-stone-200 hover:text-stone-800">
           <X className="size-4" />
         </button>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
 
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 text-xs">
         {!meetingStarted ? (
           <div className="space-y-4">
-            {/* Tipo */}
-            <div className="space-y-2">
-              <p className="text-sm font-semibold">Tipo de Reunião:</p>
-              <div className="flex gap-2">
-                {(
-                  [
-                    {
-                      id: "all-sectors",
-                      label: "🌐 Todos os Setores",
-                      sub: "Apenas orquestradores participam",
-                    },
-                    {
-                      id: "single-sector",
-                      label: "📋 Setor Específico",
-                      sub: "Orquestrador + agentes do setor",
-                    },
-                  ] as const
-                ).map((t) => (
+            <div className="flex gap-2">
+              {([
+                { id: "all-sectors", label: "Todos os setores", sub: "Só orquestradores participam" },
+                { id: "single-sector", label: "Um setor", sub: "Orquestrador + agentes do setor" },
+              ] as const).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setMeetingType(t.id)}
+                  className={`flex-1 rounded-xl border px-3 py-2 text-left transition ${
+                    meetingType === t.id ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-white text-stone-700 hover:border-stone-400"
+                  }`}
+                >
+                  <span className="block text-[12px] font-semibold">{t.label}</span>
+                  <span className={`block text-[10px] ${meetingType === t.id ? "text-stone-300" : "text-stone-500"}`}>{t.sub}</span>
+                </button>
+              ))}
+            </div>
+
+            {meetingType === "single-sector" && (
+              <div className="flex flex-wrap gap-1.5">
+                {sectors.map((s) => (
                   <button
-                    key={t.id}
+                    key={s.id}
                     type="button"
-                    onClick={() => setMeetingType(t.id)}
-                    className={`flex-1 rounded-lg border px-3 py-2.5 text-xs font-semibold transition-all ${
-                      meetingType === t.id
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-secondary text-foreground hover:border-primary/50"
+                    onClick={() => setSelectedSectorId(s.id)}
+                    className={`rounded-full px-3 py-1 text-[11px] font-medium transition ${
+                      selectedSectorId === s.id ? "bg-stone-900 text-white" : "border border-stone-200 bg-white text-stone-600 hover:bg-stone-100"
                     }`}
                   >
-                    {t.label}
-                    <span className="mt-0.5 block text-[9px] font-normal opacity-80">
-                      {t.sub}
-                    </span>
+                    {s.name}
                   </button>
                 ))}
               </div>
-            </div>
-
-            {/* Seletor de setor */}
-            {meetingType === "single-sector" && (
-              <div className="space-y-1.5">
-                <p className="text-xs text-muted-foreground">Selecione o setor:</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {sectors.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => setSelectedSectorId(s.id)}
-                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
-                        selectedSectorId === s.id
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-secondary text-foreground hover:bg-secondary/80"
-                      }`}
-                    >
-                      {s.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
             )}
 
-            {/* Aviso hierarquia */}
-            {meetingType === "all-sectors" && (
-              <div className="flex items-start gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-2.5">
-                <span className="mt-0.5 shrink-0 text-yellow-500">⚠️</span>
-                <p className="text-[10px] text-yellow-600 dark:text-yellow-400">
-                  Em reuniões gerais, apenas <strong>orquestradores</strong> participam.
-                  Agentes operacionais permanecem em suas salas.
-                </p>
-              </div>
-            )}
-
-            {/* Seleção de participantes */}
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                Participantes ({selectedIds.length}):
-              </p>
-              <div className="grid grid-cols-5 gap-3">
+            <div>
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-stone-500">Participantes · {selectedIds.length}</p>
+              <div className="grid grid-cols-4 gap-1.5">
                 {visibleAgents.map((agent) => {
-                  const disabled =
-                    meetingType === "all-sectors" &&
-                    !agent.isOrchestrator &&
-                    agent.access_level !== "ceo";
+                  const disabled = meetingType === "all-sectors" && !agent.isOrchestrator && agent.access_level !== "ceo";
+                  const on = selectedIds.includes(agent.id);
                   return (
                     <button
                       key={agent.id}
                       type="button"
                       onClick={() => !disabled && toggle(agent.id)}
-                      className={`flex flex-col items-center gap-1 rounded-lg p-2 transition-colors ${
-                        disabled ? "cursor-not-allowed" : "hover:bg-secondary"
+                      className={`flex items-center gap-2 rounded-xl border px-2 py-1.5 text-left transition ${
+                        disabled ? "cursor-not-allowed opacity-40" : on ? "border-stone-900 bg-white" : "border-stone-200 bg-white/60 opacity-70 hover:opacity-100"
                       }`}
                     >
-                      <TinyAvatar
-                        agent={agent}
-                        selected={selectedIds.includes(agent.id)}
-                        disabled={disabled}
-                      />
-                      <span className="text-center text-[10px] font-medium leading-tight">
-                        {agent.name}
-                      </span>
-                      <span className="text-[9px] text-muted-foreground">
-                        {agent.isOrchestrator
-                          ? "🎯 Orq."
-                          : agent.access_level === "ceo"
-                          ? "👑 CEO"
-                          : agent.role}
+                      <AgentAvatarDot agent={agent} size={24} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-[11px] font-medium text-stone-900">{agent.name}</span>
+                        <span className="block truncate text-[9px] text-stone-500">{LEVEL_LABEL[agent.access_level] ?? agent.role}</span>
                       </span>
                     </button>
                   );
@@ -733,106 +834,77 @@ export function MeetingModal({
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-2">
-              <span className="text-xs text-muted-foreground">
-                {selectedIds.length} participante(s)
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-stone-500">
+                Cada mensagem na reunião é respondida pelos participantes de verdade (IA de cada setor).
               </span>
               <button
                 type="button"
                 onClick={startMeeting}
                 disabled={selectedIds.length === 0}
-                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-40 hover:opacity-90"
+                className="rounded-full bg-stone-900 px-4 py-1.5 text-[12px] font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
               >
-                Iniciar Reunião
+                Iniciar reunião
               </button>
             </div>
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
-            {/* Participantes */}
-            <div className="flex gap-1.5 overflow-x-auto border-b border-border pb-3">
-              {agents
-                .filter((a) => selectedIds.includes(a.id))
-                .map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2 py-1"
-                  >
-                    <div
-                      className="flex size-5 items-center justify-center rounded-full text-[8px] font-bold text-white"
-                      style={{ backgroundColor: a.appearance.shirtColor }}
-                    >
-                      {a.initials}
-                    </div>
-                    <span className="text-[10px] font-medium">{a.name}</span>
-                    {a.isOrchestrator && (
-                      <Crown className="size-3 text-yellow-400" />
-                    )}
-                  </div>
-                ))}
-            </div>
-
-            {/* Chat */}
-            <div className="min-h-[250px] max-h-[350px] flex-1 space-y-3 overflow-y-auto py-3">
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex gap-2 ${
-                    msg.type === "system"
-                      ? "justify-center"
-                      : msg.type === "task"
-                      ? "justify-end"
-                      : "justify-start"
-                  }`}
-                >
-                  {msg.type === "system" ? (
-                    <span className="whitespace-pre-line rounded-full bg-secondary px-3 py-1.5 text-center text-[10px] text-muted-foreground">
+            <div className="min-h-[260px] max-h-[380px] flex-1 space-y-2.5 overflow-y-auto pb-2">
+              {messages.map((msg) => {
+                if (msg.type === "system") {
+                  return (
+                    <p key={msg.id} className="mx-auto w-fit max-w-[90%] rounded-full bg-stone-100 px-3 py-1 text-center text-[10px] text-stone-500">
                       {msg.message}
-                    </span>
-                  ) : msg.type === "task" ? (
-                    <div className="max-w-[75%] rounded-2xl rounded-tr-sm bg-primary px-3 py-2 text-primary-foreground">
-                      <div className="mb-0.5 flex items-center gap-1">
-                        <Crown className="size-3" />
-                        <span className="text-[9px] font-bold">CEO</span>
-                      </div>
-                      <p className="text-xs">{msg.message}</p>
+                    </p>
+                  );
+                }
+                if (msg.type === "task") {
+                  return (
+                    <div key={msg.id} className="ml-auto w-fit max-w-[75%] rounded-2xl rounded-tr-sm bg-stone-900 px-3 py-2 text-[12px] text-white">
+                      {msg.message}
                     </div>
-                  ) : (
-                    <div className="max-w-[75%]">
-                      <span className="text-[10px] font-semibold text-muted-foreground">
-                        {msg.agentName}
-                      </span>
-                      <div className="rounded-2xl rounded-tl-sm bg-secondary px-3 py-2">
-                        <p className="text-xs">{msg.message}</p>
+                  );
+                }
+                const who = agentById.get(msg.agentId);
+                return (
+                  <div key={msg.id} className="flex max-w-[85%] gap-2">
+                    {who && <AgentAvatarDot agent={who} size={22} />}
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-semibold text-stone-500">{msg.agentName}</p>
+                      <div className={`whitespace-pre-wrap rounded-2xl rounded-tl-sm border px-3 py-2 text-[12px] ${
+                        msg.failed ? "border-red-200 bg-red-50 text-red-700" : "border-stone-200 bg-white text-stone-800"
+                      }`}>
+                        {msg.pending ? <span className="flex items-center gap-1.5 text-stone-400"><Loader2 className="size-3 animate-spin" />pensando…</span> : msg.message}
                       </div>
                     </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
-            <div className="flex gap-2 border-t border-border pt-3">
+            <div className="flex gap-2 border-t border-stone-200 pt-3">
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                placeholder="Descreva a tarefa para os agentes..."
-                className="flex-1 rounded-lg bg-secondary px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-primary"
+                placeholder={waiting > 0 ? `Aguardando ${waiting} resposta(s)…` : "Pergunte ou passe uma pauta aos participantes…"}
+                disabled={waiting > 0}
+                className="h-9 flex-1 rounded-lg border border-stone-200 bg-white px-3 text-[12px] text-stone-800 outline-none focus:border-stone-400 disabled:bg-stone-50"
               />
               <button
                 type="button"
                 onClick={sendMessage}
-                disabled={!input.trim()}
-                className="rounded-lg bg-primary px-3 py-2 text-primary-foreground disabled:opacity-40 hover:opacity-90"
+                disabled={!input.trim() || waiting > 0}
+                className="rounded-lg bg-stone-900 px-3 text-white hover:bg-stone-700 disabled:opacity-40"
               >
                 <Send className="size-4" />
               </button>
               <button
                 type="button"
                 onClick={endMeeting}
-                className="rounded-lg bg-destructive px-3 py-2 text-xs font-semibold text-destructive-foreground hover:opacity-90"
+                className="rounded-lg border border-stone-200 bg-white px-3 text-[11px] font-semibold text-stone-700 hover:bg-stone-100"
               >
                 Encerrar
               </button>
@@ -950,13 +1022,15 @@ function formatCost(usd: number): string {
 export function ConsoleModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [metrics, setMetrics] = useState<SectorMetric[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
+    setError(null);
     getSectorMetrics()
       .then(setMetrics)
-      .catch(console.error)
+      .catch((e) => setError(e instanceof ApiError ? e.message : "Falha ao carregar métricas."))
       .finally(() => setLoading(false));
   }, [open]);
 
@@ -964,62 +1038,62 @@ export function ConsoleModal({ open, onClose }: { open: boolean; onClose: () => 
   const totalCost = metrics.reduce((s, m) => s + m.cost_usd, 0);
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg bg-[#0d1117] border-white/10 text-white">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-white">
-            <TrendingUp className="size-4 text-indigo-400" />
-            Console — Tokens e Custo por Setor
-          </DialogTitle>
-        </DialogHeader>
-
-        {loading ? (
-          <div className="py-8 text-center text-slate-400 text-sm">Carregando métricas...</div>
-        ) : metrics.length === 0 ? (
-          <div className="py-8 text-center text-slate-400 text-sm">Nenhum dado disponível ainda.</div>
-        ) : (
-          <div className="space-y-3">
-            <div className="divide-y divide-white/5 rounded-lg border border-white/10 overflow-hidden">
-              <div className="grid grid-cols-4 gap-2 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                <span className="col-span-2">Setor</span>
-                <span className="text-right">Tokens</span>
-                <span className="text-right">Custo</span>
-              </div>
-              {metrics.map((m) => (
-                <div key={m.sector_id} className="grid grid-cols-4 gap-2 px-4 py-2.5 text-sm hover:bg-white/5 transition-colors">
-                  <div className="col-span-2 flex items-center gap-2">
-                    <span className="font-medium text-slate-200">{m.sector_name}</span>
-                    {m.usage_percent !== null && (
-                      <div className="flex items-center gap-1">
-                        <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                          <div
-                            className="h-full rounded-full"
-                            style={{
-                              width: `${Math.min(m.usage_percent, 100)}%`,
-                              backgroundColor: m.status === "over" ? "#f87171" : m.status === "warn" ? "#facc15" : "#4ade80",
-                            }}
-                          />
-                        </div>
-                        <span className="text-[10px] text-slate-500">{m.usage_percent.toFixed(0)}%</span>
-                      </div>
-                    )}
-                  </div>
-                  <span className="text-right font-mono text-xs text-slate-300">{formatTokens(m.tokens)}</span>
-                  <span className="text-right font-mono text-xs text-slate-300">{formatCost(m.cost_usd)}</span>
+    <OfficeDialog
+      open={open}
+      onClose={onClose}
+      width="max-w-lg"
+      icon={<span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-stone-200 text-stone-700"><TrendingUp className="size-4" /></span>}
+      title="Console"
+      subtitle="Tokens e custo estimado por setor"
+    >
+      {loading ? (
+        <p className="py-8 text-center text-stone-400">Carregando métricas…</p>
+      ) : error ? (
+        <p className="rounded bg-red-50 px-3 py-2 text-red-700">{error}</p>
+      ) : metrics.length === 0 ? (
+        <p className="py-8 text-center text-stone-400">Nenhum dado ainda — aparece depois das primeiras interações dos agentes.</p>
+      ) : (
+        <div className="space-y-2">
+          <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+            <div className="grid grid-cols-4 gap-2 border-b border-stone-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+              <span className="col-span-2">Setor</span>
+              <span className="text-right">Tokens</span>
+              <span className="text-right">Custo</span>
+            </div>
+            {metrics.map((m) => (
+              <div key={m.sector_id} className="grid grid-cols-4 items-center gap-2 border-b border-stone-50 px-3 py-2 last:border-0">
+                <div className="col-span-2 flex items-center gap-2">
+                  <span className="truncate text-[12px] font-medium text-stone-800">{m.sector_name}</span>
+                  {m.usage_percent !== null && (
+                    <span className="flex items-center gap-1" title="Uso do orçamento mensal do setor">
+                      <span className="h-1.5 w-14 overflow-hidden rounded-full bg-stone-100">
+                        <span
+                          className="block h-full rounded-full"
+                          style={{
+                            width: `${Math.min(m.usage_percent, 100)}%`,
+                            backgroundColor: m.status === "over" ? "#ef4444" : m.status === "warn" ? "#f59e0b" : "#10b981",
+                          }}
+                        />
+                      </span>
+                      <span className="font-mono text-[9px] text-stone-400">{m.usage_percent.toFixed(0)}%</span>
+                    </span>
+                  )}
                 </div>
-              ))}
-            </div>
-
-            <div className="flex justify-between rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-sm">
-              <span className="font-bold text-indigo-300">Total</span>
-              <div className="flex gap-6">
-                <span className="font-mono text-indigo-300">{formatTokens(totalTokens)} tokens</span>
-                <span className="font-mono font-bold text-indigo-300">{formatCost(totalCost)}</span>
+                <span className="text-right font-mono text-[11px] text-stone-600">{formatTokens(m.tokens)}</span>
+                <span className="text-right font-mono text-[11px] text-stone-600">{formatCost(m.cost_usd)}</span>
               </div>
-            </div>
+            ))}
           </div>
-        )}
-      </DialogContent>
-    </Dialog>
+          <div className="flex justify-between rounded-xl bg-stone-900 px-3 py-2 text-[12px] text-white">
+            <span className="font-semibold">Total</span>
+            <span className="flex gap-5 font-mono">
+              <span>{formatTokens(totalTokens)} tokens</span>
+              <b>{formatCost(totalCost)}</b>
+            </span>
+          </div>
+          <p className="text-[10px] text-stone-400">Custo estimado pela tabela aproximada do backend (agency.services), não pela fatura do provedor.</p>
+        </div>
+      )}
+    </OfficeDialog>
   );
 }

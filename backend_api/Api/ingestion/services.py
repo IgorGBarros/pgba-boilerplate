@@ -128,9 +128,20 @@ def index_document(document) -> None:
     """
     from ingestion.models import Document, DocumentChunk  # evita import circular
 
+    from ingestion.graph import extract_wikilinks, note_excerpt
+
     client = EmbeddingClient()
     document.status = Document.Status.PROCESSING
-    document.save(update_fields=["status"])
+    # Links `[[...]]` e trecho de prévia calculados UMA vez aqui (todo
+    # documento passa por index_document: sync, upload, API) — o grafo do
+    # Cérebro (GET ingestion/graph/) lê daqui e não precisa carregar o
+    # conteúdo inteiro de milhares de notas a cada vez que é aberto.
+    document.metadata = {
+        **(document.metadata or {}),
+        "links": extract_wikilinks(document.content or ""),
+        "excerpt": note_excerpt(document.content or ""),
+    }
+    document.save(update_fields=["status", "metadata"])
 
     # Escaneia antes de indexar — conteúdo suspeito é logado (não bloqueia,
     # para não travar ingestão legítima de documentos sobre segurança de IA).
@@ -182,6 +193,9 @@ class RetrievedChunk:
     document_title: str
     source_name: str
     distance: float
+    # Id do Document de origem — permite a quem consulta (ex: agency) registrar
+    # QUAIS notas foram usadas numa resposta, não só o título.
+    document_id: int | None = None
 
 
 def semantic_search(
@@ -226,6 +240,7 @@ def semantic_search(
             document_title=chunk.document.title or chunk.document.external_id,
             source_name=chunk.document.source.name,
             distance=float(chunk.distance),
+            document_id=chunk.document_id,
         )
         for chunk in queryset
     ]

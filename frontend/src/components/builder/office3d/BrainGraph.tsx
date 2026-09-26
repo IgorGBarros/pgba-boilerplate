@@ -18,9 +18,11 @@ import { BookOpen, ExternalLink, Search, X } from "lucide-react";
 import {
   ApiError,
   getKnowledgeGraph,
+  getKnowledgeUsage,
   listKnowledgeSources,
   type KnowledgeGraph,
   type KnowledgeGraphNode,
+  type KnowledgeUsage,
   type KnowledgeSource,
   type Sector,
 } from "@/lib/api";
@@ -135,6 +137,17 @@ export function BrainGraph({
   const [colorBy, setColorBy] = useState<"folder" | "source">("folder");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // "Consultada por": agentes que usaram a nota selecionada como contexto
+  const [usage, setUsage] = useState<KnowledgeUsage[] | null>(null);
+  useEffect(() => {
+    if (selectedId == null) { setUsage(null); return; }
+    let cancelled = false;
+    setUsage(null);
+    getKnowledgeUsage(selectedId)
+      .then((u) => { if (!cancelled) setUsage(u); })
+      .catch(() => { if (!cancelled) setUsage([]); });
+    return () => { cancelled = true; };
+  }, [selectedId]);
   const [hoverId, setHoverId] = useState<number | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -527,6 +540,27 @@ export function BrainGraph({
                 {readers.length > 0
                   ? readers.map((s) => <p key={s.id} className="text-[11px]">◈ Setor {s.name}</p>)
                   : <p className="text-[11px] text-stone-400">Nenhum setor tem esta fonte como cérebro.</p>}
+              </div>
+
+              <div className="mt-4">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                  Consultada por{usage ? ` · ${usage.length}` : ""}
+                </p>
+                {usage === null && <p className="text-[11px] text-stone-400">Carregando…</p>}
+                {usage?.length === 0 && (
+                  <p className="text-[11px] text-stone-400">Nenhum agente usou esta nota numa resposta ainda.</p>
+                )}
+                {usage?.map((u) => (
+                  <p key={u.agent_id} className="flex items-baseline justify-between gap-2 text-[11px]">
+                    <span className="truncate">
+                      {u.agent_name}
+                      {u.sector_name && <span className="text-stone-400"> · {u.sector_name}</span>}
+                    </span>
+                    <span className="shrink-0 font-mono text-[10px] text-stone-500" title={`última vez: ${new Date(u.last_at).toLocaleString("pt-BR")}`}>
+                      {u.count}×
+                    </span>
+                  </p>
+                ))}
               </div>
 
               {([["Liga para", links.out], ["Citada por", links.inn]] as const).map(([label, list]) => (

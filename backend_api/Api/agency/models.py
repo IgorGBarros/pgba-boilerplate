@@ -49,6 +49,19 @@ class Sector(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         related_name="agency_sectors",
         help_text="Base de conhecimento própria deste setor (o 'cérebro secundário').",
     )
+    # Modelo de IA do setor. Vazio = usa o provedor ativo do tenant (harness).
+    # Preenchido = TODOS os agentes do setor usam este provedor, sem cair em
+    # outro se a credencial faltar (falha explícita — ver
+    # agency.services.resolve_agent_llm). Um agente ainda pode sobrescrever
+    # com Agent.default_provider.
+    default_provider = models.CharField(
+        max_length=20, blank=True,
+        help_text="Provedor de IA fixo do setor (ex: 'anthropic'). Vazio = padrão do tenant.",
+    )
+    default_model = models.CharField(
+        max_length=100, blank=True,
+        help_text="Modelo fixo do setor. Vazio = default_model da credencial do provedor.",
+    )
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -196,6 +209,10 @@ class AgentInteraction(TenantMixin, models.Model):
     tokens_used = models.PositiveIntegerField(default=0)
     estimated_cost_usd = models.DecimalField(max_digits=10, decimal_places=6, default=0)
     query_log_id = models.PositiveIntegerField(null=True, blank=True)
+    # Ids de ingestion.Document que o RAG trouxe como contexto desta resposta
+    # (ids soltos, sem FK — mesma regra do query_log_id: vertical não amarra
+    # o core). É o que permite o Cérebro mostrar "quem consultou esta nota".
+    source_document_ids = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:

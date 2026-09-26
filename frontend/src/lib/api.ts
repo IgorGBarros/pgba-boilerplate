@@ -201,6 +201,9 @@ export interface Sector {
   knowledge_source: number | null;
   knowledge_source_name: string | null;
   agents_count: number;
+  /** Provedor de IA fixo do setor ("anthropic", "groq"...). Vazio = provedor ativo do tenant. */
+  default_provider: string;
+  default_model: string;
 }
 
 export async function listSectors(): Promise<Sector[]> {
@@ -293,7 +296,10 @@ export async function syncKnowledgeSource(id: number): Promise<void> {
   await request<unknown>(`/api/v1/ingestion/sources/${id}/sync/`, { method: "POST" });
 }
 
-export async function updateSector(id: number, data: Partial<{ knowledge_source: number | null }>): Promise<Sector> {
+export async function updateSector(
+  id: number,
+  data: Partial<{ knowledge_source: number | null; default_provider: string; default_model: string }>,
+): Promise<Sector> {
   return request<Sector>(`/api/v1/agency/sectors/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
 }
 
@@ -332,6 +338,19 @@ export interface KnowledgeGraph {
   /** Links para notas que não existem / não foram indexadas (privadas, fora de include_tags). */
   unresolved: number;
   truncated: boolean;
+}
+
+/** Quem usou uma nota como contexto de resposta (AgentInteraction.source_document_ids). */
+export interface KnowledgeUsage {
+  agent_id: number;
+  agent_name: string;
+  sector_name: string | null;
+  count: number;
+  last_at: string;
+}
+
+export async function getKnowledgeUsage(documentId: number): Promise<KnowledgeUsage[]> {
+  return request<KnowledgeUsage[]>(`/api/v1/agency/knowledge-usage/?document=${documentId}`);
 }
 
 export async function getKnowledgeGraph(sourceId?: number): Promise<KnowledgeGraph> {

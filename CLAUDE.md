@@ -318,6 +318,23 @@ CEO/Orquestrador-Geral ficam na sala CEO, e há uma Sala de Reunião fixa.
   da empresa (ao vivo, ocupação, comportamento, reunião, console,
   painéis); zoom/vistas ficam só na barra da cena. Painéis de agentes
   (agrupado por setor, com busca) e de atividade são cartões flutuantes.
+- **Ações pela planta**: envelope pendente clicável → `office3d/MessageModal`
+  (só oferece mediador que o backend aceita — um mediador sem permissão
+  REJEITA a mensagem de vez); agente com `PendingApproval` ganha marcador
+  ⚠ e a barra superior um contador → `office3d/ApprovalModal` (aprovar
+  executa de verdade via `decide/`). Janela do agente tem "Perguntar a
+  este agente" (`agents/{id}/ask/`) e a reunião usa respostas reais de
+  cada participante (antes eram frases fixas geradas no navegador).
+- **"Consultada por"** no painel da nota do Cérebro:
+  `AgentInteraction.source_document_ids` guarda os documentos que o RAG
+  usou em cada resposta; `GET /api/v1/agency/knowledge-usage/?document=<id>`
+  agrega por agente. `index_document` grava `metadata.links`/`excerpt`,
+  então o grafo não carrega o conteúdo das notas (só das antigas).
+- **Desempenho**: móveis e bonecos com geometria fundida
+  (`office3d/merge.ts`, cor por vértice — 1 draw call por peça),
+  `ContactShadows` renderizada só quando a planta muda, `dpr` limitado e
+  rótulos dos agentes escondidos com zoom afastado (`ZoomLevelMarker`).
+  Medido com 60 agentes: ~12 mil → ~2,5 mil draw calls por quadro.
 - **Etiquetas de KPI por setor** (`office3d/SectorCard.tsx`): uma linha só
   em cima da parede do fundo (nome, nº de agentes, ativos/pausados); o
   detalhe (cérebro do setor, Tasks fazendo/próximas/feitas) aparece no
@@ -374,6 +391,25 @@ Ideias de layout inspiradas no Agents Office
 (github.com/ajsahni/agents-office), **sem copiar código** — a licença
 dele (PolyForm Noncommercial + termos adicionais) proíbe incorporá-lo em
 outro produto. Não traga código daquele repositório pra cá.
+
+### Modelo de IA por setor (`Sector.default_provider` / `Agent.default_provider`)
+
+Cada agente usa um provedor de IA resolvido por
+`agency.services.resolve_agent_llm(agent)`, nesta ordem:
+`Agent.default_provider` (exceção individual) → `Sector.default_provider`
+→ provedor ativo do tenant (`harness.get_active_provider`, hoje Groq).
+`ask_as_agent` e `execute_task` usam essa resolução; `orchestration.answer_question`
+só ganhou os parâmetros genéricos `provider`/`model` (não sabe o que é setor).
+
+Provedor fixado no agente ou no setor **não tem fallback**: sem credencial,
+`harness.chat_completion` levanta `ProviderConfigError` e a tarefa falha
+explícita — "setor X só com Claude" nunca vira "Claude quando der, Groq
+quando não der". O setor **Desenvolvimento usa `anthropic` (Claude)**
+(migração `0011_desenvolvimento_usa_claude` + `seed_company`); os demais
+seguem o provedor do tenant. A chave continua em `configure_ai_provider`;
+a escolha do setor em `python manage.py configure_sector_ai --sector
+<slug> --provider <p> [--model <m>] | --clear | --list`, na API
+(`PATCH sectors/{id}/`) ou no Escritório 3D (janela da sala → "IA do setor").
 
 ### Autonomia e Policy Engine (`Agent.autonomy_level` + `PolicyRule`)
 

@@ -12,11 +12,13 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, Environment, Lightformer, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import {
-  listAgents, listSectorMessages, listSectors, listTasks, patchAgentAutonomy,
-  type Agent, type Sector, type SectorMessage, type Task, ApiError,
+  listAgents, listPendingApprovals, listSectorMessages, listSectors, listTasks, patchAgentAutonomy,
+  type Agent, type PendingApproval, type Sector, type SectorMessage, type Task, ApiError,
 } from "@/lib/api";
 import { BrainHub, type BrainLink } from "./office3d/BrainHub";
 import { BrainGraph } from "./office3d/BrainGraph";
+import { MessageModal } from "./office3d/MessageModal";
+import { ApprovalModal } from "./office3d/ApprovalModal";
 import { ENVELOPE_COLORS, EnvelopeMesh, Envelopes, type Flight, type PendingEnvelope, type V3 } from "./office3d/Envelopes";
 import { SectorCard, type SectorStats } from "./office3d/SectorCard";
 import { IsoCamera, type CamMode } from "./office3d/IsoCamera";
@@ -25,6 +27,7 @@ import {
   ceoDeskLayout, deskLayout, seatLaneLocal, frontToOutside, frontToSeat, hallway, errandRoute, meetingEntry, meetingExit, outsideToFront, roomNav, seatToFront,
   type NavGrid, type Pt, type RoomNav, type Seat,
 } from "./office3d/navigation";
+import { box, cyl, mergedGeometry, mergedMaterial, sphere, type Part } from "./office3d/merge";
 import { floorTexture, labelTexture, screenTexture, type FloorPattern, type ScreenKind } from "./office3d/textures";
 import { useRealtime } from "@/lib/useRealtime";
 import {
@@ -60,6 +63,26 @@ const DOOR_W         = 1.9;
 const CORRIDOR_D     = 3.6;
 const WALK_SPEED       = 3.6;
 const LABEL_DF         = 0.026; // distanceFactor p/ Html com câmera ortográfica (escala = zoom × df)
+// Abaixo deste zoom (px por unidade) o rótulo do agente fica < ~50% do
+// tamanho e ilegível — some (CSS), em vez de poluir a planta inteira.
+const LABEL_MIN_ZOOM   = 20;
+
+/**
+ * Marca no container do canvas se o zoom está "longe" — um atributo só,
+ * trocado quando cruza o limite (sem re-render do React). O CSS em
+ * CompanyOffice3D esconde os rótulos dos agentes nesse caso.
+ */
+function ZoomLevelMarker() {
+  const last = useRef<string>("");
+  useFrame(({ camera, gl }) => {
+    const level = camera.zoom < LABEL_MIN_ZOOM ? "far" : "near";
+    if (level === last.current) return;
+    last.current = level;
+    const host = gl.domElement.parentElement?.parentElement;
+    host?.setAttribute("data-office-zoom", level);
+  });
+  return null;
+}
 const ARRIVAL_THRESHOLD = 0.14;
 
 // Contexto compartilhado: posições dos agentes para animação de porta
@@ -158,109 +181,58 @@ function Workstation({
   active?: boolean; kind?: ScreenKind; variant?: number; width?: number;
 }) {
   const tex = useMemo(() => screenTexture(color, kind, variant), [color, kind, variant]);
-  const legX = width / 2 - 0.12;
+  // Tampo, painel, pernas, moldura/pé do monitor, teclado, mouse e caneca
+  // fundidos (1 draw call); só a tela fica separada, porque tem textura e
+  // acende quando o agente desta mesa está trabalhando.
+  const geo = useMemo(() => mergedGeometry(`desk:${width}:${color}`, () => {
+    const legX = width / 2 - 0.12;
+    return [
+      { geo: box(width, 0.07, 0.9), pos: [0, 0.76, 0], color: "#d9c7a7" },
+      { geo: box(width - 0.1, 0.55, 0.04), pos: [0, 0.45, -0.42], color: "#b8a88a" },
+      { geo: box(0.06, 0.74, 0.06), pos: [-legX, 0.37, 0.35], color: "#6b5a45" },
+      { geo: box(0.06, 0.74, 0.06), pos: [legX, 0.37, 0.35], color: "#6b5a45" },
+      { geo: box(0.92, 0.58, 0.05), pos: [0, 1.2, -0.28], color: "#1a1d24" },
+      { geo: box(0.05, 0.2, 0.05), pos: [0, 0.84, -0.3], color: "#444444" },
+      { geo: box(0.6, 0.02, 0.2), pos: [0, 0.8, 0.12], color: "#2a2d33" },
+      { geo: box(0.08, 0.02, 0.12), pos: [0.45, 0.8, 0.16], color: "#2a2d33" },
+      { geo: cyl(0.045, 0.04, 0.1, 10), pos: [-width / 2 + 0.22, 0.84, 0.2], color },
+    ];
+  }), [width, color]);
   return (
     <group position={[x, 0, z]}>
-      <mesh position={[0, 0.76, 0]} castShadow receiveShadow>
-        <boxGeometry args={[width, 0.07, 0.9]} />
-        <meshStandardMaterial color="#d9c7a7" roughness={0.55} />
-      </mesh>
-      {/* Painel frontal de privacidade (lado do monitor) */}
-      <mesh position={[0, 0.45, -0.42]} castShadow>
-        <boxGeometry args={[width - 0.1, 0.55, 0.04]} />
-        <meshStandardMaterial color="#b8a88a" roughness={0.7} />
-      </mesh>
-      {([[-legX, 0.35], [legX, 0.35]] as [number, number][]).map(([lx, lz], i) => (
-        <mesh key={i} position={[lx, 0.37, lz]}>
-          <boxGeometry args={[0.06, 0.74, 0.06]} />
-          <meshStandardMaterial color="#6b5a45" />
-        </mesh>
-      ))}
-      <group position={[0, 1.2, -0.28]}>
-        <mesh castShadow>
-          <boxGeometry args={[0.92, 0.58, 0.05]} />
-          <meshStandardMaterial color="#1a1d24" />
-        </mesh>
-        {/* Tela com textura: acesa quando o agente desta mesa está trabalhando */}
-        <mesh position={[0, 0, 0.028]}>
-          <planeGeometry args={[0.86, 0.52]} />
-          <meshBasicMaterial map={tex} color={active ? "#ffffff" : "#5b6474"} toneMapped={false} />
-        </mesh>
-        <mesh position={[0, -0.36, -0.02]}>
-          <boxGeometry args={[0.05, 0.2, 0.05]} />
-          <meshStandardMaterial color="#444" metalness={0.6} />
-        </mesh>
-      </group>
-      {/* Teclado + mouse + caneca */}
-      <mesh position={[0, 0.8, 0.12]}>
-        <boxGeometry args={[0.6, 0.02, 0.2]} />
-        <meshStandardMaterial color="#2a2d33" />
-      </mesh>
-      <mesh position={[0.45, 0.8, 0.16]}>
-        <boxGeometry args={[0.08, 0.02, 0.12]} />
-        <meshStandardMaterial color="#2a2d33" />
-      </mesh>
-      <mesh position={[-width / 2 + 0.22, 0.84, 0.2]}>
-        <cylinderGeometry args={[0.045, 0.04, 0.1, 10]} />
-        <meshStandardMaterial color={color} />
+      <mesh geometry={geo} material={mergedMaterial} castShadow receiveShadow />
+      {/* Tela com textura: acesa quando o agente desta mesa está trabalhando */}
+      <mesh position={[0, 1.2, -0.252]}>
+        <planeGeometry args={[0.86, 0.52]} />
+        <meshBasicMaterial map={tex} color={active ? "#ffffff" : "#5b6474"} toneMapped={false} />
       </mesh>
     </group>
   );
 }
 
 function PixelChair({ x, z, color = "#444", rotation = 0 }: { x: number; z: number; color?: string; rotation?: number }) {
-  return (
-    <group position={[x, 0, z]} rotation={[0, rotation, 0]}>
-      {/* Base com rodas */}
-      <mesh position={[0, 0.07, 0]}>
-        <cylinderGeometry args={[0.14, 0.14, 0.05, 8]} />
-        <meshStandardMaterial color="#333" metalness={0.8} />
-      </mesh>
-      {([0, 72, 144, 216, 288] as number[]).map((angle, i) => {
-        const rad = (angle * Math.PI) / 180;
-        return (
-          <group key={i} rotation={[0, rad, 0]}>
-            <mesh position={[0, 0.05, 0.16]}>
-              <boxGeometry args={[0.04, 0.04, 0.32]} />
-              <meshStandardMaterial color="#333" metalness={0.7} />
-            </mesh>
-            <mesh position={[0, 0.03, 0.32]} rotation={[Math.PI / 2, 0, 0]}>
-              <cylinderGeometry args={[0.03, 0.03, 0.022, 8]} />
-              <meshStandardMaterial color="#111" />
-            </mesh>
-          </group>
-        );
-      })}
-      {/* Haste */}
-      <mesh position={[0, 0.26, 0]}>
-        <cylinderGeometry args={[0.025, 0.032, 0.38, 8]} />
-        <meshStandardMaterial color="#444" metalness={0.8} />
-      </mesh>
-      {/* Assento */}
-      <mesh position={[0, 0.44, 0]} castShadow>
-        <boxGeometry args={[0.52, 0.07, 0.52]} />
-        <meshStandardMaterial color={color} roughness={0.7} />
-      </mesh>
-      {/* Encosto */}
-      <mesh position={[0, 0.69, -0.2]} castShadow>
-        <boxGeometry args={[0.5, 0.48, 0.07]} />
-        <meshStandardMaterial color={color} roughness={0.7} />
-      </mesh>
-      {/* Apoios de braço */}
-      {([-0.3, 0.3] as number[]).map((ax, i) => (
-        <group key={i} position={[ax, 0.52, 0]}>
-          <mesh position={[0, 0, -0.09]}>
-            <boxGeometry args={[0.035, 0.22, 0.035]} />
-            <meshStandardMaterial color="#555" metalness={0.6} />
-          </mesh>
-          <mesh position={[0, 0.1, 0]}>
-            <boxGeometry args={[0.06, 0.035, 0.22]} />
-            <meshStandardMaterial color={color} roughness={0.6} />
-          </mesh>
-        </group>
-      ))}
-    </group>
-  );
+  // Base com 5 pés/rodas + haste + assento + encosto + braços — 18 peças
+  // fundidas numa geometria só (cacheada por cor).
+  const geo = useMemo(() => mergedGeometry(`chair:${color}`, () => {
+    const parts: Part[] = [
+      { geo: cyl(0.14, 0.14, 0.05, 8), pos: [0, 0.07, 0], color: "#333333" },
+      { geo: cyl(0.025, 0.032, 0.38, 8), pos: [0, 0.26, 0], color: "#444444" },
+      { geo: box(0.52, 0.07, 0.52), pos: [0, 0.44, 0], color },
+      { geo: box(0.5, 0.48, 0.07), pos: [0, 0.69, -0.2], color },
+    ];
+    for (let i = 0; i < 5; i++) {
+      const a = (i * 72 * Math.PI) / 180;
+      const sx = Math.sin(a), cz = Math.cos(a);
+      parts.push({ geo: box(0.04, 0.04, 0.32), pos: [sx * 0.16, 0.05, cz * 0.16], rot: [0, a, 0], color: "#333333" });
+      parts.push({ geo: cyl(0.03, 0.03, 0.022, 8), pos: [sx * 0.32, 0.03, cz * 0.32], rot: [Math.PI / 2, a, 0], color: "#111111" });
+    }
+    for (const ax of [-0.3, 0.3]) {
+      parts.push({ geo: box(0.035, 0.22, 0.035), pos: [ax, 0.52, -0.09], color: "#555555" });
+      parts.push({ geo: box(0.06, 0.035, 0.22), pos: [ax, 0.62, 0], color });
+    }
+    return parts;
+  }), [color]);
+  return <mesh geometry={geo} material={mergedMaterial} position={[x, 0, z]} rotation={[0, rotation, 0]} castShadow />;
 }
 
 function DoorMesh({
@@ -342,39 +314,19 @@ function ServerRack({ x, z }: { x: number; z: number }) {
 // ─── Novos móveis ─────────────────────────────────────────────────────────────
 
 function Plant({ x, z, tall = false }: { x: number; z: number; tall?: boolean }) {
-  const h = tall ? 1.6 : 1.0;
-  return (
-    <group position={[x, 0, z]}>
-      {/* Vaso */}
-      <mesh position={[0, 0.18, 0]}>
-        <cylinderGeometry args={[0.14, 0.1, 0.35, 8]} />
-        <meshStandardMaterial color="#8b6552" roughness={0.8} />
-      </mesh>
-      {/* Terra */}
-      <mesh position={[0, 0.37, 0]}>
-        <cylinderGeometry args={[0.13, 0.13, 0.04, 8]} />
-        <meshStandardMaterial color="#3d2b1a" roughness={1} />
-      </mesh>
-      {/* Tronco */}
-      <mesh position={[0, 0.37 + h * 0.3, 0]}>
-        <cylinderGeometry args={[0.03, 0.05, h * 0.6, 6]} />
-        <meshStandardMaterial color="#4a7c43" roughness={0.9} />
-      </mesh>
-      {/* Folhagem */}
-      <mesh position={[0, 0.37 + h * 0.75, 0]}>
-        <sphereGeometry args={[tall ? 0.38 : 0.28, 8, 6]} />
-        <meshStandardMaterial color="#2d8a3e" roughness={0.9} />
-      </mesh>
-      <mesh position={[0.14, 0.37 + h * 0.6, 0.08]}>
-        <sphereGeometry args={[tall ? 0.26 : 0.2, 7, 5]} />
-        <meshStandardMaterial color="#38a84d" roughness={0.9} />
-      </mesh>
-      <mesh position={[-0.12, 0.37 + h * 0.65, -0.06]}>
-        <sphereGeometry args={[tall ? 0.22 : 0.17, 7, 5]} />
-        <meshStandardMaterial color="#27a33c" roughness={0.9} />
-      </mesh>
-    </group>
-  );
+  // Vaso + terra + tronco + 3 bolas de folhagem, fundidos (1 draw call)
+  const geo = useMemo(() => mergedGeometry(`plant:${tall}`, () => {
+    const h = tall ? 1.6 : 1.0;
+    return [
+      { geo: cyl(0.14, 0.1, 0.35, 8), pos: [0, 0.18, 0], color: "#8b6552" },
+      { geo: cyl(0.13, 0.13, 0.04, 8), pos: [0, 0.37, 0], color: "#3d2b1a" },
+      { geo: cyl(0.03, 0.05, h * 0.6, 6), pos: [0, 0.37 + h * 0.3, 0], color: "#4a7c43" },
+      { geo: sphere(tall ? 0.38 : 0.28, 8, 6), pos: [0, 0.37 + h * 0.75, 0], color: "#2d8a3e" },
+      { geo: sphere(tall ? 0.26 : 0.2, 7, 5), pos: [0.14, 0.37 + h * 0.6, 0.08], color: "#38a84d" },
+      { geo: sphere(tall ? 0.22 : 0.17, 7, 5), pos: [-0.12, 0.37 + h * 0.65, -0.06], color: "#27a33c" },
+    ];
+  }), [tall]);
+  return <mesh geometry={geo} material={mergedMaterial} position={[x, 0, z]} castShadow />;
 }
 
 function Sofa({ x, z, rotation = 0, color = "#334155" }: { x: number; z: number; rotation?: number; color?: string }) {
@@ -1025,6 +977,8 @@ function AgentAvatar3D({
   meetingCenter,
   errand,
   onErrandDone,
+  pendingApprovals,
+  onOpenApprovals,
   onSelect,
 }: {
   agent: OfficeAgent;
@@ -1033,6 +987,9 @@ function AgentAvatar3D({
   meetingCenter: [number, number];
   errand: Errand | null;
   onErrandDone: (key: string) => void;
+  /** Aprovações humanas pendentes deste agente (PendingApproval). */
+  pendingApprovals: number;
+  onOpenApprovals: (agentId: number) => void;
   onSelect: (a: OfficeAgent) => void;
 }) {
   const groupRef    = useRef<THREE.Group>(null!);
@@ -1046,6 +1003,26 @@ function AgentAvatar3D({
   const skin = SKIN_TONES[agent.id % SKIN_TONES.length]!;
   const hair = HAIR_COLORS[agent.id % HAIR_COLORS.length]!;
   const shirt = agent.appearance.shirtColor;
+
+  // Geometrias fundidas, cacheadas por combinação de cores (vários agentes
+  // com a mesma roupa/pele/cabelo dividem a mesma geometria).
+  const legGeo = useMemo(() => mergedGeometry("avatar-leg", () => [
+    { geo: box(0.13, 0.46, 0.14), color: "#1e3a5f" },
+    { geo: box(0.13, 0.09, 0.2), pos: [0, -0.27, 0.04], color: "#111111" },
+  ]), []);
+  const armGeo = useMemo(() => mergedGeometry(`avatar-arm:${shirt}:${skin}`, () => [
+    { geo: box(0.12, 0.44, 0.18), color: shirt },
+    { geo: box(0.1, 0.1, 0.1), pos: [0, -0.26, 0], color: skin },
+  ]), [shirt, skin]);
+  const bodyGeo = useMemo(() => mergedGeometry(`avatar-body:${shirt}:${skin}:${hair}`, () => [
+    { geo: box(0.4, 0.5, 0.24), pos: [0, 0.74, 0], color: shirt },
+    { geo: box(0.12, 0.12, 0.12), pos: [0, 1.06, 0], color: skin },
+    { geo: box(0.36, 0.32, 0.32), pos: [0, 1.32, 0], color: skin },
+    { geo: box(0.38, 0.1, 0.34), pos: [0, 1.5, 0], color: hair },
+    { geo: box(0.38, 0.26, 0.06), pos: [0, 1.42, -0.17], color: hair },
+    { geo: box(0.07, 0.06, 0.01), pos: [-0.1, 1.33, 0.165], color: "#1a1a2e" },
+    { geo: box(0.07, 0.06, 0.01), pos: [0.1, 1.33, 0.165], color: "#1a1a2e" },
+  ]), [shirt, skin, hair]);
 
   const movRef = useRef<MovState>({
     pos: new THREE.Vector3(nav.seat.pos[0], 0, nav.seat.pos[1]),
@@ -1233,80 +1210,42 @@ function AgentAvatar3D({
       </mesh>
       <StatusRing color={statusColor} isWorking={isWorking} />
 
-      {/* Corpo do agente escalado a 0.65× para ficar proporcional aos móveis */}
+      {/* Corpo do agente escalado a 0.65× para ficar proporcional aos móveis.
+          Pernas e braços continuam grupos separados (são animados), mas cada
+          um é 1 mesh fundido; tronco+pescoço+cabeça+cabelo+olhos viram 1. */}
       <group scale={[0.65, 0.65, 0.65]}>
         <group ref={leftLegRef} position={[-0.09, 0.38, 0]}>
-          <mesh castShadow>
-            <boxGeometry args={[0.13, 0.46, 0.14]} />
-            <meshStandardMaterial color="#1e3a5f" />
-          </mesh>
-          <mesh position={[0, -0.27, 0.04]}>
-            <boxGeometry args={[0.13, 0.09, 0.2]} />
-            <meshStandardMaterial color="#111" />
-          </mesh>
+          <mesh geometry={legGeo} material={mergedMaterial} />
         </group>
         <group ref={rightLegRef} position={[0.09, 0.38, 0]}>
-          <mesh castShadow>
-            <boxGeometry args={[0.13, 0.46, 0.14]} />
-            <meshStandardMaterial color="#1e3a5f" />
-          </mesh>
-          <mesh position={[0, -0.27, 0.04]}>
-            <boxGeometry args={[0.13, 0.09, 0.2]} />
-            <meshStandardMaterial color="#111" />
-          </mesh>
+          <mesh geometry={legGeo} material={mergedMaterial} />
         </group>
-
-        <mesh position={[0, 0.74, 0]} castShadow>
-          <boxGeometry args={[0.4, 0.5, 0.24]} />
-          <meshStandardMaterial color={shirt} emissive={shirt} emissiveIntensity={isWorking ? 0.06 : 0} />
-        </mesh>
-
+        <mesh geometry={bodyGeo} material={mergedMaterial} castShadow />
         <group ref={leftArmRef} position={[-0.27, 0.76, 0]}>
-          <mesh castShadow>
-            <boxGeometry args={[0.12, 0.44, 0.18]} />
-            <meshStandardMaterial color={shirt} />
-          </mesh>
-          <mesh position={[0, -0.26, 0]}>
-            <boxGeometry args={[0.1, 0.1, 0.1]} />
-            <meshStandardMaterial color={skin} />
-          </mesh>
+          <mesh geometry={armGeo} material={mergedMaterial} />
         </group>
         <group ref={rightArmRef} position={[0.27, 0.76, 0]}>
-          <mesh castShadow>
-            <boxGeometry args={[0.12, 0.44, 0.18]} />
-            <meshStandardMaterial color={shirt} />
-          </mesh>
-          <mesh position={[0, -0.26, 0]}>
-            <boxGeometry args={[0.1, 0.1, 0.1]} />
-            <meshStandardMaterial color={skin} />
-          </mesh>
+          <mesh geometry={armGeo} material={mergedMaterial} />
         </group>
-
-        <mesh position={[0, 1.06, 0]}>
-          <boxGeometry args={[0.12, 0.12, 0.12]} />
-          <meshStandardMaterial color={skin} />
-        </mesh>
-        <mesh position={[0, 1.32, 0]} castShadow>
-          <boxGeometry args={[0.36, 0.32, 0.32]} />
-          <meshStandardMaterial color={skin} />
-        </mesh>
-        <mesh position={[0, 1.5, 0]}>
-          <boxGeometry args={[0.38, 0.1, 0.34]} />
-          <meshStandardMaterial color={hair} />
-        </mesh>
-        <mesh position={[0, 1.42, -0.17]}>
-          <boxGeometry args={[0.38, 0.26, 0.06]} />
-          <meshStandardMaterial color={hair} />
-        </mesh>
-        <mesh position={[-0.1, 1.33, 0.165]}>
-          <boxGeometry args={[0.07, 0.06, 0.01]} />
-          <meshBasicMaterial color="#1a1a2e" />
-        </mesh>
-        <mesh position={[0.1, 1.33, 0.165]}>
-          <boxGeometry args={[0.07, 0.06, 0.01]} />
-          <meshBasicMaterial color="#1a1a2e" />
-        </mesh>
       </group>
+
+      {/* Ação bloqueada pela política esperando decisão humana */}
+      {pendingApprovals > 0 && (
+        <Html center distanceFactor={LABEL_DF} zIndexRange={[13, 12]} position={[0, 1.95, 0]} style={{ userSelect: "none" }}>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOpenApprovals(agent.id); }}
+            title="Ação bloqueada pela política de autonomia — clique para aprovar ou rejeitar"
+            style={{
+              display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", cursor: "pointer",
+              background: "#fff7ed", color: "#c2410c", border: "1.5px solid #fb923c", borderRadius: 999,
+              padding: "2px 8px", fontSize: "10px", fontWeight: 700, boxShadow: "0 2px 8px rgba(251,146,60,0.35)",
+            }}
+          >
+            ⚠ {pendingApprovals} {pendingApprovals === 1 ? "aprovação" : "aprovações"}
+          </button>
+        </Html>
+      )}
 
       {/* Envelope carregado durante o recado de mediação */}
       {carry && (
@@ -1316,7 +1255,7 @@ function AgentAvatar3D({
       )}
 
       {/* Labels fora do grupo escalado, posições ajustadas para 0.65× */}
-      <Html center distanceFactor={LABEL_DF} zIndexRange={[6, 0]} position={[0, 1.3, 0]} style={{ pointerEvents: "none", userSelect: "none" }}>
+      <Html center distanceFactor={LABEL_DF} zIndexRange={[6, 0]} position={[0, 1.3, 0]} className="office-agent-label" style={{ pointerEvents: "none", userSelect: "none" }}>
         <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 3, transform: "translateY(-30%)" }}>
           <div style={{
             background: "rgba(255,255,255,0.96)", color: "#26231f", fontSize: "10px",
@@ -1402,16 +1341,15 @@ type DeskSpec = {
 
 function DeskNameplate({ name, lead, accent }: { name: string; lead: boolean; accent: string }) {
   const label = (lead ? "★ " : "") + name.toUpperCase();
+  const w = Math.min(1.4, 0.35 + label.length * 0.07);
+  // Plaquinha + faixa na cor do setor fundidas; o texto (canvas) fica à parte
+  const geo = useMemo(() => mergedGeometry(`plate:${w.toFixed(2)}:${lead}:${accent}`, () => [
+    { geo: box(w, 0.2, 0.02), color: lead ? "#fff7e0" : "#fbfaf7" },
+    { geo: box(w, 0.02, 0.005), pos: [0, -0.1, 0.012], color: accent },
+  ]), [w, lead, accent]);
   return (
     <group position={[0, 0.62, 0.47]}>
-      <mesh>
-        <boxGeometry args={[Math.min(1.4, 0.35 + label.length * 0.07), 0.2, 0.02]} />
-        <meshStandardMaterial color={lead ? "#fff7e0" : "#fbfaf7"} />
-      </mesh>
-      <mesh position={[0, -0.1, 0.012]}>
-        <boxGeometry args={[Math.min(1.4, 0.35 + label.length * 0.07), 0.02, 0.005]} />
-        <meshBasicMaterial color={accent} toneMapped={false} />
-      </mesh>
+      <mesh geometry={geo} material={mergedMaterial} />
       <CanvasLabel text={label} position={[0, 0, 0.012]} height={0.13} maxWidth={1.3} />
     </group>
   );
@@ -1750,6 +1688,10 @@ export default function CompanyOffice3D() {
   const [showCards,      setShowCards]      = useState(true);
   const [showWires,      setShowWires]      = useState(true);
   const [brainOpen,      setBrainOpen]      = useState(false);
+  const [openMessageId,  setOpenMessageId]  = useState<number | null>(null);
+  const [approvals,      setApprovals]      = useState<PendingApproval[]>([]);
+  // null = fechado; "all" = todas; número = só as daquele agente
+  const [approvalsFor,   setApprovalsFor]   = useState<number | "all" | null>(null);
 
   // Intervalo de polling derivado do slider (não estado separado)
   const speed = AUTONOMY_SPEEDS[autonomySlider] ?? 30_000;
@@ -1772,14 +1714,16 @@ export default function CompanyOffice3D() {
       try {
         const [s, a] = await Promise.all([listSectors(), listAgents()]);
         // Tasks só alimentam os KPIs dos cartões — falha aqui não derruba o escritório
-        const [t, m] = await Promise.all([
+        const [t, m, pa] = await Promise.all([
           listTasks().catch(() => null),
           listSectorMessages().catch(() => null),
+          listPendingApprovals("pending").catch(() => null),
         ]);
         if (!cancelled) {
           setSectors(s); setRawAgents(a); setError(null);
           if (t) setTasks(t);
           if (m) setMessages(m);
+          if (pa) setApprovals(pa);
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof ApiError ? err.message : "Falha ao carregar.");
@@ -1793,7 +1737,24 @@ export default function CompanyOffice3D() {
     return () => { cancelled = true; clearInterval(iv); };
   }, [paused, speed]);
 
-  const { connected, lastAgentEvent, lastTaskEvent, lastSectorMessageEvent } = useRealtime();
+  const { connected, lastAgentEvent, lastTaskEvent, lastSectorMessageEvent, lastPendingApprovalEvent } = useRealtime();
+
+  // Aprovação criada/decidida em tempo real: só as pendentes ficam na lista
+  const upsertApproval = useCallback((p: PendingApproval) => {
+    setApprovals((prev) => {
+      const rest = prev.filter((x) => x.id !== p.id);
+      return p.status === "pending" ? [p, ...rest] : rest;
+    });
+  }, []);
+  useEffect(() => {
+    if (lastPendingApprovalEvent) upsertApproval(lastPendingApprovalEvent);
+  }, [lastPendingApprovalEvent, upsertApproval]);
+
+  const approvalsByAgent = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const p of approvals) m.set(p.agent, (m.get(p.agent) ?? 0) + 1);
+    return m;
+  }, [approvals]);
 
   const addLog = useCallback((agent: OfficeAgent, action: string) => {
     setActivityLogs((prev) => [
@@ -2191,6 +2152,8 @@ export default function CompanyOffice3D() {
         onToggleActivity={() => setActivityOpen((v) => !v)}
         onTogglePanel={() => setPanelOpen((v) => !v)}
         onOpenConsole={() => setConsoleOpen(true)}
+        pendingApprovals={approvals.length}
+        onOpenApprovals={() => setApprovalsFor("all")}
       />
 
       <div className="relative flex min-h-0 flex-1">
@@ -2247,9 +2210,14 @@ export default function CompanyOffice3D() {
             ))}
           </div>
 
+          {/* Rótulos dos agentes somem com zoom afastado (ver ZoomLevelMarker) */}
+          <style>{`[data-office-zoom="far"] .office-agent-label { display: none; }`}</style>
           <Canvas
             shadows
             orthographic
+            // limita a resolução em telas de alta densidade: 2x–3x pixels
+            // custa muito na GPU e quase não aparece numa cena isométrica
+            dpr={[1, 1.75]}
             camera={{ position: [sceneCX + 60, 60, sceneCZ + 66], zoom: 20, near: 0.1, far: 1000 }}
             style={{ width: "100%", height: "100%" }}
             onPointerMissed={() => { document.body.style.cursor = ""; }}
@@ -2257,6 +2225,7 @@ export default function CompanyOffice3D() {
             <AgentPosCtx.Provider value={agentPosRef}>
             <color attach="background" args={["#f1eee8"]} />
 
+            <ZoomLevelMarker />
             <IsoCamera mode={camMode} center={[sceneCX, sceneCZ]} extent={extent} zoom={zoom} homeKey={homeKey} />
 
             {/* Iluminação IBL gerada localmente (Lightformers) — o preset
@@ -2282,7 +2251,12 @@ export default function CompanyOffice3D() {
             <directionalLight position={[sceneCX + 12, 18, sceneCZ - 10]} intensity={0.45} />
 
             {/* Sombra suave da maquete no "papel" */}
+            {/* Sombra de contato é da maquete (lajes/paredes), que não se mexe:
+                renderiza só nos primeiros quadros e de novo quando a planta muda
+                (key). Antes re-renderizava a cena inteira a cada quadro. */}
             <ContactShadows
+              key={`${cols}x${rows}:${sectors.length}`}
+              frames={3}
               position={[sceneCX, -SLAB_H - 0.01, sceneCZ]}
               opacity={0.35}
               scale={[extent[0] + 16, extent[1] + 16]}
@@ -2339,13 +2313,20 @@ export default function CompanyOffice3D() {
                   color={roomPalette(type, idx).accent}
                   stats={stats}
                   brain={sector.id === -2 ? "Cérebro principal" : sector.knowledge_source_name}
-                  onClick={() => sector.id !== -2 && handleRoomClick(sector.id, sector.name)}
+                  aiProvider={sector.default_provider}
+                  aiModel={sector.default_model}
+                  onClick={() => handleRoomClick(sector.id, sector.name)}
                 />
               );
             })}
 
             {/* Envelopes entre setores (SectorMessage) */}
-            <Envelopes pending={pendingEnvelopes} flights={flights} onFlightDone={handleFlightDone} />
+            <Envelopes
+              pending={pendingEnvelopes}
+              flights={flights}
+              onFlightDone={handleFlightDone}
+              onOpenPending={setOpenMessageId}
+            />
 
             {/* Agentes */}
             {officeAgents.map((agent) => {
@@ -2361,6 +2342,8 @@ export default function CompanyOffice3D() {
                   meetingCenter={[meetingCX, meetingCZ]}
                   errand={errands.get(agent.id)?.[0] ?? null}
                   onErrandDone={handleErrandDone}
+                  pendingApprovals={approvalsByAgent.get(agent.id) ?? 0}
+                  onOpenApprovals={setApprovalsFor}
                   onSelect={handleAgentClick}
                 />
               );
@@ -2383,11 +2366,43 @@ export default function CompanyOffice3D() {
         <AgentInfoPanel agents={officeAgents} open={panelOpen} onClose={() => setPanelOpen(false)} onAgentClick={handleAgentClick} />
       </div>
 
+      {/* Aprovações humanas pendentes (marcador ⚠ sobre o agente / barra superior) */}
+      {approvalsFor !== null && (
+        <ApprovalModal
+          approvals={approvalsFor === "all" ? approvals : approvals.filter((p) => p.agent === approvalsFor)}
+          title={approvalsFor === "all"
+            ? `${approvals.length} ação(ões) esperando decisão`
+            : `Ações de ${officeAgents.find((a) => a.id === approvalsFor)?.name ?? "agente"} esperando decisão`}
+          onClose={() => setApprovalsFor(null)}
+          onDecided={upsertApproval}
+        />
+      )}
+
+      {/* Mediar uma mensagem pendente (clique no envelope) */}
+      <MessageModal
+        message={messages.find((m) => m.id === openMessageId) ?? null}
+        agents={officeAgents}
+        onClose={() => setOpenMessageId(null)}
+        onRelayed={(updated) =>
+          // Atualiza já (sem esperar poll/WebSocket): a transição pending →
+          // answered dispara o mediador andando com o envelope.
+          setMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)))}
+      />
+
       {/* Cérebro aberto: grafo das notas indexadas (Obsidian etc.) */}
       <BrainGraph open={brainOpen} onClose={() => setBrainOpen(false)} sectors={sectors} />
 
       <AgentModal agent={selectedAgent} open={agentModalOpen} onClose={() => setAgentModalOpen(false)} />
-      <RoomModal sectorId={selectedRoom?.id ?? null} sectorName={selectedRoom?.name ?? ""} agents={officeAgents} open={roomModalOpen} onClose={() => setRoomModalOpen(false)} />
+      <RoomModal
+        sector={sectors.find((s) => s.id === selectedRoom?.id) ?? null}
+        sectorId={selectedRoom?.id ?? null}
+        sectorName={selectedRoom?.name ?? ""}
+        agents={officeAgents}
+        open={roomModalOpen}
+        onClose={() => setRoomModalOpen(false)}
+        onAgentClick={(a) => { setRoomModalOpen(false); handleAgentClick(a); }}
+        onSectorUpdated={(updated) => setSectors((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)))}
+      />
       <MeetingModal
         open={meetingOpen}
         onClose={() => setMeetingOpen(false)}

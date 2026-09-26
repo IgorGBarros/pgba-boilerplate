@@ -60,7 +60,7 @@ def execute_task(tenant_id, task_id) -> Task:
 
     from harness.providers import chat_completion, ProviderConfigError
 
-    task = Task.objects.select_related("agent").get(id=task_id, tenant_id=tenant_id)
+    task = Task.objects.select_related("agent__sector").get(id=task_id, tenant_id=tenant_id)
     if task.status not in (Task.Status.CREATED, Task.Status.ADAPTED):
         raise TaskStateError(f"Task não pode ser executada no status atual: {task.get_status_display()}.")
 
@@ -75,8 +75,10 @@ def execute_task(tenant_id, task_id) -> Task:
     task.save(update_fields=["status", "updated_at"])
     broadcast_task_update(task)
 
-    from harness.views import _resolve_chat_provider
-    provider = _resolve_chat_provider(tenant_id)
+    # Mesma regra de ask_as_agent: agente → setor → tenant (ex: setor de
+    # Desenvolvimento fixo em Claude, demais no provedor do tenant).
+    from agency.services import resolve_agent_llm
+    provider, model = resolve_agent_llm(agent)
 
     def _finish_with_error(detail: dict):
         task.status = Task.Status.REJECTED
@@ -91,7 +93,7 @@ def execute_task(tenant_id, task_id) -> Task:
 
     try:
         raw = chat_completion(
-            tenant_id, provider, None,  # model=None -> resolve por get_credential().default_model
+            tenant_id, provider, model,  # model=None -> resolve por get_credential().default_model
             messages=[
                 {"role": "system", "content": DEFAULT_TASK_SYSTEM_PROMPT},
                 {"role": "user", "content": task.brief},

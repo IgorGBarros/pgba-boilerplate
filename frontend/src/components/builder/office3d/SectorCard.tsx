@@ -6,6 +6,7 @@
 // "de enfeite" inventado pra preencher o cartão.
 import { useState } from "react";
 import { Html } from "@react-three/drei";
+import { PROVIDER_LABEL } from "./providers";
 
 export interface SectorStats {
   agents: number;
@@ -22,6 +23,8 @@ export function SectorCard({
   color,
   stats,
   brain,
+  aiProvider,
+  aiModel,
   onClick,
 }: {
   position: [number, number, number];
@@ -30,6 +33,9 @@ export function SectorCard({
   stats: SectorStats;
   /** Nome do knowledge_source (cérebro secundário) ou null. */
   brain: string | null | undefined;
+  /** Provedor fixo do setor ("" = provedor ativo do tenant). */
+  aiProvider?: string;
+  aiModel?: string;
   onClick?: () => void;
 }) {
   // Etiqueta de UMA linha por padrão: com muitos setores, o cartão completo
@@ -74,6 +80,11 @@ export function SectorCard({
             )}
             <div className={`mt-1 truncate ${brain ? "text-emerald-700" : "text-stone-400"}`}>
               ◈ {brain ?? "sem cérebro configurado"}
+            </div>
+            <div className="truncate text-stone-500" title="Modelo de IA usado pelos agentes deste setor">
+              ✦ IA: {aiProvider
+                ? <b className="font-medium text-stone-800">{PROVIDER_LABEL[aiProvider] ?? aiProvider}{aiModel ? ` · ${aiModel}` : ""} <span className="font-normal text-stone-400">(fixo)</span></b>
+                : <span>padrão do tenant</span>}
             </div>
             <div className="mt-1 flex justify-between border-t border-stone-100 pt-1 text-[9px] uppercase tracking-wider text-stone-500">
               <span>Fazendo <b className="font-mono text-stone-900">{stats.doing}</b></span>
