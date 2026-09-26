@@ -1,7 +1,13 @@
 # backend_api/Api/integrations/serializers.py
 from rest_framework import serializers
 
-from integrations.models import EmailAccount, OutboundEmail, ServerConnection, ServiceCredential
+from integrations.models import (
+    EmailAccount,
+    InboundEmail,
+    OutboundEmail,
+    ServerConnection,
+    ServiceCredential,
+)
 
 MASK = "••••"
 
@@ -132,6 +138,8 @@ class EmailAccountSerializer(_SectorInTenant, serializers.ModelSerializer):
             "configured",
             "last_check_at",
             "last_check_message",
+            "last_fetch_at",
+            "last_fetch_message",
             "created_at",
             "updated_at",
         ]
@@ -139,6 +147,8 @@ class EmailAccountSerializer(_SectorInTenant, serializers.ModelSerializer):
             "status",
             "last_check_at",
             "last_check_message",
+            "last_fetch_at",
+            "last_fetch_message",
             "created_at",
             "updated_at",
         ]
@@ -211,8 +221,11 @@ class OutboundEmailSerializer(_SectorInTenant, serializers.ModelSerializer):
             "error",
             "created_at",
             "updated_at",
+            "in_reply_to",
+            "written_by_ai",
         ]
         read_only_fields = [
+            "written_by_ai",
             "status",
             "origin",
             "requested_by",
@@ -224,6 +237,11 @@ class OutboundEmailSerializer(_SectorInTenant, serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def validate_in_reply_to(self, inbound):
+        if inbound and inbound.tenant_id != self.context["request"].tenant_id:
+            raise serializers.ValidationError("E-mail inválido.")
+        return inbound
+
     def validate_to(self, value):
         if not isinstance(value, list) or not value:
             raise serializers.ValidationError("Informe pelo menos um destinatário.")
@@ -233,3 +251,44 @@ class OutboundEmailSerializer(_SectorInTenant, serializers.ModelSerializer):
     def validate_cc(self, value):
         field = serializers.EmailField()
         return [field.run_validation(v) for v in (value or [])]
+
+
+class InboundEmailSerializer(serializers.ModelSerializer):
+    sector_name = serializers.CharField(source="sector.name", read_only=True, default="")
+    to_address = serializers.CharField(source="account.address", read_only=True, default="")
+    replies = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InboundEmail
+        fields = [
+            "id",
+            "sector",
+            "sector_name",
+            "to_address",
+            "message_id",
+            "from_address",
+            "from_name",
+            "to",
+            "cc",
+            "subject",
+            "body",
+            "received_at",
+            "is_read",
+            "replies",
+        ]
+        read_only_fields = [f for f in fields if f != "is_read"]
+
+    def get_replies(self, obj):
+        """Respostas a este e-mail (rascunho, enviada...) — quem escreveu e se foi a IA."""
+        return [
+            {
+                "id": r.id,
+                "status": r.status,
+                "written_by_ai": r.written_by_ai,
+                "requested_by": r.requested_by,
+                "approved_by": r.approved_by,
+                "sent_at": r.sent_at,
+            }
+            for r in obj.replies.all()
+            if r.status != OutboundEmail.Status.CANCELLED
+        ]

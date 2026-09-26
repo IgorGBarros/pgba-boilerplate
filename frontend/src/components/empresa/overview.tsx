@@ -27,6 +27,7 @@ import {
   Wallet,
   Wrench,
   Settings2,
+  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +62,8 @@ import { HelpdeskView } from "@/components/empresa/helpdesk";
 import { PROVIDER_LABEL, formatUsd } from "@/components/builder/office3d/providers";
 import { useRealtime } from "@/lib/useRealtime";
 import { openAdminPanel, takePendingModule, useModuleRequests } from "@/lib/adminPanel";
+import { getEmailOverview, type EmailOverview } from "@/lib/api";
+import { SectorMailbox } from "@/components/admin/SectorMailbox";
 import { aiModels } from "@/lib/pgba-data";
 import {
   askAsAgent,
@@ -930,6 +933,19 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
   const [askAgentTarget, setAskAgentTarget] = useState<Agent | null>(null);
   const [askAgentOpen, setAskAgentOpen] = useState(false);
   const [openCompany, setOpenCompany] = useState(false);
+  // Caixa de e-mail de cada setor: não lidos no envelope do cartão (a cada 60s)
+  const [mail, setMail] = useState<Record<number, EmailOverview["sectors"][number]>>({});
+  const [mailboxSector, setMailboxSector] = useState<number | null>(null);
+  const loadMail = useCallback(() => {
+    getEmailOverview()
+      .then((o) => setMail(Object.fromEntries(o.sectors.map((r) => [r.sector.id, r]))))
+      .catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    loadMail();
+    const t = setInterval(loadMail, 60_000);
+    return () => clearInterval(t);
+  }, [loadMail]);
   const [loading, setLoading] = useState(true);
 
   // CRUD dialogs
@@ -1139,6 +1155,36 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
                         <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
                       </button>
                     </div>
+                    {(() => {
+                      const box = mail[sector.id];
+                      const unread = box?.unread ?? 0;
+                      const title = !box?.account
+                        ? "Caixa de e-mail — ainda não criada"
+                        : unread
+                          ? `${unread} e-mail(s) novo(s) na caixa de ${sector.name}`
+                          : `Caixa de e-mail — ${box.account.address || "aguardando endereço"}`;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setMailboxSector(sector.id)}
+                          title={title}
+                          aria-label={title}
+                          className={`relative grid size-8 shrink-0 place-items-center rounded-md transition ${
+                            unread ? "text-foreground hover:bg-secondary" : box?.account?.status === "ready" ? "text-muted-foreground hover:bg-secondary hover:text-foreground" : "text-muted-foreground/50 hover:bg-secondary hover:text-foreground"
+                          }`}
+                        >
+                          <Mail className="size-4" />
+                          {unread > 0 && (
+                            <span className="absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white">
+                              {unread > 99 ? "99+" : unread}
+                            </span>
+                          )}
+                          {!unread && (box?.drafts ?? 0) > 0 && (
+                            <span className="absolute right-0.5 top-0.5 size-2 rounded-full bg-sky-500" title={`${box?.drafts} rascunho(s) esperando envio`} />
+                          )}
+                        </button>
+                      );
+                    })()}
                     <div className="flex shrink-0 gap-0.5 opacity-60 transition group-hover/sector:opacity-100 focus-within:opacity-100">
                       <IconBtn title="Adicionar agente" onClick={() => { setNewAgentSector(sector); setNewAgentOpen(true); }}>
                         <Plus className="size-4" />
@@ -1311,6 +1357,16 @@ function VisaoGeral({ onNewTask, onSectorClick, onModuleClick }: { onNewTask: (s
         onClose={() => setDeleteSectorOpen(false)}
         onDeleted={handleSectorDeleted}
       />
+
+      {mailboxSector !== null && mail[mailboxSector] && (
+        <SectorMailbox
+          sector={mail[mailboxSector].sector}
+          account={mail[mailboxSector].account}
+          agents={mail[mailboxSector].agents}
+          onClose={() => { setMailboxSector(null); loadMail(); }}
+          onChanged={loadMail}
+        />
+      )}
 
       {/* Company dialog */}
       <Dialog open={openCompany} onOpenChange={setOpenCompany}>

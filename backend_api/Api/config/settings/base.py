@@ -137,6 +137,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "ingestion.tasks.sync_due_sources_task",
         "schedule": 300.0,
     },
+    # Caixa de entrada dos setores (IMAP, só leitura)
+    "caixas-de-email-dos-setores": {
+        "task": "integrations.tasks.fetch_inboxes_task",
+        "schedule": 300.0,
+    },
 }
 DATA_RETENTION_DAYS = int(os.environ.get("DATA_RETENTION_DAYS", "730"))
 

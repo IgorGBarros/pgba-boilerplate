@@ -710,3 +710,37 @@ class SourceAccessView(TenantContextMixin, APIView):
             elif sector.id not in wanted:
                 sector.extra_knowledge_sources.remove(source)
         return Response(self._payload(request, source))
+
+
+class EmailReplyView(TenantContextMixin, APIView):
+    """
+    POST /api/v1/agency/email-reply/ {"inbound": id, "agent"?: id, "instructions"?: str}
+    — a IA do setor escreve a resposta de um e-mail recebido. Sai como
+    RASCUNHO na caixa de saída do setor; uma pessoa revisa e envia.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from agency.email_reply import ReplyError, draft_reply
+        from harness.providers import ProviderConfigError
+        from integrations.serializers import OutboundEmailSerializer
+
+        if not getattr(request, "tenant_id", None):
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+        try:
+            inbound_id = int(request.data.get("inbound"))
+        except (TypeError, ValueError):
+            return Response({"detail": "Informe o e-mail (`inbound`)."}, status=400)
+        try:
+            draft = draft_reply(
+                request.tenant_id,
+                inbound_id,
+                agent_id=request.data.get("agent") or None,
+                instructions=str(request.data.get("instructions") or ""),
+            )
+        except ReplyError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        except ProviderConfigError as exc:
+            return Response({"detail": f"A IA do setor não respondeu: {exc}"}, status=400)
+        return Response(OutboundEmailSerializer(draft).data, status=201)

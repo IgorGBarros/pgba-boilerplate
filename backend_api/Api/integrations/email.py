@@ -17,15 +17,16 @@ import imaplib
 import smtplib
 import socket
 import ssl
+from email import message_from_bytes, policy
 from email.message import EmailMessage
-from email.utils import formataddr, make_msgid
+from email.utils import formataddr, getaddresses, make_msgid, parsedate_to_datetime
 
 from django.db import transaction
 from django.utils import timezone
 
 from ingestion.connectors import ConnectorError
 from ingestion.connectors import safe_http
-from integrations.models import EmailAccount, OutboundEmail
+from integrations.models import EmailAccount, InboundEmail, OutboundEmail
 
 TIMEOUT = 20
 
@@ -148,6 +149,8 @@ def create_draft(
     origin: str = "",
     requested_by: str = "",
     cc=None,
+    in_reply_to: InboundEmail | None = None,
+    written_by_ai: bool = False,
 ) -> OutboundEmail:
     to = [a.strip() for a in (to if isinstance(to, (list, tuple)) else [to]) if a and a.strip()]
     if not to:
@@ -161,6 +164,8 @@ def create_draft(
         body=body,
         origin=origin[:100],
         requested_by=requested_by[:150],
+        in_reply_to=in_reply_to,
+        written_by_ai=written_by_ai,
     )
 
 
@@ -192,6 +197,10 @@ def send_outbound(email: OutboundEmail, approved_by: str = "") -> OutboundEmail:
         msg["Cc"] = ", ".join(email.cc)
     msg["Subject"] = email.subject
     msg["Message-ID"] = make_msgid(domain=account.address.split("@")[-1])
+    if email.in_reply_to_id and email.in_reply_to.message_id:
+        # Resposta cai na mesma conversa no cliente de e-mail do destinatário
+        msg["In-Reply-To"] = email.in_reply_to.message_id
+        msg["References"] = email.in_reply_to.message_id
     body = email.body
     if account.signature:
         body = f"{body.rstrip()}\n\n--\n{account.signature}"
@@ -213,3 +222,125 @@ def send_outbound(email: OutboundEmail, approved_by: str = "") -> OutboundEmail:
 
     email_sent.send(sender=OutboundEmail, email=email)
     return email
+
+
+# ─── Caixa de entrada (IMAP, só leitura) ─────────────────────────────────────
+
+MAX_BODY = 50_000
+FETCH_LIMIT = 50
+
+
+def _imap_connect(account: EmailAccount) -> imaplib.IMAP4:
+    if not (account.imap_host and account.address and account.password_encrypted):
+        raise EmailError("A caixa não tem IMAP configurado (servidor, endereço e senha).")
+    try:
+        safe_http.check_host(account.imap_host, account.imap_port)
+    except ConnectorError as exc:
+        raise EmailError(str(exc)) from exc
+    try:
+        if account.imap_port == 143:
+            conn = imaplib.IMAP4(account.imap_host, account.imap_port, timeout=TIMEOUT)
+            conn.starttls(ssl_context=ssl.create_default_context())
+        else:
+            conn = imaplib.IMAP4_SSL(
+                account.imap_host,
+                account.imap_port,
+                timeout=TIMEOUT,
+                ssl_context=ssl.create_default_context(),
+            )
+        conn.login(account.login, account.password)
+        return conn
+    except imaplib.IMAP4.error as exc:
+        raise EmailError(f"IMAP recusou o login: {exc}") from exc
+    except (OSError, socket.timeout) as exc:
+        raise EmailError(
+            f"Não consegui falar com {account.imap_host}:{account.imap_port} — {exc}"
+        ) from exc
+
+
+def _text_of(msg) -> str:
+    part = msg.get_body(preferencelist=("plain", "html"))
+    if part is None:
+        return ""
+    try:
+        content = part.get_content()
+    except (LookupError, UnicodeDecodeError):
+        payload = part.get_payload(decode=True) or b""
+        content = payload.decode("utf-8", errors="replace")
+    if part.get_content_type() == "text/html":
+        from ingestion.connectors.documents import html_to_text
+
+        content = html_to_text(content)[1]
+    return str(content).strip()[:MAX_BODY]
+
+
+def _addresses(value) -> list[str]:
+    return [addr for _, addr in getaddresses([str(value or "")]) if addr][:20]
+
+
+def fetch_inbox(account: EmailAccount, limit: int = FETCH_LIMIT) -> int:
+    """
+    Traz os e-mails novos da INBOX (UID maior que o último visto). Só leitura:
+    `select(readonly=True)` + `BODY.PEEK[]` — não marca como lido no servidor.
+    Devolve quantos entraram. Erro fica em `last_fetch_message`, nunca some.
+    """
+    created = 0
+    try:
+        conn = _imap_connect(account)
+        try:
+            conn.select("INBOX", readonly=True)
+            if account.imap_last_uid:
+                typ, data = conn.uid("search", None, f"UID {account.imap_last_uid + 1}:*")
+            else:
+                typ, data = conn.uid("search", None, "ALL")
+            uids = [int(u) for u in (data[0] or b"").split() if int(u) > account.imap_last_uid]
+            for uid in sorted(uids)[-limit:]:
+                typ, parts = conn.uid("fetch", str(uid), "(BODY.PEEK[])")
+                raw = next((p[1] for p in parts or [] if isinstance(p, tuple)), None)
+                if not raw:
+                    continue
+                msg = message_from_bytes(raw, policy=policy.default)
+                try:
+                    received = parsedate_to_datetime(str(msg.get("date")))
+                    if timezone.is_naive(received):
+                        received = timezone.make_aware(received)
+                except (TypeError, ValueError):
+                    received = timezone.now()
+                sender = getaddresses([str(msg.get("from", ""))])
+                name, addr = sender[0] if sender else ("", "")
+                _, was_created = InboundEmail.objects.get_or_create(
+                    account=account,
+                    uid=uid,
+                    defaults={
+                        "tenant_id": account.tenant_id,
+                        "sector_id": account.sector_id,
+                        "message_id": str(msg.get("message-id", ""))[:255],
+                        "from_address": addr[:255],
+                        "from_name": name[:255],
+                        "to": _addresses(msg.get("to")),
+                        "cc": _addresses(msg.get("cc")),
+                        "subject": str(msg.get("subject", "(sem assunto)"))[:255],
+                        "body": _text_of(msg),
+                        "received_at": received,
+                    },
+                )
+                created += int(was_created)
+                account.imap_last_uid = max(account.imap_last_uid, uid)
+        finally:
+            try:
+                conn.logout()
+            except Exception:  # noqa: BLE001 — logout falhando não apaga o que já entrou
+                pass
+        account.last_fetch_message = f"{created} e-mail(s) novo(s)."
+    except EmailError as exc:
+        account.last_fetch_message = str(exc)[:500]
+        account.last_fetch_at = timezone.now()
+        account.save(
+            update_fields=["imap_last_uid", "last_fetch_at", "last_fetch_message", "updated_at"]
+        )
+        raise
+    account.last_fetch_at = timezone.now()
+    account.save(
+        update_fields=["imap_last_uid", "last_fetch_at", "last_fetch_message", "updated_at"]
+    )
+    return created

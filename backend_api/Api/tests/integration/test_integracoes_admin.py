@@ -384,3 +384,153 @@ def test_credencial_exige_token_e_provedor_valido(auth_client):
     )
     cred = ServiceCredential.objects.get(provider="hostinger", is_active=True)
     assert cred.token == "tok-abcdefgh1234" and cred.label == "Conta"
+
+
+# ─── Caixa de entrada + resposta pela IA ────────────────────────────────────
+
+RAW = {
+    101: (
+        b"From: Ana Fornecedora <ana@acoforte.com>\r\nTo: compras@empresa.com.br\r\n"
+        b"Subject: Cotacao vergalhao\r\nMessage-ID: <m101@acoforte.com>\r\n"
+        b"Date: Fri, 25 Sep 2026 10:00:00 -0300\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+        b"Segue o preco: R$ 42,00 a barra. Prazo 5 dias.\r\n"
+    ),
+    102: (
+        b"From: suporte@cliente.com\r\nTo: compras@empresa.com.br\r\nSubject: Duvida\r\n"
+        b"Message-ID: <m102@cliente.com>\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
+        b"<html><body><p>Qual o prazo <b>de entrega</b>?</p></body></html>\r\n"
+    ),
+}
+
+
+class FakeIMAP:
+    readonly = None
+    stored = False
+
+    def __init__(self, host, port, timeout=None, ssl_context=None):
+        pass
+
+    def login(self, user, password):
+        if password != "senha-certa":
+            import imaplib
+
+            raise imaplib.IMAP4.error("auth")
+
+    def select(self, box, readonly=False):
+        FakeIMAP.readonly = readonly
+        return "OK", [b"2"]
+
+    def uid(self, cmd, *args):
+        if cmd == "search":
+            crit = args[-1]
+            start = int(crit.split()[1].split(":")[0]) if crit.startswith("UID") else 0
+            # IMAP devolve ao menos o último mesmo se o intervalo estiver vazio
+            found = [u for u in RAW if u >= start] or [max(RAW)]
+            return "OK", [" ".join(map(str, found)).encode()]
+        if cmd == "fetch":
+            assert "PEEK" in args[1]  # nunca marca como lido no servidor
+            return "OK", [(b"1 (BODY[] {n}", RAW[int(args[0])]), b")"]
+        if cmd == "store":
+            FakeIMAP.stored = True
+        return "NO", []
+
+    def logout(self):
+        pass
+
+
+@pytest.fixture
+def caixa_compras(auth_client, compras, smtp, monkeypatch):
+    monkeypatch.setattr("integrations.email.imaplib.IMAP4_SSL", FakeIMAP)
+    res = auth_client.post(
+        f"{API}/email-accounts/",
+        {"sector": compras.id, "address": "compras@empresa.com.br", "password": "senha-certa"},
+        format="json",
+    )
+    return res.data
+
+
+@pytest.mark.django_db
+def test_caixa_de_entrada_busca_so_novos_sem_marcar_lido(auth_client, compras, caixa_compras):
+    res = auth_client.post(f"{API}/email-accounts/{caixa_compras['id']}/fetch/", {}, format="json")
+    assert res.status_code == 200 and res.data["created"] == 2, res.data
+    assert FakeIMAP.readonly is True and FakeIMAP.stored is False
+    # De novo: nada novo (UID guardado), mesmo o servidor devolvendo o último
+    assert (
+        auth_client.post(
+            f"{API}/email-accounts/{caixa_compras['id']}/fetch/", {}, format="json"
+        ).data["created"]
+        == 0
+    )
+
+    lista = auth_client.get(f"{API}/inbound-emails/?sector={compras.id}").data["results"]
+    assert {e["subject"] for e in lista} == {"Duvida", "Cotacao vergalhao"}
+    ana = next(e for e in lista if e["from_address"] == "ana@acoforte.com")
+    assert ana["from_name"] == "Ana Fornecedora" and "R$ 42,00" in ana["body"]
+    html = next(e for e in lista if e["subject"] == "Duvida")
+    assert "Qual o prazo de entrega?" in html["body"] and "<b>" not in html["body"]
+
+    ov = auth_client.get(f"{API}/email-accounts/overview/").data
+    row = next(r for r in ov["sectors"] if r["sector"]["id"] == compras.id)
+    assert row["unread"] == 2
+    auth_client.patch(f"{API}/inbound-emails/{ana['id']}/", {"is_read": True}, format="json")
+    assert auth_client.get(f"{API}/inbound-emails/?unread=1").data["count"] == 1
+
+
+@pytest.mark.django_db
+def test_ia_do_setor_escreve_resposta_e_pessoa_envia_na_conversa(
+    auth_client, tenant_id, compras, caixa_compras, smtp, monkeypatch
+):
+    from tests.factories import AgentFactory
+
+    AgentFactory(tenant_id=tenant_id, sector=compras, name="AI Comprador")
+    auth_client.post(f"{API}/email-accounts/{caixa_compras['id']}/fetch/", {}, format="json")
+    ana = next(
+        e
+        for e in auth_client.get(f"{API}/inbound-emails/").data["results"]
+        if e["from_address"] == "ana@acoforte.com"
+    )
+    prompts = []
+
+    def fake_chat(tenant, provider, model, messages, **kw):
+        prompts.append(messages)
+        return "Olá, Ana. Obrigado pela cotação; vamos avaliar e retornamos até amanhã."
+
+    monkeypatch.setattr("harness.providers.chat_completion", fake_chat)
+    res = auth_client.post(
+        "/api/v1/agency/email-reply/",
+        {"inbound": ana["id"], "instructions": "seja breve"},
+        format="json",
+    )
+    assert res.status_code == 201, res.data
+    draft = res.data
+    assert draft["status"] == "draft" and draft["written_by_ai"] is True
+    assert draft["to"] == ["ana@acoforte.com"] and draft["subject"] == "Re: Cotacao vergalhao"
+    assert draft["in_reply_to"] == ana["id"] and draft["requested_by"] == "AI Comprador"
+    user_msg = prompts[0][1]["content"]
+    assert (
+        "<email>" in user_msg
+        and "R$ 42,00" in user_msg
+        and "seja breve" in prompts[0][0]["content"]
+    )
+
+    # Só a pessoa envia; vai na mesma conversa (In-Reply-To)
+    res = auth_client.post(f"{API}/outbound-emails/{draft['id']}/send/", {}, format="json")
+    assert res.data["status"] == "sent", res.data
+    assert smtp.sent[-1]["In-Reply-To"] == "<m101@acoforte.com>"
+    replies = auth_client.get(f"{API}/inbound-emails/{ana['id']}/").data["replies"]
+    assert replies[0]["written_by_ai"] and replies[0]["status"] == "sent"
+
+
+@pytest.mark.django_db
+def test_resposta_ia_sem_agente_ou_de_outro_tenant(auth_client, tenant_id, compras, caixa_compras):
+    auth_client.post(f"{API}/email-accounts/{caixa_compras['id']}/fetch/", {}, format="json")
+    inbound = auth_client.get(f"{API}/inbound-emails/").data["results"][0]
+    res = auth_client.post("/api/v1/agency/email-reply/", {"inbound": inbound["id"]}, format="json")
+    assert res.status_code == 400 and "agente" in res.data["detail"]
+
+    from integrations.models import InboundEmail
+
+    InboundEmail.objects.filter(pk=inbound["id"]).update(tenant_id=uuid.uuid4())
+    res = auth_client.post("/api/v1/agency/email-reply/", {"inbound": inbound["id"]}, format="json")
+    assert res.status_code == 400 and "não encontrado" in res.data["detail"]
+    assert auth_client.get(f"{API}/inbound-emails/{inbound['id']}/").status_code == 404
