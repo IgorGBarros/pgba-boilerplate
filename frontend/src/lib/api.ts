@@ -22,7 +22,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.detail ?? `Erro ${res.status}`);
+    throw new ApiError(res.status, body.detail ?? firstFieldError(body) ?? `Erro ${res.status}`, body);
   }
   if (res.status === 204 || res.headers.get("content-length") === "0") {
     return undefined as T;
@@ -48,10 +48,21 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Corpo do erro do DRF — erros por campo ficam em `body.<campo>`. */
+    public body: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/** "campo: mensagem" do primeiro erro de validação do DRF (400 sem `detail`). */
+function firstFieldError(body: Record<string, unknown>): string | undefined {
+  for (const [field, value] of Object.entries(body ?? {})) {
+    const msg = Array.isArray(value) ? value[0] : value;
+    if (typeof msg === "string") return field === "non_field_errors" ? msg : `${field}: ${msg}`;
+  }
+  return undefined;
 }
 
 // --- Auth -------------------------------------------------------------
@@ -956,6 +967,9 @@ export interface CRMDeal {
   moeda: string;
   data_fechamento_previsto: string | null;
   observacoes: string;
+  /** Vai virar contrato de serviço no ERP (passa pro projeto criado a partir do negócio). */
+  sera_contrato: boolean;
+  contrato_com_material: boolean;
   outcome: DealOutcome;
   lead: number | null;
   lead_nome: string | null;
@@ -987,6 +1001,11 @@ export interface CRMProject {
   data_fim_realizado: string | null;
   observacoes: string;
   outcome: ProjectOutcome;
+  /** Será faturado como contrato de serviço no ERP (aparece em ERP → Contratos). */
+  sera_contrato: boolean;
+  contrato_com_material: boolean;
+  /** Contrato do ERP já criado a partir deste projeto. */
+  contrato: { id: number; numero: string; status: ContratoStatus } | null;
   deal: number | null;
   deal_titulo: string | null;
   lead: number | null;
@@ -1531,16 +1550,36 @@ export async function createAtividadeCRM(data: Partial<AtividadeCRM>): Promise<A
 
 // ─── ERP ──────────────────────────────────────────────────────────────────────
 
-export interface Fornecedor {
+/** Parceiro de negócio (SAP B1): cliente, fornecedor ou lead num cadastro só. */
+export interface ParceiroNegocio {
   id: number;
+  tipo: "cliente" | "fornecedor" | "lead";
+  tipo_display: string;
+  codigo: string;
   nome: string;
-  cnpj: string;
+  nome_fantasia: string;
+  /** CPF sai mascarado (LGPD); CNPJ sai inteiro. */
+  cpf_cnpj: string;
+  pessoa_fisica: boolean;
+  inscricao_estadual: string;
+  inscricao_municipal: string;
   email: string;
   telefone: string;
   categoria: string;
+  cep: string;
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  municipio: string;
+  uf: string;
+  codigo_municipio_ibge: string;
   observacoes: string;
   created_at: string;
 }
+
+/** Nome antigo: fornecedor é um parceiro com `tipo="fornecedor"`. */
+export type Fornecedor = ParceiroNegocio;
 
 export interface OrdemCompra {
   id: number;
@@ -1569,6 +1608,12 @@ export interface ItemEstoque {
   localizacao: string;
   data_ultima_compra: string | null;
   custo_medio: string;
+  /** Material controla estoque; serviço não (código LC 116 pra NFS-e). */
+  tipo_item: "material" | "servico";
+  tipo_item_display: string;
+  preco_venda: string;
+  ncm: string;
+  codigo_servico: string;
   valor_total: number;
   abaixo_minimo: boolean;
   created_at: string;
@@ -1585,6 +1630,19 @@ export interface LancamentoFinanceiro {
   cliente: string;
   fornecedor_nome: string;
   numero_documento: string;
+  data_pagamento: string | null;
+  parceiro: number | null;
+  parceiro_nome: string;
+  contrato: number | null;
+  contrato_numero: string;
+  projeto: number | null;
+  projeto_titulo: string;
+  centro_custo: number | null;
+  centro_custo_nome: string;
+  setor: number | null;
+  setor_nome: string;
+  origem: "manual" | "contrato" | "compra";
+  referencia_origem: string;
   created_at: string;
 }
 
@@ -1598,7 +1656,12 @@ export interface Funcionario {
   data_demissao: string | null;
   status: "ativo" | "ferias" | "afastado" | "desligado";
   email: string;
+  /** Sai mascarado (LGPD). */
   cpf: string;
+  setor: number | null;
+  setor_nome: string;
+  centro_custo: number | null;
+  centro_custo_nome: string;
   created_at: string;
 }
 
@@ -1984,11 +2047,24 @@ export async function updateAlertaConformidade(id: number, data: Partial<AlertaC
 
 export interface NotaFiscal {
   id: number;
+  tipo: "nfse" | "nfe";
+  tipo_display: string;
   numero: string;
+  serie: string;
   cliente: string;
+  parceiro: number | null;
+  contrato: number | null;
+  contrato_numero: string;
+  lancamento: number | null;
   valor: string;
   cfop: string;
-  status: "autorizada" | "pendente" | "cancelada" | "denegada";
+  codigo_servico: string;
+  discriminacao: string;
+  aliquota_iss: string;
+  valor_iss: string;
+  chave_acesso: string;
+  /** `rascunho` = montada no ERP, não transmitida (ver docs/NOTA_FISCAL.md). */
+  status: "rascunho" | "autorizada" | "pendente" | "cancelada" | "denegada";
   emissao: string;
   created_at: string;
 }
@@ -2384,4 +2460,182 @@ export async function recomendarFornecedor(dealId: number): Promise<Recomendacao
 
 export async function getCentralSuprimentos(): Promise<CentralSuprimentosData> {
   return request<CentralSuprimentosData>("/api/v1/compras/central-suprimentos/");
+}
+
+
+// ─── ERP (SAP B1): CRUD genérico, contratos de serviço, dados fiscais ─────────
+//
+// Todo cadastro do ERP segue o mesmo contrato REST (ModelViewSet com exclusão
+// lógica), então a tela usa estas 4 funções pra qualquer um deles em vez de
+// uma função por recurso. `page_size` até 500 (erp.views.ErpPagination).
+
+export type ErpResource =
+  | "parceiros"
+  | "estoque"
+  | "financeiro"
+  | "funcionarios"
+  | "notas-fiscais"
+  | "obrigacoes-fiscais"
+  | "linhas-dre"
+  | "balancete"
+  | "contratos"
+  | "contratos-itens";
+
+export interface ErpPage<T> {
+  results: T[];
+  count: number;
+}
+
+export async function erpList<T>(resource: ErpResource, params: Record<string, string> = {}): Promise<ErpPage<T>> {
+  const qs = new URLSearchParams({ page_size: "500", ...params }).toString();
+  const data = await request<T[] | { results: T[]; count: number }>(`/api/v1/erp/${resource}/?${qs}`);
+  if (Array.isArray(data)) return { results: data, count: data.length };
+  return { results: data.results ?? [], count: data.count ?? 0 };
+}
+export async function erpCreate<T>(resource: ErpResource, data: Record<string, unknown>): Promise<T> {
+  return request<T>(`/api/v1/erp/${resource}/`, { method: "POST", body: JSON.stringify(data) });
+}
+export async function erpUpdate<T>(resource: ErpResource, id: number, data: Record<string, unknown>): Promise<T> {
+  return request<T>(`/api/v1/erp/${resource}/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+/** Exclusão lógica no backend (`is_active=False`) — o histórico continua. */
+export async function erpDelete(resource: ErpResource, id: number): Promise<void> {
+  await request<void>(`/api/v1/erp/${resource}/${id}/`, { method: "DELETE" });
+}
+
+export type ContratoStatus = "rascunho" | "ativo" | "suspenso" | "encerrado" | "cancelado";
+
+export interface ItemContrato {
+  id: number;
+  contrato: number;
+  item: number | null;
+  item_codigo: string;
+  tipo: "servico" | "material";
+  descricao: string;
+  quantidade: string;
+  valor_unitario: string;
+  valor_total: string;
+  quantidade_baixada: string;
+}
+
+export interface ContratoServico {
+  id: number;
+  numero: string;
+  nome_projeto: string;
+  descricao: string;
+  parceiro: number;
+  parceiro_nome: string;
+  projeto: number | null;
+  projeto_titulo: string;
+  com_material: boolean;
+  data_inicio: string;
+  data_fim: string;
+  valor_total: string;
+  periodicidade: "unica" | "mensal" | "trimestral" | "anual";
+  dia_vencimento: number;
+  status: ContratoStatus;
+  status_display: string;
+  centro_custo: number | null;
+  centro_custo_nome: string;
+  setor: number | null;
+  setor_nome: string;
+  responsavel: string;
+  observacoes: string;
+  itens: ItemContrato[];
+  faturado: number;
+  recebido: number;
+  notas_fiscais: { id: number; numero: string; status: NotaFiscal["status"]; valor: number }[];
+  created_at: string;
+}
+
+export interface ParcelaPrevista {
+  parcela: number;
+  total_parcelas: number;
+  vencimento: string;
+  valor: string;
+}
+
+export interface ProjetoAguardandoContrato {
+  id: number;
+  titulo: string;
+  empresa: string;
+  responsavel: string;
+  data_inicio: string | null;
+  data_fim_previsto: string | null;
+  valor: number | null;
+  contrato_com_material: boolean;
+  observacoes: string;
+}
+
+export type ContratoAcao = "ativar" | "suspender" | "encerrar" | "cancelar";
+
+export async function contratoAcao(id: number, acao: ContratoAcao): Promise<ContratoServico> {
+  return request<ContratoServico>(`/api/v1/erp/contratos/${id}/${acao}/`, { method: "POST" });
+}
+export async function getContrato(id: number): Promise<ContratoServico> {
+  return request<ContratoServico>(`/api/v1/erp/contratos/${id}/`);
+}
+export async function contratoParcelas(id: number): Promise<ParcelaPrevista[]> {
+  return request<ParcelaPrevista[]>(`/api/v1/erp/contratos/${id}/parcelas/`);
+}
+export async function contratoGerarFaturas(
+  id: number,
+): Promise<{ criadas: LancamentoFinanceiro[]; contrato: ContratoServico }> {
+  return request(`/api/v1/erp/contratos/${id}/gerar-faturas/`, { method: "POST" });
+}
+export async function contratoBaixarMaterial(
+  id: number,
+): Promise<{ movimentacoes: MovimentacaoEstoque[]; contrato: ContratoServico }> {
+  return request(`/api/v1/erp/contratos/${id}/baixar-material/`, { method: "POST" });
+}
+export async function contratoGerarNotaFiscal(id: number, lancamento?: number): Promise<NotaFiscal> {
+  return request<NotaFiscal>(`/api/v1/erp/contratos/${id}/gerar-nota-fiscal/`, {
+    method: "POST",
+    body: JSON.stringify(lancamento ? { lancamento } : {}),
+  });
+}
+export async function listProjetosAguardandoContrato(): Promise<ProjetoAguardandoContrato[]> {
+  return request<ProjetoAguardandoContrato[]>("/api/v1/erp/contratos/projetos-pendentes/");
+}
+export async function contratoDeProjeto(projeto: number): Promise<ContratoServico> {
+  return request<ContratoServico>("/api/v1/erp/contratos/de-projeto/", {
+    method: "POST",
+    body: JSON.stringify({ projeto }),
+  });
+}
+
+export interface DadosEmpresa {
+  razao_social: string;
+  nome_fantasia: string;
+  cnpj: string;
+  inscricao_municipal: string;
+  inscricao_estadual: string;
+  regime_tributario: "" | "mei" | "simples" | "presumido" | "real";
+  cep: string;
+  logradouro: string;
+  numero: string;
+  bairro: string;
+  municipio: string;
+  uf: string;
+  codigo_municipio_ibge: string;
+  codigo_servico_padrao: string;
+  aliquota_iss_padrao: string;
+  serie_nfse: string;
+  email_fiscal: string;
+}
+
+export async function getDadosEmpresa(): Promise<DadosEmpresa> {
+  return request<DadosEmpresa>("/api/v1/erp/empresa/");
+}
+export async function saveDadosEmpresa(data: Partial<DadosEmpresa>): Promise<DadosEmpresa> {
+  return request<DadosEmpresa>("/api/v1/erp/empresa/", { method: "PUT", body: JSON.stringify(data) });
+}
+
+export interface ProntidaoNotaFiscal {
+  pronto: boolean;
+  itens: { id: string; label: string; ok: boolean; detalhe: string }[];
+}
+
+export async function getProntidaoNotaFiscal(): Promise<ProntidaoNotaFiscal> {
+  return request<ProntidaoNotaFiscal>("/api/v1/erp/fiscal/prontidao/");
 }

@@ -128,6 +128,7 @@ class DealSerializer(serializers.ModelSerializer):
         fields = [
             "id", "titulo", "empresa", "responsavel",
             "valor", "moeda", "data_fechamento_previsto", "observacoes", "outcome",
+            "sera_contrato", "contrato_com_material",
             "lead", "lead_nome", "lead_empresa",
             "pipeline", "stage", "position",
             "stage_name", "stage_main", "stage_color", "stage_is_won", "stage_is_lost",
@@ -155,6 +156,17 @@ class ProjectSerializer(serializers.ModelSerializer):
     deal_titulo = serializers.CharField(source="deal.titulo", read_only=True)
     lead_nome = serializers.CharField(source="lead.nome", read_only=True)
     custom_fields = serializers.SerializerMethodField()
+    contrato = serializers.SerializerMethodField()
+
+    def get_contrato(self, obj):
+        """Contrato de serviço do ERP criado a partir deste projeto (ou None)."""
+        c = (
+            obj.contratos_erp.filter(is_active=True)
+            .exclude(status="cancelado")
+            .values("id", "numero", "status")
+            .first()
+        )
+        return c
 
     def get_custom_fields(self, obj):
         values = CustomFieldValue.objects.filter(
@@ -167,14 +179,14 @@ class ProjectSerializer(serializers.ModelSerializer):
         fields = [
             "id", "titulo", "empresa", "responsavel",
             "data_inicio", "data_fim_previsto", "data_fim_realizado",
-            "observacoes", "outcome",
+            "observacoes", "outcome", "sera_contrato", "contrato_com_material", "contrato",
             "deal", "deal_titulo", "lead", "lead_nome",
             "pipeline", "stage", "position",
             "stage_name", "stage_main", "stage_color", "stage_is_won", "stage_is_lost",
             "custom_fields", "created_at",
         ]
         read_only_fields = [
-            "id", "deal_titulo", "lead_nome",
+            "id", "deal_titulo", "lead_nome", "contrato",
             "stage_name", "stage_main", "stage_color", "stage_is_won", "stage_is_lost",
             "custom_fields", "created_at",
         ]

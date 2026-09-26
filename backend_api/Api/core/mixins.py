@@ -90,3 +90,23 @@ class SoftDeleteMixin(models.Model):
     @classmethod
     def active_objects(cls):
         return cls.objects.filter(is_active=True)
+
+class SoftDeleteViewMixin:
+    """
+    Mixin de DRF para models com `SoftDeleteMixin`: a listagem esconde o que
+    foi excluído e `DELETE` só marca `is_active=False` + `deleted_at` —
+    princípio 5 do CLAUDE.md (nunca DELETE físico de dado de tenant; o
+    histórico do django-simple-history continua íntegro). Vai ANTES do
+    mixin que filtra por tenant no MRO: `get_queryset()` encadeia via super().
+    """
+
+    def get_queryset(self):
+        return super().get_queryset().filter(is_active=True)
+
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.deleted_at = timezone.now()
+        fields = ["is_active", "deleted_at"]
+        if hasattr(instance, "updated_at"):
+            fields.append("updated_at")
+        instance.save(update_fields=fields)

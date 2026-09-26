@@ -16,25 +16,23 @@ import {
   DollarSign,
   Download,
   Edit2,
-  Eye,
+  FileSignature,
   FileText,
+  Handshake,
   Layers,
   Loader2,
   Package,
   Plus,
   Receipt,
-  RefreshCw,
   Scale,
   Search,
   ShoppingCart,
   Truck,
   TrendingDown,
   TrendingUp,
-  Upload,
   Users,
   Wallet,
   X,
-  XCircle,
   CheckCircle2,
   Pencil,
   Trash2,
@@ -52,6 +50,18 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Metric, SectionHeader } from "@/components/empresa/shared";
 import {
+  BalanceteCrud,
+  DreCrud,
+  FuncionariosCrud,
+  ItensCrud,
+  LancamentosCrud,
+  NotasFiscaisCrud,
+  ObrigacoesCrud,
+  PainelNotaFiscal,
+  TabContratos,
+  TabParceiros,
+} from "@/components/empresa/erp-modulos";
+import {
   type ItemEstoque,
   type MovimentacaoEstoque,
   type LancamentoFinanceiro,
@@ -64,7 +74,6 @@ import {
   type Orcamento,
   type FornecedorCompras,
   listEstoque,
-  createItemEstoque,
   listMovimentacoesEstoque,
   registrarMovimentacao,
   listLancamentosFinanceiros,
@@ -99,55 +108,6 @@ function variacao(atual: number, anterior: number) {
 }
 
 // ─── Status badges ────────────────────────────────────────────────────────────
-
-function StatusBadgeFinanceiro({ status }: { status: LancamentoFinanceiro["status"] }) {
-  const label: Record<LancamentoFinanceiro["status"], string> = {
-    pendente:  "Pendente",
-    pago:      "Pago",
-    vencido:   "Vencido",
-    cancelado: "Cancelado",
-  };
-  const map: Record<LancamentoFinanceiro["status"], string> = {
-    pendente:  "bg-secondary text-muted-foreground border border-border",
-    pago:      "bg-success text-foreground",
-    vencido:   "bg-warning text-foreground",
-    cancelado: "bg-destructive/20 text-destructive",
-  };
-  return <Badge className={map[status]}>{label[status]}</Badge>;
-}
-
-function StatusBadgeRH({ status }: { status: Funcionario["status"] }) {
-  const label: Record<Funcionario["status"], string> = {
-    ativo:      "Ativo",
-    ferias:     "Férias",
-    afastado:   "Afastado",
-    desligado:  "Desligado",
-  };
-  const map: Record<Funcionario["status"], string> = {
-    ativo:     "bg-success text-foreground",
-    ferias:    "bg-primary text-primary-foreground",
-    afastado:  "bg-warning text-foreground",
-    desligado: "bg-secondary text-muted-foreground border border-border",
-  };
-  return <Badge className={map[status]}>{label[status]}</Badge>;
-}
-
-function StatusBadgeFiscal({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    autorizada: "bg-success text-foreground",
-    cancelada:  "bg-warning text-foreground",
-    denegada:   "bg-destructive/20 text-destructive",
-    pendente:   "bg-secondary text-muted-foreground border border-border",
-    agendada:   "bg-primary text-primary-foreground",
-    entregue:   "bg-success text-foreground",
-    vencida:    "bg-destructive/20 text-destructive",
-  };
-  const label: Record<string, string> = {
-    autorizada: "Autorizada", cancelada: "Cancelada", denegada: "Denegada",
-    pendente: "Pendente", agendada: "Agendada", entregue: "Entregue", vencida: "Vencida",
-  };
-  return <Badge className={map[status] ?? "bg-secondary text-muted-foreground"}>{label[status] ?? status}</Badge>;
-}
 
 // ─── Status badge PedidoCompra ────────────────────────────────────────────────
 
@@ -1040,97 +1000,6 @@ function TabCotacao() {
 
 // ─── Tab: Estoque ─────────────────────────────────────────────────────────────
 
-function ModalNovoProduto({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-  const [form, setForm] = useState({
-    codigo: "", nome: "", categoria: "", unidade: "un",
-    quantidade: "0", quantidade_minima: "0", custo_unitario: "0", localizacao: "",
-  });
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setForm((p) => ({ ...p, [k]: e.target.value }));
-
-  const save = async () => {
-    if (!form.codigo.trim() || !form.nome.trim()) { setErr("Código e nome são obrigatórios."); return; }
-    setSaving(true); setErr("");
-    try {
-      await createItemEstoque({
-        codigo: form.codigo.trim(),
-        nome: form.nome.trim(),
-        categoria: form.categoria.trim(),
-        unidade: form.unidade,
-        quantidade: parseInt(form.quantidade) || 0,
-        quantidade_minima: parseInt(form.quantidade_minima) || 0,
-        custo_unitario: form.custo_unitario,
-        localizacao: form.localizacao.trim(),
-      });
-      onSaved(); onClose();
-    } catch { setErr("Erro ao salvar produto."); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-xl bg-background shadow-2xl border border-border">
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h3 className="font-semibold text-sm">Novo Produto</h3>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}><X size={14} /></Button>
-        </div>
-        <div className="p-5 space-y-3">
-          {err && <p className="text-xs text-destructive">{err}</p>}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Código *</label>
-              <Input className="h-8 text-sm" value={form.codigo} onChange={set("codigo")} placeholder="SKU-001" />
-            </div>
-            <div className="space-y-1 col-span-1">
-              <label className="text-xs text-muted-foreground">Nome *</label>
-              <Input className="h-8 text-sm" value={form.nome} onChange={set("nome")} placeholder="Nome do produto" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Categoria</label>
-              <Input className="h-8 text-sm" value={form.categoria} onChange={set("categoria")} placeholder="Ex: Eletrônicos" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Unidade</label>
-              <select className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm" value={form.unidade} onChange={set("unidade")}>
-                {[["un","Unidade"],["kg","Kg"],["m","Metro"],["l","Litro"],["cx","Caixa"],["pc","Peça"]].map(([v,l]) =>
-                  <option key={v} value={v}>{l}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Qtd Inicial</label>
-              <Input type="number" className="h-8 text-sm" value={form.quantidade} onChange={set("quantidade")} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Qtd Mínima</label>
-              <Input type="number" className="h-8 text-sm" value={form.quantidade_minima} onChange={set("quantidade_minima")} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Custo Unit. (R$)</label>
-              <Input type="number" step="0.01" className="h-8 text-sm" value={form.custo_unitario} onChange={set("custo_unitario")} />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Localização</label>
-            <Input className="h-8 text-sm" value={form.localizacao} onChange={set("localizacao")} placeholder="Ex: Prateleira A3" />
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
-          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onClose}>Cancelar</Button>
-          <Button size="sm" className="h-8 text-xs" onClick={save} disabled={saving}>
-            {saving ? <Loader2 size={13} className="animate-spin" /> : "Salvar"}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ModalMovimentacao({
   item, onClose, onSaved,
 }: { item: ItemEstoque; onClose: () => void; onSaved: () => void }) {
@@ -1233,26 +1102,18 @@ function ModalMovimentacao({
 function TabEstoque() {
   const [itens, setItens] = useState<ItemEstoque[]>([]);
   const [movs, setMovs] = useState<MovimentacaoEstoque[]>([]);
-  const [search, setSearch] = useState("");
-  const [categoria, setCategoria] = useState("Todas");
-  const [modalNovo, setModalNovo] = useState(false);
   const [movItem, setMovItem] = useState<ItemEstoque | null>(null);
 
   const load = useCallback(() => {
-    listEstoque().then(setItens).catch(() => {});
+    listEstoque({ page_size: "500" }).then(setItens).catch(() => {});
     listMovimentacoesEstoque().then((m) => setMovs(m.slice(0, 20))).catch(() => {});
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  const abaixoMin = itens.filter((e) => e.abaixo_minimo).length;
-  const valorTotal = itens.reduce((acc, e) => acc + e.valor_total, 0);
-  const categorias = ["Todas", ...new Set(itens.map((e) => e.categoria).filter(Boolean))];
-  const filtered = itens.filter(
-    (e) =>
-      (categoria === "Todas" || e.categoria === categoria) &&
-      (e.nome.toLowerCase().includes(search.toLowerCase()) || e.codigo.toLowerCase().includes(search.toLowerCase()))
-  );
+  const materiais = itens.filter((e) => e.tipo_item !== "servico");
+  const abaixoMin = materiais.filter((e) => e.abaixo_minimo).length;
+  const valorTotal = materiais.reduce((acc, e) => acc + e.valor_total, 0);
 
   const tipoMovIcon = {
     entrada: <ArrowUpCircle size={13} className="text-success shrink-0" />,
@@ -1263,90 +1124,17 @@ function TabEstoque() {
 
   return (
     <div className="space-y-6">
-      {modalNovo && <ModalNovoProduto onClose={() => setModalNovo(false)} onSaved={load} />}
       {movItem && <ModalMovimentacao item={movItem} onClose={() => setMovItem(null)} onSaved={load} />}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Itens em Estoque" value={String(itens.length)} icon={<Package size={16} />} />
-        <Metric label="Valor Total" value={fmtBRL(valorTotal)} icon={<DollarSign size={16} />} />
-        <Metric label="Abaixo do Mínimo" value={String(abaixoMin)} icon={<AlertTriangle size={16} />} tone="warning" />
-        <Metric label="Categorias" value={String(new Set(itens.map((e) => e.categoria)).size)} icon={<RefreshCw size={16} />} tone="success" />
+        <Metric label="Materiais" value={String(materiais.length)} icon={<Package size={16} />} />
+        <Metric label="Serviços" value={String(itens.length - materiais.length)} icon={<Briefcase size={16} />} />
+        <Metric label="Valor em estoque" value={fmtBRL(valorTotal)} icon={<DollarSign size={16} />} tone="success" />
+        <Metric label="Abaixo do mínimo" value={String(abaixoMin)} icon={<AlertTriangle size={16} />} tone={abaixoMin ? "warning" : "default"} />
       </div>
 
-      <div className="panel-elevated rounded-card overflow-hidden">
-        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-border">
-          <SectionHeader title="Produtos em Estoque" description="Posição atual, limites e localização" />
-          <div className="flex flex-wrap gap-2">
-            <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input className="pl-8 h-8 w-44 text-sm" placeholder="Produto / Código…" value={search} onChange={(e) => setSearch(e.target.value)} />
-            </div>
-            <Select value={categoria} onValueChange={setCategoria}>
-              <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Categoria" /></SelectTrigger>
-              <SelectContent>
-                {categorias.map((c) => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Button size="sm" className="h-8 gap-1.5 text-xs" variant="outline" onClick={() => setModalNovo(true)}>
-              <Plus size={13} /> Novo Produto
-            </Button>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-secondary">
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Produto</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Código</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Categoria</th>
-                <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Qtd</th>
-                <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Mín</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Custo Médio</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor Unit.</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Total</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Últ. Compra</th>
-                <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map((row) => (
-                <tr key={row.id} className={`transition-colors ${row.abaixo_minimo ? "bg-warning/10 hover:bg-warning/15" : "hover:bg-secondary/50"}`}>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      {row.abaixo_minimo && <AlertTriangle size={13} className="text-warning shrink-0" />}
-                      <span className={row.abaixo_minimo ? "font-medium text-warning" : ""}>{row.nome}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{row.codigo}</td>
-                  <td className="px-4 py-3">
-                    <Badge className="bg-secondary text-muted-foreground border border-border text-xs">{row.categoria || "—"}</Badge>
-                  </td>
-                  <td className={`px-4 py-3 text-center tabular-nums font-bold ${row.abaixo_minimo ? "text-warning" : ""}`}>{row.quantidade} <span className="text-xs font-normal text-muted-foreground">{row.unidade}</span></td>
-                  <td className="px-4 py-3 text-center tabular-nums text-muted-foreground">{row.quantidade_minima}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-primary font-medium">{fmtBRL(parseFloat(row.custo_medio))}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{fmtBRL(parseFloat(row.custo_unitario))}</td>
-                  <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(row.valor_total)}</td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">
-                    {row.data_ultima_compra ? new Date(row.data_ultima_compra + "T00:00:00").toLocaleDateString("pt-BR") : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-1">
-                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 text-success hover:text-success hover:bg-success/10" onClick={() => setMovItem(row)}>
-                        <Upload size={12} /> Mov.
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan={11} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum item encontrado</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <ItensCrud onMovimentar={setMovItem} onChanged={load} />
 
-      {/* Histórico de movimentações */}
       <div className="panel-elevated rounded-card overflow-hidden">
         <div className="p-4 border-b border-border">
           <SectionHeader title="Últimas Movimentações" description="Entradas, saídas e ajustes recentes" />
@@ -1382,90 +1170,33 @@ function TabEstoque() {
 
 // ─── Tab: Financeiro ──────────────────────────────────────────────────────────
 
-function TabelaFinanceiro({ rows, tipo }: { rows: LancamentoFinanceiro[]; tipo: "receber" | "pagar" }) {
-  return (
-    <div className="panel-elevated rounded-card overflow-hidden">
-      <div className="flex items-center justify-between p-4 border-b border-border">
-        <div>
-          <h3 className="text-sm font-semibold">
-            {tipo === "receber" ? "Contas a Receber" : "Contas a Pagar"}
-          </h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {tipo === "receber" ? "Clientes com valores a receber" : "Fornecedores com valores a pagar"}
-          </p>
-        </div>
-        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs">
-          <Plus size={12} /> Novo
-        </Button>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-secondary">
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Descrição</th>
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
-                {tipo === "receber" ? "Cliente" : "Fornecedor"}
-              </th>
-              <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Vencimento</th>
-              <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor</th>
-              <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {rows.map((row) => (
-              <tr key={row.id} className="hover:bg-secondary/50 transition-colors">
-                <td className="px-4 py-3 text-xs">{row.descricao}</td>
-                <td className="px-4 py-3 text-xs text-muted-foreground">
-                  {tipo === "receber" ? row.cliente : row.fornecedor_nome}
-                </td>
-                <td className="px-4 py-3 text-xs">{row.vencimento}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-sm font-medium">{fmtBRL(parseFloat(row.valor))}</td>
-                <td className="px-4 py-3 text-center">
-                  <StatusBadgeFinanceiro status={row.status} />
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum lançamento</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 function TabFinanceiro() {
   const [lancamentos, setLancamentos] = useState<LancamentoFinanceiro[]>([]);
 
-  useEffect(() => {
-    listLancamentosFinanceiros().then(setLancamentos).catch(() => {});
+  const load = useCallback(() => {
+    listLancamentosFinanceiros({ page_size: "500" }).then(setLancamentos).catch(() => {});
   }, []);
+  useEffect(load, [load]);
 
-  const contasReceber = lancamentos.filter((l) => l.tipo === "receita");
-  const contasPagar   = lancamentos.filter((l) => l.tipo === "despesa");
-
-  const totalReceber = contasReceber.filter((c) => c.status !== "pago").reduce((a, c) => a + parseFloat(c.valor), 0);
-  const totalPagar   = contasPagar.filter((c) => c.status !== "pago").reduce((a, c) => a + parseFloat(c.valor), 0);
-  const saldo = contasReceber.filter((c) => c.status === "pago").reduce((a, c) => a + parseFloat(c.valor), 0)
-              - contasPagar.filter((c) => c.status === "pago").reduce((a, c) => a + parseFloat(c.valor), 0);
-  const resultado = contasReceber.reduce((a, c) => a + parseFloat(c.valor), 0)
-                  - contasPagar.reduce((a, c) => a + parseFloat(c.valor), 0);
+  const hoje = new Date().toISOString().slice(0, 10);
+  const soma = (rows: LancamentoFinanceiro[]) => rows.reduce((a, c) => a + parseFloat(c.valor), 0);
+  const abertos = lancamentos.filter((l) => l.status === "pendente" || l.status === "vencido");
+  const totalReceber = soma(abertos.filter((l) => l.tipo === "receita"));
+  const totalPagar = soma(abertos.filter((l) => l.tipo === "despesa"));
+  const vencido = soma(abertos.filter((l) => l.status === "vencido" || l.vencimento < hoje));
+  const saldo =
+    soma(lancamentos.filter((l) => l.tipo === "receita" && l.status === "pago")) -
+    soma(lancamentos.filter((l) => l.tipo === "despesa" && l.status === "pago"));
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Saldo Atual" value={fmtBRL(saldo)} icon={<Wallet size={16} />} tone="success" />
-        <Metric label="Contas a Receber" value={fmtBRL(totalReceber)} icon={<ArrowDownCircle size={16} />} />
-        <Metric label="Contas a Pagar" value={fmtBRL(totalPagar)} icon={<ArrowUpCircle size={16} />} tone="warning" />
-        <Metric label="Resultado do Mês" value={fmtBRL(resultado)} icon={<TrendingUp size={16} />} tone="success" />
+        <Metric label="Saldo realizado" value={fmtBRL(saldo)} icon={<Wallet size={16} />} tone={saldo >= 0 ? "success" : "warning"} />
+        <Metric label="A receber" value={fmtBRL(totalReceber)} icon={<ArrowDownCircle size={16} />} />
+        <Metric label="A pagar" value={fmtBRL(totalPagar)} icon={<ArrowUpCircle size={16} />} />
+        <Metric label="Em atraso" value={fmtBRL(vencido)} icon={<AlertTriangle size={16} />} tone={vencido ? "warning" : "default"} />
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <TabelaFinanceiro rows={contasReceber} tipo="receber" />
-        <TabelaFinanceiro rows={contasPagar}   tipo="pagar" />
-      </div>
+      <LancamentosCrud onChanged={load} />
     </div>
   );
 }
@@ -1640,112 +1371,27 @@ function TabContabilidade() {
 
 function TabRH() {
   const [colaboradores, setColaboradores] = useState<Funcionario[]>([]);
-  const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    listFuncionarios().then(setColaboradores).catch(() => {});
+  const load = useCallback(() => {
+    listFuncionarios({ page_size: "500" }).then(setColaboradores).catch(() => {});
   }, []);
+  useEffect(load, [load]);
 
-  const filtered = colaboradores.filter(
-    (c) =>
-      c.nome.toLowerCase().includes(search.toLowerCase()) ||
-      c.cargo.toLowerCase().includes(search.toLowerCase()) ||
-      c.departamento.toLowerCase().includes(search.toLowerCase())
-  );
-  const totalFolha = colaboradores.reduce((a, c) => a + parseFloat(c.salario), 0);
-  const deptos = [...new Set(colaboradores.map((c) => c.departamento))];
-
-  const mesAtual = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+  const ativos = colaboradores.filter((c) => c.status !== "desligado");
+  const totalFolha = ativos.reduce((a, c) => a + parseFloat(c.salario || "0"), 0);
+  const mesAtual = new Date().toISOString().slice(0, 7);
   const admissoesMes = colaboradores.filter((c) => c.data_admissao?.startsWith(mesAtual)).length;
-  const desligamentos = colaboradores.filter((c) => c.status === "desligado").length;
+  const setores = new Set(ativos.map((c) => c.setor_nome || c.departamento).filter(Boolean)).size;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Total Colaboradores" value={String(colaboradores.length)} icon={<Users size={16} />} />
-        <Metric label="Admissões no Mês"    value={String(admissoesMes)} icon={<Plus size={16} />} tone="success" />
-        <Metric label="Desligados"           value={String(desligamentos)} icon={<XCircle size={16} />} />
-        <Metric label="Custo Total Folha"    value={fmtBRL(totalFolha)} icon={<Briefcase size={16} />} tone="warning" />
+        <Metric label="Colaboradores ativos" value={String(ativos.length)} icon={<Users size={16} />} />
+        <Metric label="Admissões no mês" value={String(admissoesMes)} icon={<Plus size={16} />} tone="success" />
+        <Metric label="Setores com equipe" value={String(setores)} icon={<Building2 size={16} />} />
+        <Metric label="Folha mensal" value={fmtBRL(totalFolha)} icon={<Briefcase size={16} />} />
       </div>
-
-      <div className="panel-elevated rounded-card overflow-hidden">
-        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-border">
-          <SectionHeader title="Colaboradores" description="Quadro ativo, férias e afastamentos" />
-          <div className="flex gap-2">
-            <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input className="pl-8 h-8 w-44 text-sm" placeholder="Nome / Cargo…" value={search} onChange={(e) => setSearch(e.target.value)} />
-            </div>
-            <Button size="sm" className="h-8 gap-1.5 text-xs bg-primary text-primary-foreground">
-              <Plus size={13} /> Colaborador
-            </Button>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-secondary">
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Nome</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Cargo</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Departamento</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Admissão</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Salário</th>
-                <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Status</th>
-                <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map((row) => (
-                <tr key={row.id} className="hover:bg-secondary/50 transition-colors">
-                  <td className="px-4 py-3 font-medium">{row.nome}</td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs">{row.cargo}</td>
-                  <td className="px-4 py-3">
-                    <Badge className="bg-secondary text-muted-foreground border border-border text-xs">{row.departamento}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{row.data_admissao}</td>
-                  <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(parseFloat(row.salario))}</td>
-                  <td className="px-4 py-3 text-center">
-                    <StatusBadgeRH status={row.status} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                        <Eye size={13} />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                        <Edit2 size={13} />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum colaborador encontrado</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {deptos.map((depto) => {
-          const count = colaboradores.filter((c) => c.departamento === depto).length;
-          return (
-            <div key={depto} className="panel rounded-card flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-3">
-                <div className="rounded-md bg-secondary p-2">
-                  <Building2 size={14} className="text-muted-foreground" />
-                </div>
-                <span className="text-sm font-medium">{depto}</span>
-              </div>
-              <span className="text-lg font-bold">{count}</span>
-            </div>
-          );
-        })}
-      </div>
+      <FuncionariosCrud onChanged={load} />
     </div>
   );
 }
@@ -1755,183 +1401,108 @@ function TabRH() {
 function TabFiscal() {
   const [notas, setNotas] = useState<NotaFiscal[]>([]);
   const [obrigacoes, setObrigacoes] = useState<ObrigacaoFiscal[]>([]);
-  const [search, setSearch] = useState("");
 
   useEffect(() => {
-    listNotasFiscais().then(setNotas).catch(() => {});
-    listObrigacoesFiscais().then(setObrigacoes).catch(() => {});
+    listNotasFiscais({ page_size: "500" }).then(setNotas).catch(() => {});
+    listObrigacoesFiscais({ page_size: "500" }).then(setObrigacoes).catch(() => {});
   }, []);
 
-  const nfeAutorizadas = notas.filter((n) => n.status === "autorizada").length;
-  const nfePendentes   = notas.filter((n) => n.status === "pendente").length;
-  const impostosMes    = notas
-    .filter((n) => n.status === "autorizada")
-    .reduce((acc, n) => acc + parseFloat(n.valor) * 0.15, 0);
-  const proxObrigacao  = obrigacoes
-    .filter((o) => o.status === "pendente")
+  const autorizadas = notas.filter((n) => n.status === "autorizada");
+  const rascunhos = notas.filter((n) => n.status === "rascunho" || n.status === "pendente").length;
+  const issMes = autorizadas
+    .filter((n) => n.emissao.startsWith(new Date().toISOString().slice(0, 7)))
+    .reduce((acc, n) => acc + parseFloat(n.valor_iss || "0"), 0);
+  const proxObrigacao = obrigacoes
+    .filter((o) => o.status === "pendente" || o.status === "agendada")
     .sort((a, b) => a.vencimento.localeCompare(b.vencimento))[0];
-
-  const filtered = notas.filter(
-    (n) =>
-      n.numero.includes(search) ||
-      n.cliente.toLowerCase().includes(search.toLowerCase()) ||
-      n.cfop.includes(search)
-  );
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="NF-e Emitidas"      value={String(nfeAutorizadas)} icon={<FileText size={16} />} tone="success" />
-        <Metric label="NF-e Pendentes"     value={String(nfePendentes)} icon={<Clock size={16} />} tone="warning" />
-        <Metric label="Impostos do Mês"    value={fmtBRL(impostosMes)} icon={<Receipt size={16} />} />
+        <Metric label="Notas autorizadas" value={String(autorizadas.length)} icon={<FileText size={16} />} tone="success" />
+        <Metric label="Rascunhos / pendentes" value={String(rascunhos)} icon={<Clock size={16} />} tone={rascunhos ? "warning" : "default"} />
+        <Metric label="ISS do mês (autorizadas)" value={fmtBRL(issMes)} icon={<Receipt size={16} />} />
         <Metric
-          label="Próxima Obrigação"
-          value={proxObrigacao ? `${proxObrigacao.nome.split(" ")[0]} – ${proxObrigacao.vencimento}` : "—"}
+          label="Próxima obrigação"
+          value={proxObrigacao ? proxObrigacao.nome : "—"}
+          hint={proxObrigacao ? `vence ${proxObrigacao.vencimento.split("-").reverse().join("/")}` : undefined}
           icon={<Calendar size={16} />}
-          tone="warning"
         />
       </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2 panel-elevated rounded-card overflow-hidden">
-          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-b border-border">
-            <SectionHeader title="Notas Fiscais Eletrônicas" description="NF-e emitidas neste período" />
-            <div className="flex gap-2">
-              <div className="relative">
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input className="pl-8 h-8 w-40 text-sm" placeholder="NF-e / Cliente…" value={search} onChange={(e) => setSearch(e.target.value)} />
-              </div>
-              <Button size="sm" className="h-8 gap-1.5 text-xs bg-primary text-primary-foreground">
-                <Plus size={13} /> Emitir NF-e
-              </Button>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-secondary">
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">NF-e</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Cliente</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground">Valor</th>
-                  <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">CFOP</th>
-                  <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Status</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Emissão</th>
-                  <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filtered.map((row) => (
-                  <tr key={row.id} className="hover:bg-secondary/50 transition-colors">
-                    <td className="px-4 py-3 font-mono text-xs">{row.numero}</td>
-                    <td className="px-4 py-3 text-xs">{row.cliente}</td>
-                    <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtBRL(parseFloat(row.valor))}</td>
-                    <td className="px-4 py-3 text-center font-mono text-xs">{row.cfop}</td>
-                    <td className="px-4 py-3 text-center"><StatusBadgeFiscal status={row.status} /></td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{row.emissao}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                          <Eye size={13} />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                          <Download size={13} />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhuma nota fiscal encontrada</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="panel-elevated rounded-card overflow-hidden">
-          <div className="p-4 border-b border-border">
-            <h3 className="text-sm font-semibold">Obrigações Acessórias</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Próximos vencimentos</p>
-          </div>
-          <div className="divide-y divide-border">
-            {obrigacoes.map((ob) => (
-              <div key={ob.id} className="flex items-start justify-between gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{ob.nome}</p>
-                  <p className="text-xs text-muted-foreground">{ob.orgao}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{ob.competencia}</p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <StatusBadgeFiscal status={ob.status} />
-                  <p className="text-xs text-muted-foreground mt-1.5 tabular-nums">{ob.vencimento}</p>
-                </div>
-              </div>
-            ))}
-            {obrigacoes.length === 0 && (
-              <p className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhuma obrigação cadastrada</p>
-            )}
-          </div>
-          <div className="p-4 border-t border-border">
-            <Button variant="outline" size="sm" className="w-full h-8 text-xs gap-1.5">
-              <Calendar size={12} /> Ver Calendário Fiscal
-            </Button>
-          </div>
-        </div>
-      </div>
+      <PainelNotaFiscal />
+      <NotasFiscaisCrud />
+      <ObrigacoesCrud />
     </div>
   );
 }
 
 // ─── Root export ──────────────────────────────────────────────────────────────
 
-export function ERPView({ onBack, defaultTab = "compras" }: { onBack: () => void; defaultTab?: string }) {
+function TabContabilidadeCompleta() {
+  const [versao, setVersao] = useState(0);
+  const bump = () => setVersao((v) => v + 1);
+  return (
+    <div className="space-y-8">
+      <TabContabilidade key={versao} />
+      <DreCrud onChanged={bump} />
+      <BalanceteCrud onChanged={bump} />
+    </div>
+  );
+}
+
+const ERP_TABS: { value: string; label: string; icon: React.ElementType }[] = [
+  { value: "parceiros", label: "Parceiros", icon: Handshake },
+  { value: "contratos", label: "Contratos", icon: FileSignature },
+  { value: "compras", label: "Compras", icon: ShoppingCart },
+  { value: "cotacao", label: "Cotação", icon: Scale },
+  { value: "estoque", label: "Itens & Estoque", icon: Box },
+  { value: "financeiro", label: "Financeiro", icon: Wallet },
+  { value: "contabilidade", label: "Contabilidade", icon: BookOpen },
+  { value: "rh", label: "RH", icon: Users },
+  { value: "fiscal", label: "Fiscal", icon: Receipt },
+];
+
+export function ERPView({ onBack, defaultTab = "contratos" }: { onBack: () => void; defaultTab?: string }) {
   return (
     <div className="space-y-6">
-      <div className="rounded-xl bg-gradient-to-r from-emerald-600/20 via-green-600/10 to-transparent border border-emerald-500/20 px-5 py-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0 text-emerald-700 dark:text-emerald-300 hover:text-emerald-100 hover:bg-emerald-500/20">
-            <ArrowLeft className="size-4" />
-          </Button>
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
-              <Layers className="size-5" />
-            </span>
-            <div>
-              <h2 className="font-semibold text-lg font-display text-foreground">ERP</h2>
-              <p className="text-xs text-muted-foreground">Gestão integrada de compras, estoque, financeiro, contabilidade, RH e fiscal</p>
-            </div>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10">
-              <RefreshCw size={13} /> Sincronizar
-            </Button>
-            <Button size="sm" className="h-8 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white border-0">
-              <Download size={13} /> Exportar
-            </Button>
-          </div>
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0" title="Voltar">
+          <ArrowLeft className="size-4" />
+        </Button>
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-success/10 text-success">
+          <Layers className="size-5" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="font-display text-lg font-semibold">ERP</h2>
+          <p className="text-xs text-muted-foreground">
+            Parceiros, contratos, compras, estoque, financeiro, contabilidade, RH e fiscal — integrados ao CRM, aos
+            setores e aos centros de custo
+          </p>
         </div>
       </div>
 
       <Tabs defaultValue={defaultTab} className="space-y-6">
-        <TabsList className="h-9 gap-1 bg-secondary p-1 rounded-md flex-wrap">
-          <TabsTrigger value="compras"       className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><ShoppingCart size={13} /> Compras</TabsTrigger>
-          <TabsTrigger value="cotacao"       className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><Scale size={13} /> Cotação</TabsTrigger>
-          <TabsTrigger value="estoque"       className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><Box size={13} /> Estoque</TabsTrigger>
-          <TabsTrigger value="financeiro"    className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><Wallet size={13} /> Financeiro</TabsTrigger>
-          <TabsTrigger value="contabilidade" className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><BookOpen size={13} /> Contabilidade</TabsTrigger>
-          <TabsTrigger value="rh"            className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><Users size={13} /> RH</TabsTrigger>
-          <TabsTrigger value="fiscal"        className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"><Receipt size={13} /> Fiscal</TabsTrigger>
+        <TabsList className="h-auto flex-wrap gap-1 rounded-md bg-secondary p-1">
+          {ERP_TABS.map((t) => (
+            <TabsTrigger
+              key={t.value}
+              value={t.value}
+              className="h-7 gap-1.5 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm"
+            >
+              <t.icon size={13} /> {t.label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
-        <TabsContent value="compras">       <TabCompras /> </TabsContent>
-        <TabsContent value="cotacao">       <TabCotacao /> </TabsContent>
-        <TabsContent value="estoque">       <TabEstoque /> </TabsContent>
-        <TabsContent value="financeiro">    <TabFinanceiro /> </TabsContent>
-        <TabsContent value="contabilidade"> <TabContabilidade /> </TabsContent>
-        <TabsContent value="rh">            <TabRH /> </TabsContent>
-        <TabsContent value="fiscal">        <TabFiscal /> </TabsContent>
+        <TabsContent value="parceiros"><TabParceiros /></TabsContent>
+        <TabsContent value="contratos"><TabContratos /></TabsContent>
+        <TabsContent value="compras"><TabCompras /></TabsContent>
+        <TabsContent value="cotacao"><TabCotacao /></TabsContent>
+        <TabsContent value="estoque"><TabEstoque /></TabsContent>
+        <TabsContent value="financeiro"><TabFinanceiro /></TabsContent>
+        <TabsContent value="contabilidade"><TabContabilidadeCompleta /></TabsContent>
+        <TabsContent value="rh"><TabRH /></TabsContent>
+        <TabsContent value="fiscal"><TabFiscal /></TabsContent>
       </Tabs>
     </div>
   );

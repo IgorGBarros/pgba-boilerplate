@@ -238,6 +238,9 @@ class DealViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
             titulo=titulo,
             empresa=deal.empresa,
             responsavel=deal.responsavel,
+            sera_contrato=deal.sera_contrato,
+            contrato_com_material=deal.contrato_com_material,
+            observacoes=deal.observacoes,
         )
         return Response(ProjectSerializer(project).data, status=status.HTTP_201_CREATED)
 

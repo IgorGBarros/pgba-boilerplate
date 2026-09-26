@@ -808,7 +808,7 @@ function IconBtn({
 
 const MODULE_CARDS: { state: ModuleState; label: string; desc: string; icon: React.ElementType; color: string; bg: string; border: string }[] = [
   { state: { key: "crm" }, label: "CRM & Comercial", desc: "Pipeline, leads e atividades", icon: Handshake, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-500/10 hover:bg-indigo-500/20", border: "border-indigo-500/20 hover:border-indigo-400/40" },
-  { state: { key: "erp" }, label: "ERP", desc: "Compras, estoque, financeiro, RH", icon: Layers, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10 hover:bg-emerald-500/20", border: "border-emerald-500/20 hover:border-emerald-400/40" },
+  { state: { key: "erp" }, label: "ERP", desc: "Contratos, parceiros, estoque, financeiro e fiscal", icon: Layers, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10 hover:bg-emerald-500/20", border: "border-emerald-500/20 hover:border-emerald-400/40" },
   { state: { key: "controladoria" }, label: "Controladoria", desc: "Budget, desvios e auditoria", icon: ShieldCheck, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10 hover:bg-amber-500/20", border: "border-amber-500/20 hover:border-amber-400/40" },
   { state: { key: "datalake" }, label: "Data Lake", desc: "Catálogo, Obsidian, Databricks", icon: Landmark, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-500/10 hover:bg-violet-500/20", border: "border-violet-500/20 hover:border-violet-400/40" },
   { state: { key: "juridico" }, label: "Jurídico", desc: "Processos, contratos e prazos", icon: FileText, color: "text-muted-foreground", bg: "bg-secondary hover:bg-secondary", border: "border-border hover:border-border" },

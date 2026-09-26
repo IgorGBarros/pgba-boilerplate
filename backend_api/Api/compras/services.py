@@ -107,6 +107,10 @@ def avancar_status_pedido(pedido_id: int, tenant_id: str) -> PedidoCompra:
 
     if novo_status == PedidoCompra.Status.ENTREGUE:
         atualizar_score_fornecedor(pedido)
+        # Integração com o ERP: entregue vira conta a pagar (idempotente)
+        from erp.services import conta_a_pagar_do_pedido
+
+        conta_a_pagar_do_pedido(pedido)
 
     return pedido
 

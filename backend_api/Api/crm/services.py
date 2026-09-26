@@ -169,6 +169,9 @@ def set_deal_outcome(deal_id: int, outcome: str, tenant_id) -> Deal:
                 titulo=deal.titulo,
                 empresa=deal.empresa,
                 responsavel=deal.responsavel,
+                sera_contrato=deal.sera_contrato,
+                contrato_com_material=deal.contrato_com_material,
+                observacoes=deal.observacoes,
             )
 
     return deal
