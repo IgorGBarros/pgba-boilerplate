@@ -19,7 +19,10 @@ class IngestionConfig(AppConfig):
     def ready(self):
         # Consultas cadastradas nos conectores de banco/CRM viram funções do
         # orchestration por tenant (ver ingestion.connectors.structured).
+        from ingestion.connectors import mcp
         from ingestion.connectors.structured import catalog_provider
         from orchestration.registry import register_catalog_provider
 
         register_catalog_provider(catalog_provider)
+        # Ferramentas liberadas dos servidores MCP (ingestion.connectors.mcp)
+        register_catalog_provider(mcp.catalog_provider)

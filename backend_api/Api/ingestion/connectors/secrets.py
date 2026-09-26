@@ -16,6 +16,7 @@ SECRET_FIELDS: dict[str, list[str]] = {
     "email": ["password"],
     "webhook": ["secret"],
     "sql": ["password"],
+    "mcp": ["api_key"],
 }
 
 MASK = "••••"

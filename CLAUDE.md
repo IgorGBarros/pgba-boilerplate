@@ -150,7 +150,7 @@ em `ingestion/connectors/`, em um de dois modos:
 | Modo | Conectores | O que acontece |
 |---|---|---|
 | `documents` | REST API, URL, Google Sheets, Notion, Slack, E-mail (IMAP), Webhook (+ Obsidian/upload, que já existiam) | `fetch()` traz o conteúdo → `ingestion.sync.sync_source` grava `Document` (upsert por `external_id`, hash evita reindexar) → indexação no Celery → busca semântica dos agentes |
-| `structured` | Banco SQL (PostgreSQL/MySQL/SQLite), HubSpot, Salesforce | nada é copiado; os agentes consultam **na hora**, só pelas consultas nomeadas que um humano cadastrou no conector |
+| `structured` | Banco SQL (PostgreSQL/MySQL/SQLite), HubSpot, Salesforce, **Servidor MCP** | nada é copiado; os agentes consultam **na hora**, só pelas consultas nomeadas (ou ferramentas MCP) que um humano liberou no conector |
 
 Regras (não afrouxar):
 
@@ -186,6 +186,15 @@ Regras (não afrouxar):
 - **Busca semântica ignora documento excluído e fonte desativada**
   (`semantic_search` filtra `document__is_active` e `document__source__is_active`).
   Excluir conector é lógico.
+
+- **MCP** (`connectors/mcp.py`, transporte Streamable HTTP, JSON-RPC por
+  `safe_http`, resposta JSON ou SSE): `mcp-discover/` lista as ferramentas do
+  servidor (cache em `config.ferramentas_disponiveis`); `mcp-tools/` é a pessoa
+  liberando quais os agentes usam e o **risco** de cada (`config.ferramentas`).
+  Só liberada vira função `fonte<id>_<nome>` (catálogo dinâmico, mesmo escopo
+  por setor), com o risco escolhido → Policy Engine. Ferramenta sem
+  `readOnlyHint` nasce "medium" (vira aprovação pra agente sem autonomia).
+  Parâmetro convertido pelo `inputSchema`; texto devolvido passa por `redact_pii`.
 
 **Setor com várias fontes**: `Sector.knowledge_source` (cérebro principal) +
 `Sector.extra_knowledge_sources` (M2M). `agency.services.sector_source_ids`
@@ -855,6 +864,53 @@ dentro do processo do Django, mais frágil num backend web.
   servidor, filtros, formulário com erro por campo do DRF, exclusão lógica);
   cada aba só descreve campos e colunas (`erp-modulos.tsx`). Listas pedem
   `page_size=500` (`ErpPagination`) e avisam "mostrando N de M" se passar.
+
+### Painel administrativo + integrações (`integrations` + `components/admin/`)
+
+Abre pelo botão **Painel administrativo** na caixa **Empresa** do organograma
+(ou pela engrenagem do header). `AdminPanelHost` vive em `App.tsx` e escuta
+`openAdminPanel(section)` (`lib/adminPanel.ts`) — nada de prop por meia árvore.
+Seções: Empresa (`DadosEmpresa` + prontidão da NF), IA (`AIProvidersPanel`),
+E-mails dos setores, Caixa de saída, Automações (n8n), Hostinger, Servidores
+(VPS), GitHub, Conectores e MCP (atalho pro Data Lake, `openEmpresaModule`) e
+Aparência. API em `/api/v1/integrations/` (`integrations/views.py`).
+
+- **Credenciais de serviço** (`ServiceCredential`, agora com `n8n` e
+  `hostinger`): `credentials/` (POST cria/substitui, token volta só mascarado,
+  mandar o mascarado de volta mantém) e `credentials/<p>/test/` — chamada real.
+- **Caixa de e-mail por setor** (`EmailAccount`, uma ativa por setor; setor
+  vazio = caixa padrão da empresa). Pode nascer **sem endereço** (status
+  "aguardando e-mail") — o setor já tem a caixa reservada e os rascunhos
+  esperam. Presets Hostinger (`smtp.hostinger.com:465`/`imap.hostinger.com:993`),
+  Gmail, Outlook (`integrations/email.py#PRESETS`); senha cifrada (Fernet);
+  `test/` faz login SMTP (e IMAP) de verdade; host passa pelo `check_host`.
+- **E-mail de saída** (`OutboundEmail`, com histórico): agente/tela cria
+  **rascunho**; só uma pessoa envia (`outbound-emails/{id}/send/`, Celery;
+  sem broker envia na hora). Sem caixa pronta do setor (nem padrão) → 400 e o
+  rascunho continua. Nunca sai por outra caixa sem dizer. Quando sai,
+  `integrations.signals.email_sent` avisa quem criou (pela `origin`):
+  `compras` marca a cotação/pedido como "enviado" (`compras.services.ao_enviar_email`).
+- **Compras → fornecedor**: `orcamentos/{id}/rascunho-email/` (pedido de
+  cotação com os itens) e `pedidos/{id}/rascunho-email/` (pedido fechado),
+  pela caixa do setor Compras; na tela, `EmailDraftButton` abre o editor pra
+  revisar e enviar ali mesmo.
+- **IA**: `email_rascunho_setor` (agente escreve rascunho; risco "low" porque
+  não envia) e `n8n_automacoes_resumo` (só lê) — `integrations/ai_functions.py`.
+- **n8n** (`integrations/n8n.py`): API pública `/api/v1` com `X-N8N-API-KEY`,
+  `account_ref` = URL da instância. Painel: workflows (gatilho deduzido dos nós),
+  liga/desliga (pessoa), execuções por workflow, sucesso/erro recentes.
+- **Hostinger** (`integrations/hostinger.py`): e-mail é SMTP/IMAP (acima); o
+  token da API (hPanel) é opcional e só LÊ VPS/domínios. A API não cria caixa.
+- **Servidores** (`ServerConnection`: Oracle Cloud/Hostinger/outro): host,
+  porta, usuário e chave SSH cifrada; pode ser cadastrado antes de a VPS
+  existir. `check/` só confere se a porta responde com banner `SSH-` — o
+  sistema **não executa comando remoto** (deploy automatizado não existe ainda).
+
+**Engrenagem (preferências do navegador)**: `lib/ThemeContext.tsx` (tema
+claro/escuro/sistema, tamanho da fonte no `<html>` — tudo em rem escala junto,
+família via `--font-body`/`--font-display`, fonte/quebra de linha do editor),
+salvo em `localStorage` (`pgba-prefs`). Antes a engrenagem guardava um estado
+do Studio que ninguém lia.
 
 ## 8. Princípios GenAI4EU aplicados
 

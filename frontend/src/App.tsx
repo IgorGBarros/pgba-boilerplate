@@ -7,6 +7,7 @@ import LoginScreen from "@/components/LoginScreen";
 import { isLoggedIn, logout } from "@/lib/auth";
 import { RealtimeProvider } from "@/lib/RealtimeContext";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { AdminPanelHost } from "@/components/admin/AdminPanel";
 import type { Section } from "@/lib/navigation";
 
 // Carregado sob demanda: só quem abre o Estúdio paga o custo de
@@ -174,6 +175,8 @@ export default function App() {
           />
         </Suspense>
       )}
+      {/* Painel administrativo — abre pela caixa Empresa do organograma ou pela engrenagem */}
+      <AdminPanelHost onNavigateEmpresa={() => setSection("empresa")} />
     </main>
     </RealtimeProvider>
   );

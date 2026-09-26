@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   BookOpen,
+  Boxes,
   Briefcase,
   CheckCircle2,
   Clock,
@@ -56,6 +57,8 @@ import { ConfirmDialog } from "@/components/empresa/erp-crud";
 import {
   createKnowledgeSource,
   deleteKnowledgeSource,
+  discoverMcpTools,
+  saveMcpTools,
   getSourceAccess,
   getSourceOverview,
   getSourceRecord,
@@ -68,6 +71,7 @@ import {
   testKnowledgeSourceConfig,
   updateKnowledgeSource,
   type AgentPreview,
+  type McpTool,
   type ConnectorQuery,
   type KnowledgeSource,
   type QueryTable,
@@ -195,6 +199,18 @@ const CONNECTORS: ConnectorDef[] = [
       { key: "client_secret", label: "Client Secret", type: "password", required: true },
       { key: "instance_url", label: "My Domain URL", type: "url", placeholder: "https://suaorg.my.salesforce.com", required: true },
       { key: "max_rows", label: "Máx. registros por consulta", type: "number", placeholder: "200" },
+    ],
+  },
+  {
+    source_type: "mcp", label: "Servidor MCP", mode: "structured", syncs: false,
+    description: "Ferramentas de um servidor MCP, liberadas uma a uma",
+    icon: <Boxes className="size-5" />, color: "text-fuchsia-600 dark:text-fuchsia-400",
+    howTo: "Model Context Protocol (transporte HTTP). Depois de salvar, abra o conector → Ferramentas → Descobrir, e marque o que os agentes podem usar.",
+    fields: [
+      { key: "url", label: "URL do servidor MCP", type: "url", placeholder: "https://mcp.exemplo.com/mcp", required: true },
+      { key: "auth_type", label: "Autenticação", type: "select", options: AUTH_OPTS },
+      { key: "api_key", label: "Token / chave", type: "password" },
+      { key: "api_key_header", label: "Header da chave", type: "text", placeholder: "X-API-Key" },
     ],
   },
   {
@@ -428,7 +444,7 @@ function ConfigDialog({
         if (items.length) cfg[f.key] = items;
       } else if (String(v ?? "").trim()) cfg[f.key] = String(v).trim();
     }
-    if (def.mode === "structured") cfg.consultas = queries;
+    if (def.mode === "structured" && def.source_type !== "mcp") cfg.consultas = queries;
     return cfg;
   };
 
@@ -542,7 +558,7 @@ function ConfigDialog({
           )}
         </div>
 
-        {def.mode === "structured" && <QueriesEditor sourceType={def.source_type} value={queries} onChange={setQueries} />}
+        {def.mode === "structured" && def.source_type !== "mcp" && <QueriesEditor sourceType={def.source_type} value={queries} onChange={setQueries} />}
 
         {def.fields.length === 0 && (
           <p className="text-sm text-muted-foreground">Sem configuração: salve e envie arquivos em Conhecimento → Biblioteca.</p>
@@ -873,6 +889,116 @@ function AgentPreviewBox({ source }: { source: KnowledgeSource }) {
   );
 }
 
+// ─── Painel: ferramentas de um servidor MCP ──────────────────────────────────
+
+const RISKS: { value: string; label: string; help: string }[] = [
+  { value: "low", label: "Baixo", help: "agente usa sozinho" },
+  { value: "medium", label: "Médio", help: "pede aprovação a agente sem autonomia" },
+  { value: "high", label: "Alto", help: "só com regra de política liberando" },
+  { value: "critical", label: "Crítico", help: "só agente autônomo com regra" },
+];
+
+function McpToolsPanel({ source, overview, onChanged }: { source: KnowledgeSource; overview: SourceOverview | null; onChanged: () => void }) {
+  const tools: McpTool[] = overview?.mcp_tools ?? [];
+  const [sel, setSel] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<"discover" | "save" | null>(null);
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    for (const t of tools) if (t.liberada && t.risco) next[t.nome] = t.risco;
+    setSel(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overview]);
+  const dirty = tools.some((t) => (t.liberada ? t.risco : undefined) !== sel[t.nome]);
+
+  return (
+    <div className="min-w-0 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="max-w-xl text-sm text-muted-foreground">
+          Os agentes só usam as ferramentas marcadas. O risco decide se o agente age sozinho ou se vira uma aprovação
+          humana (Policy Engine). Ferramenta que escreve já vem como “Médio”.
+        </p>
+        <Button size="sm" variant="outline" disabled={busy !== null} onClick={async () => {
+          setBusy("discover");
+          try {
+            const r = await discoverMcpTools(source.id);
+            toast.success(`${r.tools.length} ferramenta(s) encontradas.`);
+            onChanged();
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Não foi possível falar com o servidor MCP.");
+          } finally {
+            setBusy(null);
+          }
+        }}>
+          {busy === "discover" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Descobrir ferramentas
+        </Button>
+      </div>
+      {tools.length ? (
+        <div className="divide-y divide-border rounded-xl border border-border">
+          {tools.map((t) => {
+            const on = t.nome in sel;
+            return (
+              <div key={t.nome} className="flex flex-wrap items-start gap-3 px-3 py-2.5">
+                <input type="checkbox" className="mt-1 size-4 accent-primary" checked={on} aria-label={`Liberar ${t.nome}`}
+                  onChange={(e) => setSel((prev) => {
+                    const next = { ...prev };
+                    if (e.target.checked) next[t.nome] = t.somente_leitura ? "low" : "medium";
+                    else delete next[t.nome];
+                    return next;
+                  })} />
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                    <code>{t.nome}</code>
+                    <Pill tone={t.somente_leitura ? "ok" : "warn"}>{t.somente_leitura ? "só leitura" : "pode escrever"}</Pill>
+                  </p>
+                  {t.descricao && <p className="text-xs text-muted-foreground">{t.descricao}</p>}
+                  {Object.keys(t.parametros).length > 0 && (
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      Parâmetros: {Object.entries(t.parametros).map(([k, v]) => `${k}${t.obrigatorios.includes(k) ? "*" : ""} (${v.tipo})`).join(", ")}
+                    </p>
+                  )}
+                </div>
+                <select disabled={!on} value={sel[t.nome] ?? ""} aria-label={`Risco de ${t.nome}`}
+                  onChange={(e) => setSel((prev) => ({ ...prev, [t.nome]: e.target.value }))}
+                  className="h-8 rounded-md border border-border bg-background px-2 text-xs disabled:opacity-40">
+                  {!on && <option value="">—</option>}
+                  {RISKS.map((r) => <option key={r.value} value={r.value}>Risco {r.label.toLowerCase()} · {r.help}</option>)}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="py-8 text-center text-sm text-muted-foreground">Nenhuma ferramenta descoberta ainda — clique em “Descobrir ferramentas”.</p>
+      )}
+      {tools.length > 0 && (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">{Object.keys(sel).length} de {tools.length} liberada(s)</span>
+          <Button size="sm" disabled={!dirty || busy !== null} onClick={async () => {
+            setBusy("save");
+            try {
+              await saveMcpTools(source.id, Object.entries(sel).map(([nome, risco]) => ({ nome, risco })));
+              toast.success("Ferramentas dos agentes atualizadas.");
+              onChanged();
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Não foi possível salvar.");
+            } finally {
+              setBusy(null);
+            }
+          }}>
+            {busy === "save" && <Loader2 className="size-3.5 animate-spin" />} Salvar liberação
+          </Button>
+        </div>
+      )}
+      {(overview?.queries.length ?? 0) > 0 && (
+        <div className="space-y-2 pt-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Testar ferramenta liberada</p>
+          {overview?.queries.map((q) => <QueryRunner key={q.nome} source={source} q={q} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SourcePanel({ source, initialTab = "resumo", onClose, onChanged }: { source: KnowledgeSource; initialTab?: PanelTab; onClose: () => void; onChanged: () => void }) {
   const def = connectorByType[source.source_type];
   const [tab, setTab] = useState<PanelTab>(initialTab);
@@ -896,7 +1022,7 @@ function SourcePanel({ source, initialTab = "resumo", onClose, onChanged }: { so
   const structured = source.mode === "structured";
   const tabs: { id: PanelTab; label: string }[] = [
     { id: "resumo", label: "Resumo" },
-    { id: "dados", label: structured ? "Consultas" : `Registros${overview ? ` (${overview.documents.active})` : ""}` },
+    { id: "dados", label: source.source_type === "mcp" ? "Ferramentas" : structured ? "Consultas" : `Registros${overview ? ` (${overview.documents.active})` : ""}` },
     ...(structured ? [] : [{ id: "agente" as PanelTab, label: "O que o agente encontra" }]),
     { id: "execucoes", label: "Execuções" },
     { id: "acesso", label: "Quem acessa" },
@@ -1023,7 +1149,11 @@ function SourcePanel({ source, initialTab = "resumo", onClose, onChanged }: { so
 
         {tab === "agente" && !structured && <AgentPreviewBox source={source} />}
 
-        {tab === "dados" && structured && (
+        {tab === "dados" && source.source_type === "mcp" && (
+          <McpToolsPanel source={source} overview={overview} onChanged={() => { load(); onChanged(); }} />
+        )}
+
+        {tab === "dados" && structured && source.source_type !== "mcp" && (
           <div className="min-w-0 space-y-2">
             {overview?.queries.length ? overview.queries.map((q) => <QueryRunner key={q.nome} source={source} q={q} />) : (
               <p className="py-8 text-center text-sm text-muted-foreground">Nenhuma consulta cadastrada — edite o conector.</p>
@@ -1127,6 +1257,7 @@ function ConnectorCard({
 }) {
   const def = connectorByType[source.source_type];
   const queries = Array.isArray(source.config?.consultas) ? (source.config.consultas as unknown[]).length : 0;
+  const tools = Array.isArray(source.config?.ferramentas) ? (source.config.ferramentas as unknown[]).length : 0;
   return (
     <div className="flex items-start gap-4 rounded-xl border border-border bg-surface p-4 transition hover:shadow-sm">
       <button type="button" onClick={onOpen} className={`grid size-10 shrink-0 place-items-center rounded-xl bg-secondary ${def?.color ?? "text-muted-foreground"}`} title="Dados do conector">
@@ -1139,7 +1270,9 @@ function ConnectorCard({
           <StatusPill source={source} />
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {source.mode === "structured"
+          {source.source_type === "mcp"
+            ? `${tools} ferramenta(s) liberada(s) para os agentes`
+            : source.mode === "structured"
             ? `${queries} consulta(s) disponíveis para os agentes`
             : `${source.document_count} registro(s) · último sync ${fmtDate(source.last_synced_at)}${source.sync_interval_minutes ? ` · automático a cada ${source.sync_interval_minutes} min` : ""}`}
         </p>

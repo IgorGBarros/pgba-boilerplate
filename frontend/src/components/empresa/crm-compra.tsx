@@ -5,7 +5,8 @@ import {
   AlertTriangle, ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { listPedidosCompra, avancarStatusPedido, type PedidoCompra } from "@/lib/api";
+import { listPedidosCompra, avancarStatusPedido, draftOrderEmail, type PedidoCompra } from "@/lib/api";
+import { EmailDraftButton } from "@/components/admin/EmailDraftButton";
 
 const STATUS_CONFIG: Record<PedidoCompra["status"], { label: string; color: string; icon: React.ReactNode }> = {
   criado:       { label: "Criado",       color: "bg-secondary text-muted-foreground dark:text-muted-foreground",     icon: <ShoppingCart className="size-3.5" /> },
@@ -31,7 +32,7 @@ function fmtCurrency(v: string | number) {
   return Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function PedidoCard({ pedido, onUpdate }: { pedido: PedidoCompra; onUpdate: (p: PedidoCompra) => void }) {
+function PedidoCard({ pedido, onUpdate, onReload }: { pedido: PedidoCompra; onUpdate: (p: PedidoCompra) => void; onReload: () => void }) {
   const [open, setOpen] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const cfg = STATUS_CONFIG[pedido.status];
@@ -144,6 +145,16 @@ function PedidoCard({ pedido, onUpdate }: { pedido: PedidoCompra; onUpdate: (p: 
 
           {pedido.observacoes && (
             <p className="text-xs text-muted-foreground italic">{pedido.observacoes}</p>
+          )}
+
+          {/* Pedido criado: manda ao fornecedor pela caixa de Compras (pessoa revisa e envia) */}
+          {pedido.status === "criado" && (
+            <EmailDraftButton
+              label="Enviar pedido ao fornecedor por e-mail"
+              create={() => draftOrderEmail(pedido.id)}
+              onDone={onReload}
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            />
           )}
 
           {/* Advance status button */}
@@ -280,7 +291,7 @@ export function CRMCompra({ projectId, projectTitulo }: { projectId: number; pro
       <div className="space-y-2">
         {[...pedidos]
           .sort((a, b) => (b.em_atraso ? 1 : 0) - (a.em_atraso ? 1 : 0))
-          .map(p => <PedidoCard key={p.id} pedido={p} onUpdate={handleUpdate} />)
+          .map(p => <PedidoCard key={p.id} pedido={p} onUpdate={handleUpdate} onReload={() => void load()} />)
         }
       </div>
 

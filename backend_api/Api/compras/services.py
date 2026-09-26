@@ -288,3 +288,105 @@ def gerar_pedido_compra(orcamento_id: int, tenant_id: str, project_id: int | Non
         status=PedidoCompra.Status.CRIADO,
     )
     return pedido
+
+
+# ─── E-mail ao fornecedor (pela caixa do setor Compras) ──────────────────────
+
+
+def _setor_compras(tenant_id):
+    from agency.models import Sector
+
+    qs = Sector.objects.filter(tenant_id=tenant_id, is_active=True)
+    return qs.filter(slug="compras").first() or qs.filter(name__iexact="Compras").first()
+
+
+def _linhas_itens(itens) -> str:
+    return "\n".join(
+        f"- {i.nome}: {i.quantidade.normalize():f} {i.unidade}"
+        + (f" (preço combinado: R$ {i.preco_unitario:.2f}/{i.unidade})" if i.preco_unitario else "")
+        for i in itens
+    )
+
+
+def _empresa(tenant_id) -> str:
+    from erp.models import DadosEmpresa
+
+    d = DadosEmpresa.objects.filter(tenant_id=tenant_id).first()
+    return (d.nome_fantasia or d.razao_social) if d else ""
+
+
+def rascunho_email_cotacao(orcamento_id: int, tenant_id, requested_by: str = ""):
+    """Pedido de cotação → RASCUNHO na caixa de Compras (uma pessoa envia)."""
+    from integrations.email import create_draft
+
+    orc = Orcamento.objects.select_related("fornecedor", "deal").get(pk=orcamento_id, tenant_id=tenant_id)
+    if not orc.fornecedor.email:
+        raise ValueError(f"O fornecedor {orc.fornecedor.nome} não tem e-mail cadastrado.")
+    empresa = _empresa(tenant_id)
+    corpo = (
+        f"Olá, {orc.fornecedor.nome}.\n\n"
+        f"{'A ' + empresa if empresa else 'Nossa empresa'} gostaria de uma cotação para os itens abaixo"
+        f" (ref. {orc.deal.titulo}):\n\n{_linhas_itens(orc.itens.all())}\n\n"
+        "Por favor, informe preço unitário, prazo de entrega e condições de pagamento.\n\n"
+        "Obrigado!"
+    )
+    return create_draft(
+        tenant_id,
+        sector_id=getattr(_setor_compras(tenant_id), "id", None),
+        to=[orc.fornecedor.email],
+        subject=f"Pedido de cotação — {orc.deal.titulo}",
+        body=corpo,
+        origin=f"compras.orcamento:{orc.id}",
+        requested_by=requested_by,
+    )
+
+
+def rascunho_email_pedido(pedido_id: int, tenant_id, requested_by: str = ""):
+    """Pedido de compra fechado → RASCUNHO na caixa de Compras (uma pessoa envia)."""
+    from integrations.email import create_draft
+
+    pedido = PedidoCompra.objects.select_related("orcamento__fornecedor", "orcamento__deal").get(
+        pk=pedido_id, tenant_id=tenant_id
+    )
+    orc = pedido.orcamento
+    if not orc.fornecedor.email:
+        raise ValueError(f"O fornecedor {orc.fornecedor.nome} não tem e-mail cadastrado.")
+    numero = pedido.numero_pedido or f"#{pedido.id}"
+    total = f"\nValor total: R$ {orc.valor_total:.2f}" if orc.valor_total else ""
+    prazo = f"\nPrevisão de entrega: {pedido.previsao_entrega:%d/%m/%Y}" if pedido.previsao_entrega else ""
+    corpo = (
+        f"Olá, {orc.fornecedor.nome}.\n\n"
+        f"Confirmamos o pedido de compra {numero}, conforme a cotação aprovada:\n\n"
+        f"{_linhas_itens(orc.itens.all())}{total}{prazo}\n\n"
+        "Por favor, confirme o recebimento deste pedido e a data de entrega.\n\nObrigado!"
+    )
+    return create_draft(
+        tenant_id,
+        sector_id=getattr(_setor_compras(tenant_id), "id", None),
+        to=[orc.fornecedor.email],
+        subject=f"Pedido de compra {numero} — {orc.deal.titulo}",
+        body=corpo,
+        origin=f"compras.pedido:{pedido.id}",
+        requested_by=requested_by,
+    )
+
+
+def ao_enviar_email(sender, email, **kwargs):
+    """E-mail saiu de verdade: cotação vira 'enviado'; pedido 'criado' vira 'enviado'."""
+    kind, _, ident = (email.origin or "").partition(":")
+    if not ident.isdigit():
+        return
+    if kind == "compras.orcamento":
+        orc = Orcamento.objects.filter(
+            pk=int(ident), tenant_id=email.tenant_id, status=Orcamento.Status.RASCUNHO
+        ).first()
+        if orc:  # save() (não update) pra ficar no histórico de auditoria
+            orc.status, orc.enviado_em = Orcamento.Status.ENVIADO, email.sent_at
+            orc.save(update_fields=["status", "enviado_em", "updated_at"])
+    elif kind == "compras.pedido":
+        pedido = PedidoCompra.objects.filter(
+            pk=int(ident), tenant_id=email.tenant_id, status=PedidoCompra.Status.CRIADO
+        ).first()
+        if pedido:
+            pedido.status = PedidoCompra.Status.ENVIADO
+            pedido.save(update_fields=["status", "updated_at"])

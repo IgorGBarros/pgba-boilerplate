@@ -110,6 +110,18 @@ class OrcamentoViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelView
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(OrcamentoSerializer(orc).data)
 
+    @action(detail=True, methods=["post"], url_path="rascunho-email")
+    def rascunho_email(self, request, pk=None):
+        """Monta o e-mail de cotação na caixa de Compras (rascunho — uma pessoa envia)."""
+        from compras.services import rascunho_email_cotacao
+        from integrations.serializers import OutboundEmailSerializer
+
+        try:
+            email = rascunho_email_cotacao(pk, request.tenant_id, requested_by=request.user.email or "")
+        except (ValueError, Orcamento.DoesNotExist) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(OutboundEmailSerializer(email).data, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=["post"], url_path="registrar-resposta")
     def registrar_resposta(self, request, pk=None):
         ser = RegistrarRespostaSerializer(data=request.data)
@@ -194,6 +206,18 @@ class PedidoCompraViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelV
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(PedidoCompraSerializer(pedido).data)
+
+    @action(detail=True, methods=["post"], url_path="rascunho-email")
+    def rascunho_email(self, request, pk=None):
+        """Monta o e-mail do pedido na caixa de Compras (rascunho — uma pessoa envia)."""
+        from compras.services import rascunho_email_pedido
+        from integrations.serializers import OutboundEmailSerializer
+
+        try:
+            email = rascunho_email_pedido(pk, request.tenant_id, requested_by=request.user.email or "")
+        except (ValueError, PedidoCompra.DoesNotExist) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(OutboundEmailSerializer(email).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="cancelar")
     def cancelar(self, request, pk=None):

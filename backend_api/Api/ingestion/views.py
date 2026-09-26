@@ -149,6 +149,20 @@ class KnowledgeSourceViewSet(
         cls = get_connector_class(source.source_type)
         structured = cls is not None and cls.mode == "structured"
         consultas = ((source.config or {}).get("consultas") or []) if structured else []
+        mcp_tools = None
+        if source.source_type == KnowledgeSource.SourceType.MCP:
+            from ingestion.connectors.mcp import McpConnector
+
+            try:
+                conn = McpConnector(source)
+                consultas = conn.queries()
+                liberadas = {t["nome"]: t["risco"] for t in conn.approved()}
+                mcp_tools = [
+                    {**t, "liberada": t["nome"] in liberadas, "risco": liberadas.get(t["nome"])}
+                    for t in conn.available()
+                ]
+            except ConnectorError:
+                consultas, mcp_tools = [], []
         return Response({
             "documents": {
                 "active": sum(by_status.values()),
@@ -168,7 +182,54 @@ class KnowledgeSourceViewSet(
             ],
             "runs": SourceSyncRunSerializer(runs, many=True).data,
             "queries": consultas,
+            "mcp_tools": mcp_tools,
         })
+
+    def _mcp(self, request):
+        from ingestion.connectors.mcp import McpConnector
+
+        source = self.get_object()
+        if source.source_type != KnowledgeSource.SourceType.MCP:
+            return source, None
+        return source, McpConnector(source)
+
+    @action(detail=True, methods=["post"], url_path="mcp-discover")
+    def mcp_discover(self, request, pk=None):
+        """Lista as ferramentas do servidor MCP (chamada real) e guarda pra escolher."""
+        source, conn = self._mcp(request)
+        if conn is None:
+            return Response({"detail": "Só conectores MCP."}, status=400)
+        try:
+            tools = conn.discover()
+        except ConnectorError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        source.config = {**(source.config or {}), "ferramentas_disponiveis": tools}
+        source.save(update_fields=["config", "updated_at"])
+        return Response({"tools": tools})
+
+    @action(detail=True, methods=["post"], url_path="mcp-tools")
+    def mcp_tools(self, request, pk=None):
+        """Uma pessoa libera quais ferramentas os agentes podem usar (e o risco de cada)."""
+        from ingestion.connectors.mcp import validate_tools
+
+        source, conn = self._mcp(request)
+        if conn is None:
+            return Response({"detail": "Só conectores MCP."}, status=400)
+        disponiveis = conn.available()
+        nomes = {t["nome"] for t in disponiveis}
+        try:
+            ferramentas = validate_tools(request.data.get("ferramentas") or [], disponiveis)
+        except ConnectorError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        desconhecidas = [f["nome"] for f in ferramentas if f["nome"] not in nomes]
+        if desconhecidas:
+            return Response(
+                {"detail": f"Ferramenta(s) que o servidor não oferece: {', '.join(desconhecidas)}."},
+                status=400,
+            )
+        source.config = {**(source.config or {}), "ferramentas": ferramentas}
+        source.save(update_fields=["config", "updated_at"])
+        return Response({"ferramentas": ferramentas})
 
     @action(detail=True, methods=["post"], url_path="run-query")
     def run_query(self, request, pk=None):
