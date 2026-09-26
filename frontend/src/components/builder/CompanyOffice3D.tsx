@@ -47,7 +47,10 @@ const ROOM_W         = 9;
 const ROOM_D         = 8;
 const ROOM_GAP_X     = 2.2;  // Corredor vertical entre colunas de salas (rota entre fileiras)
 const ROOM_GAP_Z     = 2.2;
-const ROOMS_PER_ROW  = 3;
+// Colunas de salas: calculado pela quantidade de salas (ver roomColumns) —
+// com muitos setores, 3 colunas fixas viravam 5+ fileiras e a planta
+// ficava minúscula numa tela larga.
+const MAX_ROOM_COLS  = 5;
 const WALL_H         = 2.6;  // Paredes do fundo/esquerda (altura cheia)
 const FRONT_WALL_H   = 0.55; // Paredes frente/direita em corte — deixa ver dentro da sala
 const SLAB_H         = 0.32; // Espessura da laje elevada de cada sala
@@ -115,9 +118,15 @@ const HAIR_COLORS = ["#2d1810", "#5c3a2e", "#1a1a1a", "#4a3728", "#8b6914"];
 
 // ─── Utilitários de layout ────────────────────────────────────────────────────
 
-function roomCenter(index: number): [number, number] {
-  const col = index % ROOMS_PER_ROW;
-  const row = Math.floor(index / ROOMS_PER_ROW);
+/** Colunas da grade de salas: próximo de uma planta "larga" (proporção de tela), no máximo 5. */
+function roomColumns(totalRooms: number): number {
+  if (totalRooms <= 3) return Math.max(totalRooms, 1);
+  return Math.min(MAX_ROOM_COLS, Math.ceil(Math.sqrt(totalRooms * 1.6)));
+}
+
+function roomCenter(index: number, cols: number): [number, number] {
+  const col = index % cols;
+  const row = Math.floor(index / cols);
   return [col * (ROOM_W + ROOM_GAP_X), row * (ROOM_D + ROOM_GAP_Z)];
 }
 
@@ -1348,17 +1357,19 @@ const SCREEN_KIND: Record<string, ScreenKind> = {
 function Room({
   sector,
   index,
+  cols,
   isMeetingRoom = false,
   desks,
   onRoomClick,
 }: {
   sector: Sector;
   index: number;
+  cols: number;
   isMeetingRoom?: boolean;
   desks: DeskSpec[];
   onRoomClick: (id: number, name: string) => void;
 }) {
-  const [cx, cz] = roomCenter(index);
+  const [cx, cz] = roomCenter(index, cols);
   const type = isMeetingRoom ? "meeting" : inferRoomType(sector.name);
   const palette = roomPalette(type, index);
 
@@ -1777,19 +1788,19 @@ export default function CompanyOffice3D() {
   //   à frente         → corredor + praça do Cérebro
   const CEO_ROOM_INDEX     = 0;
   const totalRooms         = sectors.length + 2; // +1 CEO, +1 Reunião
-  const cols               = Math.min(Math.max(totalRooms, 1), ROOMS_PER_ROW);
-  const rows               = Math.ceil(Math.max(totalRooms, 1) / ROOMS_PER_ROW);
+  const cols               = roomColumns(totalRooms);
+  const rows               = Math.ceil(Math.max(totalRooms, 1) / cols);
   const gridW              = cols * (ROOM_W + ROOM_GAP_X) - ROOM_GAP_X;
   const CORR_Z             = corridorZ(rows);
 
   const meetingRoomIndex   = sectors.length + 1;
-  const [meetingCX, meetingCZ] = roomCenter(meetingRoomIndex);
+  const [meetingCX, meetingCZ] = roomCenter(meetingRoomIndex, cols);
 
   // Grade de navegação (office3d/navigation.ts) — mesma geometria das salas
   const navGrid = useMemo<NavGrid>(() => ({
-    cols: ROOMS_PER_ROW, rows, roomW: ROOM_W, roomD: ROOM_D,
+    cols, rows, roomW: ROOM_W, roomD: ROOM_D,
     gapX: ROOM_GAP_X, gapZ: ROOM_GAP_Z, corridorZ: CORR_Z, doorW: DOOR_W,
-  }), [rows, CORR_Z]);
+  }), [cols, rows, CORR_Z]);
 
   // Praça do Cérebro: logo à frente do corredor, centralizada na planta
   const sceneCX  = (cols - 1) * (ROOM_W + ROOM_GAP_X) / 2;
@@ -1825,7 +1836,7 @@ export default function CompanyOffice3D() {
       const isCeo = roomIdx === CEO_ROOM_INDEX;
       const layout = deskLayout(list.length);
       const slots = isCeo ? ceoDeskLayout(list.length) : layout.slots;
-      const [rcx, rcz] = roomCenter(roomIdx);
+      const [rcx, rcz] = roomCenter(roomIdx, cols);
       desksByRoom.set(roomIdx, list.map((a, i) => {
         const [x, z] = slots[i] ?? [0, 0];
         const seatZ = DESK_SEAT_Z + (isCeo && i === 0 ? 0.5 : 0);
@@ -1842,7 +1853,7 @@ export default function CompanyOffice3D() {
       }));
     }
     return { desksByRoom, seatById, roomIdxById };
-  }, [officeAgents, sectors]);
+  }, [officeAgents, sectors, cols]);
 
   // Rota até a sala de reunião (e de volta) para quem foi convocado
   const meetingRoutes = useMemo(() => {
@@ -1863,9 +1874,9 @@ export default function CompanyOffice3D() {
   // "Caixa de correio" de cada sala: logo acima da porta, onde o envelope
   // espera / pousa. Sempre visível na câmera isométrica (parede da frente baixa).
   const mailbox = useCallback((roomIdx: number): V3 => {
-    const [rcx, rcz] = roomCenter(roomIdx);
+    const [rcx, rcz] = roomCenter(roomIdx, cols);
     return [rcx, FRONT_WALL_H + 1.1, rcz + ROOM_D / 2 - 0.2];
-  }, []);
+  }, [cols]);
   const sectorRoomIdx = useCallback((sectorId: number) => {
     const i = sectors.findIndex((s) => s.id === sectorId);
     return i >= 0 ? i + 1 : null;
@@ -1974,7 +1985,7 @@ export default function CompanyOffice3D() {
   const brainLinks = useMemo<BrainLink[]>(() => {
     const links: BrainLink[] = [];
     const push = (id: number, idx: number, name: string, connected: boolean) => {
-      const [rcx, rcz] = roomCenter(idx);
+      const [rcx, rcz] = roomCenter(idx, cols);
       const type = inferRoomType(name);
       links.push({
         id,
@@ -1988,7 +1999,7 @@ export default function CompanyOffice3D() {
     push(-2, CEO_ROOM_INDEX, "CEO", true);
     sectors.forEach((s, i) => push(s.id, i + 1, s.name, s.knowledge_source != null));
     return links;
-  }, [sectors, statsBySector]);
+  }, [sectors, statsBySector, cols]);
 
   const sourcesCount = useMemo(
     () => new Set(sectors.map((s) => s.knowledge_source).filter((k) => k != null)).size,
@@ -2062,52 +2073,53 @@ export default function CompanyOffice3D() {
       />
 
       <div className="relative flex min-h-0 flex-1">
-        {/* Modo de câmera + camadas */}
-        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-1 rounded-full border border-stone-200 bg-white/90 p-1 shadow-sm backdrop-blur-sm">
-          {(["overview", "topdown", "front"] as CamMode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => { setCamMode(m); setHomeKey((k) => k + 1); }}
-              className={[
-                "rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wider transition-colors",
-                camMode === m ? "bg-stone-900 text-white" : "text-stone-500 hover:bg-stone-100 hover:text-stone-800",
-              ].join(" ")}
-            >
-              {m === "overview" ? "Isométrica" : m === "topdown" ? "Planta" : "Frontal"}
-            </button>
-          ))}
-          <span className="mx-1 w-px bg-stone-200" />
-          <button
-            onClick={() => setShowCards((v) => !v)}
-            className={`rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wider ${showCards ? "bg-stone-200 text-stone-900" : "text-stone-500 hover:bg-stone-100"}`}
-          >
-            Cartões
-          </button>
-          <button
-            onClick={() => setShowWires((v) => !v)}
-            className={`rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wider ${showWires ? "bg-emerald-100 text-emerald-800" : "text-stone-500 hover:bg-stone-100"}`}
-          >
-            Fios
-          </button>
-        </div>
-
         <ActivityPanel logs={activityLogs} open={activityOpen} onClose={() => setActivityOpen(false)} />
 
         {/* overflow-hidden: rótulos Html do drei são DOM posicionado — sem isso
             vazam por cima do painel lateral quando o zoom aproxima */}
         <div className="relative min-w-0 flex-1 overflow-hidden" style={{ height: "100%" }}>
-          {/* Zoom + voltar ao início */}
-          <div className="absolute bottom-4 z-20 flex flex-col gap-2 transition-[right]" style={{ right: panelOpen ? 272 : 16 }}>
+          {/* Barra de vista — no TOPO da cena, sempre visível: no Studio o
+              container tem altura calc(100vh - 152px) e o rodapé do canvas
+              podia ficar fora da tela, sumindo com estes botões. */}
+          <div className="pointer-events-auto absolute left-1/2 top-2 z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-stone-200 bg-white/95 p-0.5 shadow-sm">
+            {(["overview", "topdown", "front"] as CamMode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => { setCamMode(m); setZoom(1); setHomeKey((k) => k + 1); }}
+                className={[
+                  "rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider transition-colors",
+                  camMode === m ? "bg-stone-900 text-white" : "text-stone-500 hover:bg-stone-100 hover:text-stone-800",
+                ].join(" ")}
+              >
+                {m === "overview" ? "Isométrica" : m === "topdown" ? "Planta" : "Frontal"}
+              </button>
+            ))}
+            <span className="mx-1 h-4 w-px bg-stone-200" />
+            <button
+              onClick={() => setShowCards((v) => !v)}
+              title="Etiquetas de KPI por setor"
+              className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${showCards ? "bg-stone-200 text-stone-900" : "text-stone-500 hover:bg-stone-100"}`}
+            >
+              Cartões
+            </button>
+            <button
+              onClick={() => setShowWires((v) => !v)}
+              title="Fios do Cérebro até cada setor"
+              className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${showWires ? "bg-emerald-100 text-emerald-800" : "text-stone-500 hover:bg-stone-100"}`}
+            >
+              Fios
+            </button>
+            <span className="mx-1 h-4 w-px bg-stone-200" />
             {[
-              { label: "+", title: "Aproximar", on: () => setZoom((v) => Math.min(v + 0.15, 3)) },
               { label: "−", title: "Afastar", on: () => setZoom((v) => Math.max(v - 0.15, 0.3)) },
+              { label: "+", title: "Aproximar", on: () => setZoom((v) => Math.min(v + 0.15, 3)) },
               { label: "⌂", title: "Enquadrar tudo", on: () => { setZoom(1); setHomeKey((k) => k + 1); } },
             ].map((b) => (
               <button
                 key={b.label}
                 title={b.title}
                 onClick={b.on}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-200 bg-white text-lg text-stone-700 shadow-sm hover:bg-stone-50"
+                className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-stone-600 hover:bg-stone-100"
               >
                 {b.label}
               </button>
@@ -2185,6 +2197,7 @@ export default function CompanyOffice3D() {
                 key={key}
                 sector={sector}
                 index={idx}
+                cols={cols}
                 isMeetingRoom={meeting}
                 desks={meeting ? [] : desksByRoom.get(idx) ?? []}
                 onRoomClick={handleRoomClick}
@@ -2193,13 +2206,13 @@ export default function CompanyOffice3D() {
 
             {/* Cartões de KPI por setor */}
             {showCards && roomEntries.filter((r) => !r.meeting).map(({ key, sector, idx }) => {
-              const [rcx, rcz] = roomCenter(idx);
+              const [rcx, rcz] = roomCenter(idx, cols);
               const type = inferRoomType(sector.name);
               const stats = statsBySector.get(sector.id) ?? { agents: 0, working: 0, paused: 0, doing: 0, next: 0, done: 0 };
               return (
                 <SectorCard
                   key={`card-${key}`}
-                  position={[rcx - ROOM_W / 2 + 1.2, WALL_H + 1.9, rcz - ROOM_D / 2 + 0.6]}
+                  position={[rcx, WALL_H + 0.55, rcz - ROOM_D / 2]}
                   name={sector.name}
                   color={roomPalette(type, idx).accent}
                   stats={stats}
@@ -2229,9 +2242,10 @@ export default function CompanyOffice3D() {
               );
             })}
 
+            {/* Sem prop `target`: o React reaplicaria o valor a cada re-render
+                (polling/WebSocket) e desfaria o enquadramento do IsoCamera. */}
             <OrbitControls
               makeDefault
-              target={[sceneCX, 0, sceneCZ]}
               enableDamping
               dampingFactor={0.08}
               minZoom={4}
