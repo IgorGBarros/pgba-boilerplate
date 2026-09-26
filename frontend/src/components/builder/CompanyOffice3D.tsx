@@ -1,10 +1,24 @@
 // frontend/src/components/builder/CompanyOffice3D.tsx
-// Fase 2 — corredores interligados, movimento por waypoints (porta → corredor → destino)
+// Fase 3 — planta isométrica: câmera ortográfica, paredes em corte ("casa de
+// boneca"), uma mesa por agente com crachá, Cérebro central ligado a cada
+// setor por fios de dados e cartões de KPI flutuantes. Mantém tudo da Fase 2
+// (corredores, movimento por waypoints porta → corredor → destino, reunião).
+//
+// Ideias de layout inspiradas no Agents Office (github.com/ajsahni/agents-office);
+// nenhum código daquele projeto foi copiado — a licença dele (PolyForm
+// Noncommercial + termos adicionais) proíbe incorporá-lo em outro produto.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Html, OrbitControls, Text, Environment, ContactShadows } from "@react-three/drei";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { Html, OrbitControls, Environment, Lightformer, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
-import { listAgents, listSectors, patchAgentAutonomy, type Agent, type Sector, ApiError } from "@/lib/api";
+import {
+  listAgents, listSectors, listTasks, patchAgentAutonomy,
+  type Agent, type Sector, type Task, ApiError,
+} from "@/lib/api";
+import { BrainHub, type BrainLink } from "./office3d/BrainHub";
+import { SectorCard, type SectorStats } from "./office3d/SectorCard";
+import { IsoCamera, type CamMode } from "./office3d/IsoCamera";
+import { floorTexture, labelTexture, screenTexture, type FloorPattern, type ScreenKind } from "./office3d/textures";
 import { useRealtime } from "@/lib/useRealtime";
 import {
   toOfficeAgent,
@@ -28,13 +42,16 @@ const ROOM_D         = 8;
 const ROOM_GAP_X     = 0;    // Salas conectadas — sem gap lateral
 const ROOM_GAP_Z     = 2.2;
 const ROOMS_PER_ROW  = 3;
-const WALL_H         = 2.6;  // Paredes levemente mais baixas
+const WALL_H         = 2.6;  // Paredes do fundo/esquerda (altura cheia)
+const FRONT_WALL_H   = 0.55; // Paredes frente/direita em corte — deixa ver dentro da sala
+const SLAB_H         = 0.32; // Espessura da laje elevada de cada sala
 const WALL_T         = 0.2;
 const DOOR_W         = 1.9;
 const CORRIDOR_D     = 3.6;
 const DIVIDER_H      = 0.9;  // Meia-parede entre salas adjacentes
 const DIVIDER_OPENING = 2.4; // Abertura de passagem entre salas
 const WALK_SPEED       = 3.6;
+const LABEL_DF         = 0.026; // distanceFactor p/ Html com câmera ortográfica (escala = zoom × df)
 const ARRIVAL_THRESHOLD = 0.14;
 
 // Contexto compartilhado: posições dos agentes para animação de porta
@@ -107,20 +124,10 @@ function roomCenter(index: number): [number, number] {
   return [col * (ROOM_W + ROOM_GAP_X), row * (ROOM_D + ROOM_GAP_Z)];
 }
 
-function deskSlot(i: number, total: number): [number, number] {
-  const cols = Math.max(2, Math.ceil(Math.sqrt(total)));
-  const col = i % cols;
-  const row = Math.floor(i / cols);
-  const cellW = (ROOM_W - 2) / cols;
-  const cellD = (ROOM_D - 2) / Math.ceil(total / cols);
-  return [
-    -(ROOM_W / 2 - 1.2) + col * cellW + cellW / 2,
-    -(ROOM_D / 2 - 1.2) + row * cellD + cellD / 2,
-  ];
-}
-
+// Corredor logo à frente da última fileira de salas (na Fase 2 ficava a ~6
+// unidades de distância, com um vazio no meio da planta).
 function corridorZ(numRows: number) {
-  return numRows * (ROOM_D + ROOM_GAP_Z) + 2.0;
+  return (numRows - 1) * (ROOM_D + ROOM_GAP_Z) + ROOM_D / 2 + CORRIDOR_D / 2 + 0.25;
 }
 
 function roomDoorVec(cx: number, cz: number): THREE.Vector3 {
@@ -172,67 +179,59 @@ function inferRoomType(name: string): "tech" | "design" | "ceo" | "meeting" | "c
 
 // ─── Furniture ────────────────────────────────────────────────────────────────
 
-function Workstation({ x, z, color }: { x: number; z: number; color: string }) {
+function Workstation({
+  x, z, color, active = false, kind = "code", variant = 0, width = 1.6,
+}: {
+  x: number; z: number; color: string;
+  active?: boolean; kind?: ScreenKind; variant?: number; width?: number;
+}) {
+  const tex = useMemo(() => screenTexture(color, kind, variant), [color, kind, variant]);
+  const legX = width / 2 - 0.12;
   return (
     <group position={[x, 0, z]}>
       <mesh position={[0, 0.76, 0]} castShadow receiveShadow>
-        <boxGeometry args={[1.6, 0.07, 0.9]} />
-        <meshStandardMaterial color="#e8e0d4" roughness={0.4} />
+        <boxGeometry args={[width, 0.07, 0.9]} />
+        <meshStandardMaterial color="#d9c7a7" roughness={0.55} />
       </mesh>
-      {([[-0.68, -0.35], [0.68, -0.35], [-0.68, 0.35], [0.68, 0.35]] as [number,number][]).map(([lx, lz], i) => (
+      {/* Painel frontal de privacidade (lado do monitor) */}
+      <mesh position={[0, 0.45, -0.42]} castShadow>
+        <boxGeometry args={[width - 0.1, 0.55, 0.04]} />
+        <meshStandardMaterial color="#b8a88a" roughness={0.7} />
+      </mesh>
+      {([[-legX, 0.35], [legX, 0.35]] as [number, number][]).map(([lx, lz], i) => (
         <mesh key={i} position={[lx, 0.37, lz]}>
           <boxGeometry args={[0.06, 0.74, 0.06]} />
-          <meshStandardMaterial color="#8b7355" />
+          <meshStandardMaterial color="#6b5a45" />
         </mesh>
       ))}
-      <group position={[0, 1.54, -0.3]}>
-        <mesh>
-          <boxGeometry args={[1.1, 0.7, 0.07]} />
-          <meshStandardMaterial color="#111" />
+      <group position={[0, 1.2, -0.28]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.92, 0.58, 0.05]} />
+          <meshStandardMaterial color="#1a1d24" />
         </mesh>
-        <mesh position={[0, 0, 0.04]}>
-          <boxGeometry args={[1.05, 0.65, 0.02]} />
-          <meshStandardMaterial color="#050810" emissive={color} emissiveIntensity={0.3} />
+        {/* Tela com textura: acesa quando o agente desta mesa está trabalhando */}
+        <mesh position={[0, 0, 0.028]}>
+          <planeGeometry args={[0.86, 0.52]} />
+          <meshBasicMaterial map={tex} color={active ? "#ffffff" : "#5b6474"} toneMapped={false} />
         </mesh>
-        {Array.from({ length: 5 }, (_, i) => (
-          <mesh key={i} position={[-0.35 + (i % 3) * 0.28, -0.15 + Math.floor(i / 3) * 0.2, 0.045]}>
-            <boxGeometry args={[0.22 + Math.sin(i) * 0.07, 0.018, 0.003]} />
-            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.6} />
-          </mesh>
-        ))}
-        <mesh position={[0, -0.42, -0.08]}>
-          <cylinderGeometry args={[0.03, 0.03, 0.25, 6]} />
-          <meshStandardMaterial color="#555" metalness={0.8} />
+        <mesh position={[0, -0.36, -0.02]}>
+          <boxGeometry args={[0.05, 0.2, 0.05]} />
+          <meshStandardMaterial color="#444" metalness={0.6} />
         </mesh>
       </group>
-      <mesh position={[0, 0.79, 0.22]}>
-        <boxGeometry args={[0.72, 0.025, 0.24]} />
-        <meshStandardMaterial color="#1a1a1a" />
+      {/* Teclado + mouse + caneca */}
+      <mesh position={[0, 0.8, 0.12]}>
+        <boxGeometry args={[0.6, 0.02, 0.2]} />
+        <meshStandardMaterial color="#2a2d33" />
       </mesh>
-      {Array.from({ length: 24 }, (_, i) => (
-        <mesh key={i} position={[-0.28 + (i % 8) * 0.08, 0.806, 0.12 + Math.floor(i / 8) * 0.07]}>
-          <boxGeometry args={[0.06, 0.007, 0.055]} />
-          <meshStandardMaterial color="#333" />
-        </mesh>
-      ))}
-      <mesh position={[0.55, 0.782, 0.28]}>
-        <boxGeometry args={[0.26, 0.004, 0.2]} />
-        <meshStandardMaterial color="#4169e1" />
+      <mesh position={[0.45, 0.8, 0.16]}>
+        <boxGeometry args={[0.08, 0.02, 0.12]} />
+        <meshStandardMaterial color="#2a2d33" />
       </mesh>
-      <mesh position={[0.55, 0.787, 0.28]}>
-        <boxGeometry args={[0.08, 0.012, 0.12]} />
-        <meshStandardMaterial color="#111" />
+      <mesh position={[-width / 2 + 0.22, 0.84, 0.2]}>
+        <cylinderGeometry args={[0.045, 0.04, 0.1, 10]} />
+        <meshStandardMaterial color={color} />
       </mesh>
-      <group position={[-0.58, 0.79, 0.3]}>
-        <mesh>
-          <cylinderGeometry args={[0.04, 0.035, 0.07, 8]} />
-          <meshStandardMaterial color="#f0f0f0" />
-        </mesh>
-        <mesh position={[0, 0.025, 0]}>
-          <cylinderGeometry args={[0.036, 0.036, 0.018, 8]} />
-          <meshStandardMaterial color="#6b3a2a" />
-        </mesh>
-      </group>
     </group>
   );
 }
@@ -293,17 +292,19 @@ function PixelChair({ x, z, color = "#444", rotation = 0 }: { x: number; z: numb
 }
 
 function DoorMesh({
-  x, z, rotation = 0, roomCX, roomCZ,
+  x, z, rotation = 0, roomCX, roomCZ, accent,
 }: {
-  x: number; z: number; rotation?: number; roomCX: number; roomCZ: number;
+  x: number; z: number; rotation?: number; roomCX: number; roomCZ: number; accent: string;
 }) {
-  const doorRef   = useRef<THREE.Group>(null!);
+  // Portão de vidro baixo (a parede da frente está em corte) que desliza
+  // para os lados quando um agente se aproxima — mesma detecção da Fase 2.
+  const leftRef   = useRef<THREE.Mesh>(null!);
+  const rightRef  = useRef<THREE.Mesh>(null!);
+  const lightRef  = useRef<THREE.MeshBasicMaterial>(null!);
   const agentPosR = useContext(AgentPosCtx);
-  const openRef   = useRef(0); // current door open angle
+  const openRef   = useRef(0);
 
   useFrame((_, delta) => {
-    if (!doorRef.current) return;
-    // Calcula posição mundial da porta
     const wx = roomCX + x;
     const wz = roomCZ + z;
     let nearest = Infinity;
@@ -313,37 +314,37 @@ function DoorMesh({
       const d = Math.sqrt(dx * dx + dz * dz);
       if (d < nearest) nearest = d;
     }
-    const target = nearest < 2.4 ? -Math.PI / 2 : 0;
+    const target = nearest < 2.2 ? 1 : 0;
     openRef.current += (target - openRef.current) * Math.min(1, delta * 6);
-    doorRef.current.rotation.y = openRef.current;
+    const o = openRef.current;
+    if (leftRef.current)  leftRef.current.position.x  = -0.45 - o * 0.8;
+    if (rightRef.current) rightRef.current.position.x =  0.45 + o * 0.8;
+    if (lightRef.current) lightRef.current.color.set(o > 0.5 ? "#22c55e" : accent);
   });
   return (
     <group position={[x, 0, z]} rotation={[0, rotation, 0]}>
-      <mesh position={[-0.84, WALL_H / 2, 0]}>
-        <boxGeometry args={[0.14, WALL_H, 0.26]} />
-        <meshStandardMaterial color="#8b6a3e" />
+      {/* Tapete de entrada */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, -0.55]}>
+        <planeGeometry args={[1.6, 0.8]} />
+        <meshStandardMaterial color="#6b6358" roughness={1} />
       </mesh>
-      <mesh position={[0.84, WALL_H / 2, 0]}>
-        <boxGeometry args={[0.14, WALL_H, 0.26]} />
-        <meshStandardMaterial color="#8b6a3e" />
-      </mesh>
-      <mesh position={[0, WALL_H - 0.1, 0]}>
-        <boxGeometry args={[1.82, 0.18, 0.26]} />
-        <meshStandardMaterial color="#8b6a3e" />
-      </mesh>
-      <group ref={doorRef} position={[-0.68, 0, 0]}>
-        <mesh position={[0.68, (WALL_H - 0.22) / 2, 0]} castShadow>
-          <boxGeometry args={[1.36, WALL_H - 0.22, 0.07]} />
-          <meshStandardMaterial color="#c9a06e" roughness={0.4} />
+      {([-0.95, 0.95] as number[]).map((px, i) => (
+        <mesh key={i} position={[px, FRONT_WALL_H / 2 + 0.1, 0]}>
+          <boxGeometry args={[0.1, FRONT_WALL_H + 0.2, 0.24]} />
+          <meshStandardMaterial color="#9a9489" />
         </mesh>
-        <mesh position={[1.18, (WALL_H - 0.22) / 2, 0.045]}>
-          <sphereGeometry args={[0.045, 8, 8]} />
-          <meshStandardMaterial color="#c0c0c0" metalness={0.9} />
-        </mesh>
-      </group>
-      <mesh position={[0, WALL_H + 0.15, 0]}>
-        <sphereGeometry args={[0.055, 8, 8]} />
-        <meshStandardMaterial color="#00ff88" emissive="#00ff88" emissiveIntensity={0.5} />
+      ))}
+      <mesh ref={leftRef} position={[-0.45, FRONT_WALL_H / 2, 0]}>
+        <boxGeometry args={[0.88, FRONT_WALL_H - 0.08, 0.04]} />
+        <meshPhysicalMaterial color="#cfe8f5" transparent opacity={0.45} roughness={0.05} />
+      </mesh>
+      <mesh ref={rightRef} position={[0.45, FRONT_WALL_H / 2, 0]}>
+        <boxGeometry args={[0.88, FRONT_WALL_H - 0.08, 0.04]} />
+        <meshPhysicalMaterial color="#cfe8f5" transparent opacity={0.45} roughness={0.05} />
+      </mesh>
+      <mesh position={[0.95, FRONT_WALL_H + 0.26, 0]}>
+        <sphereGeometry args={[0.06, 8, 8]} />
+        <meshBasicMaterial ref={lightRef} color={accent} toneMapped={false} />
       </mesh>
     </group>
   );
@@ -764,46 +765,6 @@ function TradingDesk({ x, z, accent = "#22c55e" }: { x: number; z: number; accen
   );
 }
 
-// ─── Câmera preset ────────────────────────────────────────────────────────────
-
-type CamMode = "overview" | "topdown" | "front";
-
-function CameraPreset({
-  mode, sceneCX, sceneCZ, camDist,
-}: { mode: CamMode; sceneCX: number; sceneCZ: number; camDist: number }) {
-  const { camera } = useThree();
-  useEffect(() => {
-    if (mode === "overview") {
-      camera.position.set(sceneCX + camDist * 0.7, camDist * 0.65, sceneCZ + camDist * 0.85);
-    } else if (mode === "topdown") {
-      camera.position.set(sceneCX, camDist * 1.4, sceneCZ + 0.01);
-    } else {
-      camera.position.set(sceneCX, camDist * 0.4, sceneCZ + camDist * 1.3);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
-  return null;
-}
-
-// ─── Luminária de teto ────────────────────────────────────────────────────────
-
-function CeilingLamp({ x, z }: { x: number; z: number }) {
-  return (
-    <group position={[x, WALL_H - 0.015, z]}>
-      {/* Housing */}
-      <mesh>
-        <cylinderGeometry args={[0.13, 0.2, 0.07, 10]} />
-        <meshStandardMaterial color="#d0ccc6" metalness={0.5} roughness={0.3} />
-      </mesh>
-      {/* Glowing bulb */}
-      <mesh position={[0, -0.06, 0]}>
-        <sphereGeometry args={[0.065, 8, 6]} />
-        <meshStandardMaterial color="#fff8e0" emissive="#fff8e0" emissiveIntensity={2.2} />
-      </mesh>
-    </group>
-  );
-}
-
 // ─── Mesa oval de reunião ─────────────────────────────────────────────────────
 
 function OvalMeetingTable() {
@@ -836,22 +797,42 @@ function OvalMeetingTable() {
   );
 }
 
-// ─── Placa de departamento ────────────────────────────────────────────────────
+// ─── Texto 3D local (canvas) ───────────────────────────────────────────────────
 
-function DepartmentPlaque({ accent }: { accent: string }) {
-  const halfD = ROOM_D / 2;
+function CanvasLabel({
+  text, position, height, maxWidth, color = "#26231f",
+}: {
+  text: string; position: [number, number, number]; height: number; maxWidth: number; color?: string;
+}) {
+  const { tex, aspect } = useMemo(() => labelTexture(text, { color }), [text, color]);
+  let w = height * aspect;
+  let h = height;
+  if (w > maxWidth) { h *= maxWidth / w; w = maxWidth; }
   return (
-    <group position={[0, WALL_H * 0.62, -halfD + WALL_T / 2 + 0.03]}>
-      {/* Corpo da placa */}
+    <mesh position={position}>
+      <planeGeometry args={[w, h]} />
+      <meshBasicMaterial map={tex} transparent toneMapped={false} depthWrite={false} />
+    </mesh>
+  );
+}
+
+// ─── Placa de departamento (com nome, na parede do fundo) ───────────────────────
+
+function WallSign({ name, accent, dark = false }: { name: string; accent: string; dark?: boolean }) {
+  const halfD = ROOM_D / 2;
+  const w = Math.min(ROOM_W - 3, 0.9 + name.length * 0.17);
+  return (
+    <group position={[0, WALL_H - 0.42, -halfD + WALL_T / 2 + 0.03]}>
       <mesh castShadow>
-        <boxGeometry args={[2.8, 0.26, 0.04]} />
-        <meshStandardMaterial color={accent} metalness={0.25} roughness={0.45} />
+        <boxGeometry args={[w, 0.46, 0.04]} />
+        <meshStandardMaterial color={dark ? "#1f2a22" : "#f8f6f1"} roughness={0.6} />
       </mesh>
-      {/* Faixa metallic */}
-      <mesh position={[0, 0, 0.025]}>
-        <boxGeometry args={[2.6, 0.07, 0.01]} />
-        <meshStandardMaterial color="#f0ece0" metalness={0.9} roughness={0.1} />
+      <mesh position={[-w / 2 + 0.1, 0, 0.025]}>
+        <boxGeometry args={[0.06, 0.34, 0.01]} />
+        <meshBasicMaterial color={accent} toneMapped={false} />
       </mesh>
+      <CanvasLabel text={name} position={[0.05, 0, 0.026]} height={0.3} maxWidth={w - 0.3}
+        color={dark ? "#e8f5e9" : "#2d2a26"} />
     </group>
   );
 }
@@ -963,46 +944,6 @@ function DesignTable({ x, z, color = "#e0e0e0" }: { x: number; z: number; color?
   );
 }
 
-function ControlDesk({ x, z, color = "#1a1a2e" }: { x: number; z: number; color?: string }) {
-  return (
-    <group position={[x, 0, z]}>
-      {/* Mesa em L */}
-      <mesh position={[0, 0.76, 0]} castShadow>
-        <boxGeometry args={[2.8, 0.07, 1.0]} />
-        <meshStandardMaterial color="#2a2a3e" roughness={0.4} />
-      </mesh>
-      <mesh position={[0.9, 0.76, -0.85]} castShadow>
-        <boxGeometry args={[1.0, 0.07, 0.68]} />
-        <meshStandardMaterial color="#2a2a3e" roughness={0.4} />
-      </mesh>
-      {/* Monitores múltiplos */}
-      {([-0.95, 0, 0.95] as number[]).map((mx, i) => (
-        <group key={i} position={[mx, 1.55, -0.3]}>
-          <mesh>
-            <boxGeometry args={[0.85, 0.55, 0.06]} />
-            <meshStandardMaterial color="#111" />
-          </mesh>
-          <mesh position={[0, 0, 0.04]}>
-            <boxGeometry args={[0.8, 0.5, 0.02]} />
-            <meshStandardMaterial color="#050810" emissive={["#22c55e","#3b82f6","#f59e0b"][i]!} emissiveIntensity={0.4} />
-          </mesh>
-          <mesh position={[0, -0.32, -0.05]}>
-            <cylinderGeometry args={[0.025, 0.025, 0.22, 5]} />
-            <meshStandardMaterial color="#444" />
-          </mesh>
-        </group>
-      ))}
-      {/* Pernas */}
-      {([[-1.2, -0.38], [1.2, -0.38], [-1.2, 0.38]] as [number,number][]).map(([px, pz], i) => (
-        <mesh key={i} position={[px, 0.37, pz]}>
-          <boxGeometry args={[0.07, 0.74, 0.07]} />
-          <meshStandardMaterial color={color} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
 function CoffeeTable({ x, z }: { x: number; z: number }) {
   return (
     <group position={[x, 0, z]}>
@@ -1072,6 +1013,7 @@ function AgentAvatar3D({
   meetingPos,
   fromDoor,
   meetingDoor,
+  meetingCenter,
   corrZ,
   roomBounds,
   onSelect,
@@ -1081,6 +1023,7 @@ function AgentAvatar3D({
   meetingPos: [number, number, number] | null;
   fromDoor: THREE.Vector3;
   meetingDoor: THREE.Vector3;
+  meetingCenter: [number, number];
   corrZ: number;
   roomBounds: RoomBounds;
   onSelect: (a: OfficeAgent) => void;
@@ -1191,7 +1134,17 @@ function AgentAvatar3D({
 
     const sit = mv.isSitting && !mv.isMoving;
     g.position.set(mv.pos.x, sit ? 0.04 : 0, mv.pos.z);
-    if (mv.isMoving) g.rotation.y = mv.facingAngle;
+    if (mv.isMoving) {
+      g.rotation.y = mv.facingAngle;
+    } else if (sit) {
+      // Sentado: de frente pro monitor (parede do fundo) ou pro centro da mesa de reunião
+      const target = status === "meeting"
+        ? Math.atan2(meetingCenter[0] - mv.pos.x, meetingCenter[1] - mv.pos.z)
+        : Math.PI;
+      let diff = target - g.rotation.y;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      g.rotation.y += diff * Math.min(1, delta * 8);
+    }
 
     const wp = mv.walkPhase;
     const walk = mv.isMoving;
@@ -1210,6 +1163,7 @@ function AgentAvatar3D({
 
   const shortName = agent.name.split(" ").slice(0, 2).join(" ");
   const isWorking = agent.status === "working";
+  const isLead = agent.isOrchestrator || agent.access_level === "ceo";
 
   return (
     <group
@@ -1300,30 +1254,32 @@ function AgentAvatar3D({
       </group>
 
       {/* Labels fora do grupo escalado, posições ajustadas para 0.65× */}
-      <Html center distanceFactor={8} position={[0, 1.2, 0]} style={{ pointerEvents: "none", userSelect: "none" }}>
-        <div style={{
-          background: "rgba(10,15,25,0.88)", color: "#f1f5f9", fontSize: "10px",
-          padding: "2px 7px", borderRadius: "4px", whiteSpace: "nowrap",
-          border: `1px solid ${statusColor}`,
-        }}>
-          {shortName}
+      <Html center distanceFactor={LABEL_DF} zIndexRange={[6, 0]} position={[0, 1.3, 0]} style={{ pointerEvents: "none", userSelect: "none" }}>
+        <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 3, transform: "translateY(-30%)" }}>
+          <div style={{
+            background: "rgba(255,255,255,0.96)", color: "#26231f", fontSize: "10px",
+            fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase",
+            padding: "2px 8px", borderRadius: "999px", whiteSpace: "nowrap",
+            border: `1.5px solid ${statusColor}`, boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
+          }}>
+            {isLead && <span style={{ color: "#d97706", marginRight: 4 }}>★</span>}
+            {shortName}
+          </div>
+          {isWorking && agent.currentTask !== "Sem tarefa ativa" && (
+            <div style={{
+              background: "rgba(236,253,245,0.96)", color: "#047857", fontSize: "9px",
+              padding: "1px 6px", borderRadius: "999px", whiteSpace: "nowrap",
+              maxWidth: "130px", overflow: "hidden", textOverflow: "ellipsis",
+              border: "1px solid rgba(16,185,129,0.45)",
+            }}>
+              {agent.currentTask.length > 24 ? agent.currentTask.slice(0, 24) + "…" : agent.currentTask}
+            </div>
+          )}
         </div>
       </Html>
 
-      {isWorking && agent.currentTask !== "Sem tarefa ativa" && (
-        <Html center distanceFactor={8} position={[0, 1.38, 0]} style={{ pointerEvents: "none", userSelect: "none" }}>
-          <div style={{
-            background: "rgba(34,197,94,0.14)", color: "#86efac", fontSize: "9px",
-            padding: "1px 5px", borderRadius: "3px", whiteSpace: "nowrap",
-            maxWidth: "110px", overflow: "hidden", textOverflow: "ellipsis",
-            border: "1px solid rgba(34,197,94,0.22)",
-          }}>
-            {agent.currentTask.length > 20 ? agent.currentTask.slice(0, 20) + "…" : agent.currentTask}
-          </div>
-        </Html>
-      )}
       {agent.status === "thinking" && (
-        <Html center distanceFactor={8} position={[0.28, 1.08, 0]} style={{ pointerEvents: "none" }}>
+        <Html center distanceFactor={LABEL_DF} zIndexRange={[6, 0]} position={[0.28, 1.08, 0]} style={{ pointerEvents: "none" }}>
           <span style={{ fontSize: "13px" }}>💭</span>
         </Html>
       )}
@@ -1333,29 +1289,108 @@ function AgentAvatar3D({
 
 // ─── Corredor visual ───────────────────────────────────────────────────────────
 
-function CorridorFloor({ corrZ, gridW }: { corrZ: number; gridW: number }) {
+function WalkwaySlab({ x, z, w, d, color = "#e4ddd0" }: { x: number; z: number; w: number; d: number; color?: string }) {
   return (
-    <group position={[gridW / 2, 0, corrZ]}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]} receiveShadow>
-        <planeGeometry args={[gridW + 8, CORRIDOR_D]} />
-        <meshStandardMaterial color="#dde4f2" roughness={0.6} />
+    <group position={[x, 0, z]}>
+      {/* Topo levemente abaixo das salas (degrau visual), sem deixar os agentes "flutuando" */}
+      <mesh position={[0, -SLAB_H / 2 - 0.02, 0]} receiveShadow castShadow>
+        <boxGeometry args={[w, SLAB_H - 0.04, d]} />
+        <meshStandardMaterial color="#cbc3b4" roughness={0.9} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.018, 0]}>
-        <planeGeometry args={[gridW + 8, 0.06]} />
-        <meshBasicMaterial color="#a0b0d8" transparent opacity={0.6} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.035, 0]} receiveShadow>
+        <planeGeometry args={[w, d]} />
+        <meshStandardMaterial color={color} roughness={0.85} />
       </mesh>
-      {Array.from({ length: Math.ceil((gridW + 6) / 3) }, (_, i) => (
-        <mesh key={i} rotation={[-Math.PI / 2, 0, 0]}
-          position={[-gridW / 2 - 2 + i * 3, 0.02, 0]}>
-          <circleGeometry args={[0.12, 8]} />
-          <meshBasicMaterial color="#ffffff" transparent opacity={0.7} />
-        </mesh>
-      ))}
     </group>
   );
 }
 
-// ─── Sala de setor (sem agentes) ──────────────────────────────────────────────
+function CorridorFloor({ corrZ, gridW }: { corrZ: number; gridW: number }) {
+  return (
+    <group>
+      <WalkwaySlab x={gridW / 2 - ROOM_W / 2} z={corrZ} w={gridW + 6} d={CORRIDOR_D} />
+      {/* Faixa-guia central */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[gridW / 2 - ROOM_W / 2, -0.03, corrZ]}>
+        <planeGeometry args={[gridW + 5, 0.07]} />
+        <meshBasicMaterial color="#b9ae9a" transparent opacity={0.7} />
+      </mesh>
+    </group>
+  );
+}
+
+// ─── Mesas por agente ─────────────────────────────────────────────────────────
+
+type DeskSpec = {
+  agentId: number;
+  name: string;
+  x: number;       // local à sala
+  z: number;
+  active: boolean;
+  lead: boolean;
+};
+
+/**
+ * Posição das mesas dentro de uma sala (coordenada local). Cada agente ganha
+ * a PRÓPRIA mesa, virada pra parede do fundo — o agente senta na cadeira em
+ * (x, z + DESK_SEAT_Z). Faixa da frente (z > ~2.3) fica livre pra decoração
+ * e pro caminho até a porta.
+ */
+const DESK_SEAT_Z = 0.72;
+
+function deskLayout(total: number): { slots: Array<[number, number]>; width: number } {
+  const n = Math.max(total, 1);
+  const cols = n <= 3 ? n : n <= 6 ? 3 : 4;
+  const rows = Math.ceil(n / cols);
+  const spacingX = cols === 4 ? 2.05 : 2.6;
+  const width = cols === 4 ? 1.5 : 1.6;
+  const spacingZ = rows <= 2 ? 2.3 : Math.max(1.6, 5.4 / rows);
+  const slots: Array<[number, number]> = [];
+  for (let i = 0; i < n; i++) {
+    const r = Math.floor(i / cols);
+    const inRow = r === rows - 1 ? n - r * cols : cols;
+    const c = i % cols;
+    const x = (c - (inRow - 1) / 2) * spacingX;
+    const z = -2.7 + r * spacingZ;
+    slots.push([x, z]);
+  }
+  return { slots, width };
+}
+
+/** Sala CEO: mesa executiva pro primeiro, mesas laterais pros demais. */
+function ceoDeskLayout(total: number): Array<[number, number]> {
+  const slots: Array<[number, number]> = [[0.8, -2.2]];
+  for (let i = 1; i < total; i++) slots.push([3.3, -2.6 + (i - 1) * 2.1]);
+  return slots;
+}
+
+function DeskNameplate({ name, lead, accent }: { name: string; lead: boolean; accent: string }) {
+  const label = (lead ? "★ " : "") + name.toUpperCase();
+  return (
+    <group position={[0, 0.62, 0.47]}>
+      <mesh>
+        <boxGeometry args={[Math.min(1.4, 0.35 + label.length * 0.07), 0.2, 0.02]} />
+        <meshStandardMaterial color={lead ? "#fff7e0" : "#fbfaf7"} />
+      </mesh>
+      <mesh position={[0, -0.1, 0.012]}>
+        <boxGeometry args={[Math.min(1.4, 0.35 + label.length * 0.07), 0.02, 0.005]} />
+        <meshBasicMaterial color={accent} toneMapped={false} />
+      </mesh>
+      <CanvasLabel text={label} position={[0, 0, 0.012]} height={0.13} maxWidth={1.3} />
+    </group>
+  );
+}
+
+// ─── Sala de setor (agentes renderizados à parte; mesas vêm por prop) ─────────
+
+const FLOOR_PATTERN: Record<string, FloorPattern> = {
+  tech: "tile", design: "carpet", payment: "carpet", control: "carpet",
+  ceo: "wood", meeting: "wood", mercado: "tile", generic: "tile",
+};
+
+const SCREEN_KIND: Record<string, ScreenKind> = {
+  tech: "code", design: "design", payment: "chart", control: "chart",
+  ceo: "exec", meeting: "exec", mercado: "chart", generic: "code",
+};
 
 function Room({
   sector,
@@ -1363,6 +1398,7 @@ function Room({
   col,
   totalCols,
   isMeetingRoom = false,
+  desks,
   onRoomClick,
 }: {
   sector: Sector;
@@ -1370,139 +1406,150 @@ function Room({
   col: number;
   totalCols: number;
   isMeetingRoom?: boolean;
+  desks: DeskSpec[];
   onRoomClick: (id: number, name: string) => void;
 }) {
   const [cx, cz] = roomCenter(index);
   const type = isMeetingRoom ? "meeting" : inferRoomType(sector.name);
-
-  const palette =
-    type === "meeting" ? MEETING_PALETTE :
-    type === "ceo"     ? CEO_PALETTE :
-    ROOM_PALETTES[index % ROOM_PALETTES.length]!;
+  const palette = roomPalette(type, index);
 
   const halfW = ROOM_W / 2;
   const halfD = ROOM_D / 2;
 
   // Geometria dos vãos de passagem entre salas adjacentes
-  const divSegLen = (ROOM_D - DIVIDER_OPENING) / 2;                     // 2.8
-  const divSeg1Z  = -((halfD + DIVIDER_OPENING / 2) / 2);               // -2.6
-  const divSeg2Z  =   (halfD + DIVIDER_OPENING / 2) / 2;                // +2.6
+  const divSegLen = (ROOM_D - DIVIDER_OPENING) / 2;
+  const divSeg1Z  = -((halfD + DIVIDER_OPENING / 2) / 2);
+  const divSeg2Z  =   (halfD + DIVIDER_OPENING / 2) / 2;
 
-  // Cor do piso baseada no tipo de sala
   const floorColor = getRoomFloor(type);
+  const floorTex = useMemo(
+    () => floorTexture(floorColor, FLOOR_PATTERN[type] ?? "tile", [ROOM_W / 1.5, ROOM_D / 1.5]),
+    [floorColor, type],
+  );
+  const { width: deskW } = deskLayout(desks.length);
+  const screenKind = SCREEN_KIND[type] ?? "code";
+  const frontSegW = halfW - DOOR_W / 2;
+  const CAP = "#bdb5a6";
 
   return (
     <group position={[cx, 0, cz]}>
-      {/* Piso com cor por tipo de departamento */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} receiveShadow
-        onClick={(e) => { e.stopPropagation(); onRoomClick(sector.id, sector.name); }}>
-        <planeGeometry args={[ROOM_W, ROOM_D]} />
-        <meshStandardMaterial color={floorColor} roughness={0.85} />
+      {/* Laje elevada — dá o efeito de "maquete" da planta isométrica */}
+      <mesh position={[0, -SLAB_H / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[ROOM_W, SLAB_H, ROOM_D]} />
+        <meshStandardMaterial color="#d6cfc2" roughness={0.9} />
       </mesh>
-      {/* Moldura interna no piso */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}>
-        <ringGeometry args={[Math.min(halfW, halfD) - 0.5, Math.min(halfW, halfD) - 0.2, 32]} />
-        <meshBasicMaterial color={palette.accent} transparent opacity={0.18} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]} receiveShadow
+        onClick={(e) => { e.stopPropagation(); onRoomClick(sector.id, sector.name); }}
+        onPointerOver={() => { document.body.style.cursor = "pointer"; }}
+        onPointerOut={() => { document.body.style.cursor = ""; }}>
+        <planeGeometry args={[ROOM_W, ROOM_D]} />
+        <meshStandardMaterial map={floorTex} roughness={0.85} />
       </mesh>
 
-      {/* Parede traseira */}
-      <mesh position={[0, WALL_H / 2, -halfD]} castShadow>
+      {/* Parede do fundo — altura cheia */}
+      <mesh position={[0, WALL_H / 2, -halfD]} castShadow receiveShadow>
         <boxGeometry args={[ROOM_W, WALL_H, WALL_T]} />
         <meshStandardMaterial color={palette.wall} />
       </mesh>
+      <mesh position={[0, WALL_H + 0.03, -halfD]}>
+        <boxGeometry args={[ROOM_W + 0.02, 0.06, WALL_T + 0.04]} />
+        <meshStandardMaterial color={CAP} />
+      </mesh>
 
-      {/* Parede esquerda: sólida se for o primeiro da fileira; meia-parede com passagem se tiver vizinho */}
+      {/* Parede esquerda: cheia na primeira sala da fileira; meia-parede com passagem entre salas */}
       {col === 0 ? (
-        <mesh position={[-halfW, WALL_H / 2, 0]}>
-          <boxGeometry args={[WALL_T, WALL_H, ROOM_D]} />
-          <meshStandardMaterial color={palette.wall} />
-        </mesh>
+        <>
+          <mesh position={[-halfW, WALL_H / 2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[WALL_T, WALL_H, ROOM_D]} />
+            <meshStandardMaterial color={palette.wall} />
+          </mesh>
+          <mesh position={[-halfW, WALL_H + 0.03, 0]}>
+            <boxGeometry args={[WALL_T + 0.04, 0.06, ROOM_D + 0.02]} />
+            <meshStandardMaterial color={CAP} />
+          </mesh>
+        </>
       ) : (
         <>
-          <mesh position={[-halfW, DIVIDER_H / 2, divSeg1Z]}>
+          <mesh position={[-halfW, DIVIDER_H / 2, divSeg1Z]} castShadow>
             <boxGeometry args={[WALL_T, DIVIDER_H, divSegLen]} />
             <meshStandardMaterial color={palette.wall} />
           </mesh>
-          <mesh position={[-halfW, DIVIDER_H / 2, divSeg2Z]}>
+          <mesh position={[-halfW, DIVIDER_H / 2, divSeg2Z]} castShadow>
             <boxGeometry args={[WALL_T, DIVIDER_H, divSegLen]} />
             <meshStandardMaterial color={palette.wall} />
           </mesh>
         </>
       )}
 
-      {/* Parede direita: sólida apenas se for o último da fileira; sem parede (próxima sala renderiza a meia-parede) */}
+      {/* Parede direita em corte (só na última sala da fileira) */}
       {col === totalCols - 1 && (
-        <mesh position={[halfW, WALL_H / 2, 0]}>
-          <boxGeometry args={[WALL_T, WALL_H, ROOM_D]} />
+        <mesh position={[halfW, FRONT_WALL_H / 2, 0]} castShadow>
+          <boxGeometry args={[WALL_T, FRONT_WALL_H, ROOM_D]} />
           <meshStandardMaterial color={palette.wall} />
         </mesh>
       )}
 
-      {/* Parede frontal (com vão para porta) */}
-      <mesh position={[-(halfW / 2 + DOOR_W / 4), WALL_H / 2, halfD]}>
-        <boxGeometry args={[halfW - DOOR_W / 2, WALL_H, WALL_T]} />
+      {/* Parede da frente em corte, com vão da porta */}
+      <mesh position={[-(halfW - frontSegW / 2), FRONT_WALL_H / 2, halfD]} castShadow>
+        <boxGeometry args={[frontSegW, FRONT_WALL_H, WALL_T]} />
         <meshStandardMaterial color={palette.wall} />
       </mesh>
-      <mesh position={[(halfW / 2 + DOOR_W / 4), WALL_H / 2, halfD]}>
-        <boxGeometry args={[halfW - DOOR_W / 2, WALL_H, WALL_T]} />
+      <mesh position={[(halfW - frontSegW / 2), FRONT_WALL_H / 2, halfD]} castShadow>
+        <boxGeometry args={[frontSegW, FRONT_WALL_H, WALL_T]} />
         <meshStandardMaterial color={palette.wall} />
       </mesh>
 
-      {/* Faixa accent no topo — cor do departamento */}
-      <mesh position={[0, WALL_H - 0.08, -halfD + WALL_T / 2]}>
-        <boxGeometry args={[ROOM_W - WALL_T, 0.16, 0.05]} />
-        <meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={0.22} />
+      {/* Faixa accent no topo da parede do fundo + rodapé */}
+      <mesh position={[0, WALL_H - 0.08, -halfD + WALL_T / 2 + 0.01]}>
+        <boxGeometry args={[ROOM_W - WALL_T, 0.1, 0.03]} />
+        <meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={0.2} />
       </mesh>
-      {/* Faixa accent lateral esquerda */}
-      {col === 0 && (
-        <mesh position={[-halfW + WALL_T / 2, WALL_H / 2, 0]}>
-          <boxGeometry args={[0.05, WALL_H, 0.12]} />
-          <meshStandardMaterial color={palette.accent} emissive={palette.accent} emissiveIntensity={0.12} />
-        </mesh>
-      )}
-      {/* Rodapé */}
-      <mesh position={[0, 0.06, -halfD + WALL_T / 2]}>
-        <boxGeometry args={[ROOM_W - WALL_T, 0.12, 0.04]} />
+      <mesh position={[0, 0.06, -halfD + WALL_T / 2 + 0.01]}>
+        <boxGeometry args={[ROOM_W - WALL_T, 0.12, 0.03]} />
         <meshStandardMaterial color={palette.trim} />
       </mesh>
 
-      {/* Placa de departamento na parede traseira */}
-      <DepartmentPlaque accent={palette.accent} />
+      <WallSign name={sector.name} accent={palette.accent} dark={type === "ceo"} />
 
-      {/* Luminárias de teto — 2 por sala */}
-      <CeilingLamp x={-ROOM_W / 4} z={0} />
-      <CeilingLamp x={ ROOM_W / 4} z={0} />
+      {/* ─── Mesas: uma por agente ───────────────────────────────────────── */}
+      {desks.map((d, i) => (
+        <group key={d.agentId}>
+          {type === "ceo" && i === 0 ? (
+            <ExecutiveDesk x={d.x} z={d.z} />
+          ) : type === "mercado" && deskW >= 1.6 ? (
+            <TradingDesk x={d.x} z={d.z} accent={i % 3 === 2 ? "#ef4444" : "#22c55e"} />
+          ) : (
+            <Workstation x={d.x} z={d.z} color={palette.accent} active={d.active}
+              kind={screenKind} variant={i} width={type === "ceo" ? 1.4 : deskW} />
+          )}
+          <PixelChair x={d.x} z={d.z + DESK_SEAT_Z + (type === "ceo" && i === 0 ? 0.5 : 0)}
+            color={type === "ceo" ? "#3b2a20" : "#2f3440"} rotation={Math.PI} />
+          <group position={[d.x, 0, d.z]}>
+            <DeskNameplate name={d.name} lead={d.lead} accent={palette.accent} />
+          </group>
+        </group>
+      ))}
 
-      {/* Nome da sala */}
-      <Text position={[0, WALL_H + 0.28, -halfD + 0.1]} fontSize={0.3} color="#ffffff"
-        anchorX="center" anchorY="bottom" outlineWidth={0.01} outlineColor="#000">
-        {sector.name}
-      </Text>
-
-      {/* ─── Móveis por tipo ─────────────────────────────────────────────── */}
+      {/* ─── Decoração por tipo (faixa da frente e paredes) ──────────────── */}
 
       {type === "ceo" && (
         <>
-          <ExecutiveDesk x={0.2} z={-1.8} />
-          <PixelChair x={0.2} z={-0.6} color="#1a1a2e" rotation={Math.PI} />
-          <Sofa x={-2.2} z={0.6} rotation={Math.PI / 2} color="#2d4a3e" />
-          <CoffeeTable x={-2.2} z={1.8} />
-          <Plant x={3.2} z={-3.2} tall />
-          <Plant x={-3.2} z={-3.2} />
-          <Whiteboard x={0} z={-3.7} />
-          <Bookshelf x={3.5} z={-1.0} color="#3d2b1a" />
+          <Sofa x={-3.55} z={1.4} rotation={Math.PI / 2} color="#5a3b2e" />
+          <CoffeeTable x={-2.4} z={1.4} />
+          <Plant x={-3.7} z={-3.3} tall />
+          <Plant x={3.8} z={3.3} />
           {/* Quadros na parede */}
-          <mesh position={[-1.5, 1.6, -halfD + WALL_T + 0.02]}>
-            <boxGeometry args={[1.0, 0.65, 0.03]} />
-            <meshStandardMaterial color="#1a2a1a" emissive="#2d6a2d" emissiveIntensity={0.1} />
+          <mesh position={[-2.6, 1.55, -halfD + WALL_T + 0.02]}>
+            <boxGeometry args={[1.2, 0.75, 0.03]} />
+            <meshStandardMaterial color="#f4f1ea" />
           </mesh>
-          <mesh position={[1.8, 1.7, -halfD + WALL_T + 0.02]}>
-            <boxGeometry args={[0.8, 0.5, 0.03]} />
-            <meshStandardMaterial color="#1a1a2a" emissive="#2d2d6a" emissiveIntensity={0.1} />
+          <mesh position={[-2.6, 1.55, -halfD + WALL_T + 0.04]}>
+            <planeGeometry args={[1.08, 0.63]} />
+            <meshBasicMaterial map={screenTexture(palette.accent, "exec", 1)} toneMapped={false} />
           </mesh>
           {/* Capacete no canto da mesa */}
-          <mesh position={[1.8, 0.7, -0.8]}>
-            <sphereGeometry args={[0.12, 8, 6]} />
+          <mesh position={[2.3, 0.9, -2.0]}>
+            <sphereGeometry args={[0.14, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2]} />
             <meshStandardMaterial color="#f5c033" roughness={0.4} />
           </mesh>
         </>
@@ -1510,81 +1557,58 @@ function Room({
 
       {type === "meeting" && (
         <>
-          {/* Mesa oval central */}
           <OvalMeetingTable />
-          {/* Cadeiras em volta da mesa oval */}
           {([
-            [-2.4, 0,  -1.55, 0],
-            [-0.8, 0,  -1.55, 0],
-            [ 0.8, 0,  -1.55, 0],
-            [ 2.4, 0,  -1.55, 0],
-            [-2.4, 0,   1.55, Math.PI],
-            [-0.8, 0,   1.55, Math.PI],
-            [ 0.8, 0,   1.55, Math.PI],
-            [ 2.4, 0,   1.55, Math.PI],
-            [-3.3, 0,   0,    Math.PI / 2],
-            [ 3.3, 0,   0,   -Math.PI / 2],
-          ] as [number, number, number, number][]).map(([cx2, , cz2, rot], i) => (
-            <PixelChair key={i} x={cx2} z={cz2} color="#1e1e2e" rotation={rot} />
+            [-2.4, -1.55, 0], [-0.8, -1.55, 0], [0.8, -1.55, 0], [2.4, -1.55, 0],
+            [-2.4,  1.55, Math.PI], [-0.8, 1.55, Math.PI], [0.8, 1.55, Math.PI], [2.4, 1.55, Math.PI],
+            [-3.3, 0, Math.PI / 2], [3.3, 0, -Math.PI / 2],
+          ] as [number, number, number][]).map(([x2, z2, rot], i) => (
+            <PixelChair key={i} x={x2} z={z2} color="#2f3440" rotation={rot} />
           ))}
-          {/* Tela de projeção na parede traseira */}
-          <mesh position={[0, 1.3, -halfD + WALL_T + 0.04]}>
-            <boxGeometry args={[4.2, 1.3, 0.03]} />
-            <meshStandardMaterial color="#050810" emissive="#4c1d95" emissiveIntensity={0.28} />
+          {/* Tela de projeção na parede do fundo */}
+          <mesh position={[0, 1.35, -halfD + WALL_T + 0.03]}>
+            <boxGeometry args={[3.4, 1.1, 0.03]} />
+            <meshStandardMaterial color="#1a1d24" />
           </mesh>
-          {/* Projetor no teto */}
-          <mesh position={[0, WALL_H - 0.1, 0.6]}>
-            <boxGeometry args={[0.24, 0.12, 0.4]} />
-            <meshStandardMaterial color="#222" metalness={0.6} />
+          <mesh position={[0, 1.35, -halfD + WALL_T + 0.05]}>
+            <planeGeometry args={[3.3, 1.0]} />
+            <meshBasicMaterial map={screenTexture(palette.accent, "exec", 2)} toneMapped={false} />
           </mesh>
-          {/* Quadro / TV lateral */}
-          <Whiteboard x={3.2} z={-halfD + WALL_T + 0.04} />
-          <Plant x={3.5} z={2.8} tall />
-          <Plant x={-3.5} z={2.8} />
+          <Plant x={3.7} z={3.2} tall />
+          <Plant x={-3.7} z={3.2} />
         </>
       )}
 
       {type === "tech" && (
         <>
-          <Workstation x={-2.8} z={-2.4} color={palette.accent} />
-          <PixelChair x={-2.8} z={-1.1} color={palette.accent} rotation={Math.PI} />
-          <Workstation x={-0.6} z={-2.4} color={palette.accent} />
-          <PixelChair x={-0.6} z={-1.1} color={palette.accent} rotation={Math.PI} />
-          <Workstation x={1.6} z={-2.4} color={palette.accent} />
-          <PixelChair x={1.6} z={-1.1} color={palette.accent} rotation={Math.PI} />
-          <ServerRack x={3.5} z={-2.8} />
-          <ServerRack x={3.5} z={-1.4} />
-          <Plant x={-3.4} z={3.0} />
-          <CoffeeMachine x={-2.5} z={2.8} />
+          <CoffeeMachine x={-3.2} z={3.3} />
+          <Plant x={3.8} z={3.3} tall />
+          <ServerRack x={3.9} z={1.4} />
           {/* Quadro técnico na parede */}
-          <mesh position={[0.5, 1.8, -halfD + WALL_T + 0.02]}>
-            <boxGeometry args={[2.2, 1.2, 0.03]} />
-            <meshStandardMaterial color="#0a0f1a" emissive={palette.accent} emissiveIntensity={0.08} />
+          <mesh position={[-3.0, 1.75, -halfD + WALL_T + 0.02]}>
+            <boxGeometry args={[1.8, 0.8, 0.03]} />
+            <meshStandardMaterial color="#f8f6f1" />
+          </mesh>
+          <mesh position={[-3.0, 1.75, -halfD + WALL_T + 0.04]}>
+            <planeGeometry args={[1.7, 0.7]} />
+            <meshBasicMaterial map={screenTexture(palette.accent, "code", 3)} toneMapped={false} />
           </mesh>
         </>
       )}
 
       {type === "design" && (
         <>
-          <Workstation x={-2.5} z={-2.4} color={palette.accent} />
-          <PixelChair x={-2.5} z={-1.1} color={palette.accent} rotation={Math.PI} />
-          <DesignTable x={0.8} z={-1.8} color="#f0e8d8" />
-          <PixelChair x={0.8} z={-0.5} color={palette.accent} rotation={Math.PI} />
-          <Workstation x={2.8} z={-2.4} color={palette.accent} />
-          <PixelChair x={2.8} z={-1.1} color={palette.accent} rotation={Math.PI} />
-          <Whiteboard x={-3.5} z={-halfD + WALL_T + 0.04} />
-          <Plant x={3.4} z={3.0} tall />
-          <Plant x={-3.4} z={3.0} />
-          {/* Mesa de amostras */}
-          <mesh position={[0, 0.62, 2.6]} castShadow>
-            <boxGeometry args={[2.0, 0.06, 0.8]} />
+          <DesignTable x={-2.6} z={3.1} color="#f0e8d8" />
+          <Whiteboard x={3.0} z={-halfD + WALL_T + 0.1} />
+          <Plant x={3.8} z={3.3} tall />
+          <mesh position={[1.2, 0.62, 3.1]} castShadow>
+            <boxGeometry args={[1.8, 0.06, 0.7]} />
             <meshStandardMaterial color="#e8d8b8" roughness={0.4} />
           </mesh>
-          {/* Amostras de cor */}
-          {[0,1,2,3,4,5].map((i) => (
-            <mesh key={i} position={[-0.7 + i * 0.28, 0.66, 2.6]}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <mesh key={i} position={[0.5 + i * 0.28, 0.66, 3.1]}>
               <boxGeometry args={[0.22, 0.02, 0.28]} />
-              <meshStandardMaterial color={["#ef4444","#f59e0b","#22c55e","#3b82f6","#8b5cf6","#ec4899"][i]} />
+              <meshStandardMaterial color={["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899"][i]} />
             </mesh>
           ))}
         </>
@@ -1592,49 +1616,38 @@ function Room({
 
       {type === "control" && (
         <>
-          <ControlDesk x={0} z={-1.0} />
-          <PixelChair x={-0.95} z={0.4} color="#1a1a2e" rotation={Math.PI} />
-          <PixelChair x={0} z={0.4} color="#1a1a2e" rotation={Math.PI} />
-          <PixelChair x={0.95} z={0.4} color="#1a1a2e" rotation={Math.PI} />
-          <ServerRack x={-3.4} z={-2.8} />
-          <ServerRack x={-2.7} z={-2.8} />
-          <ServerRack x={3.4} z={-2.8} />
-          <Plant x={3.4} z={3.0} />
-          {/* Painel de luzes de status */}
-          <mesh position={[0, 1.0, -halfD + WALL_T + 0.03]}>
-            <boxGeometry args={[4.0, 0.6, 0.04]} />
-            <meshStandardMaterial color="#0a0f1a" emissive="#00ff88" emissiveIntensity={0.08} />
+          <ServerRack x={-3.9} z={2.2} />
+          <ServerRack x={-3.9} z={3.0} />
+          <ServerRack x={3.9} z={3.0} />
+          <Plant x={3.8} z={1.8} />
+          {/* Painel de luzes de status na parede */}
+          <mesh position={[-2.6, 1.75, -halfD + WALL_T + 0.03]}>
+            <boxGeometry args={[2.6, 0.55, 0.04]} />
+            <meshStandardMaterial color="#0a0f1a" />
           </mesh>
-          {Array.from({ length: 8 }, (_, i) => (
-            <mesh key={i} position={[-1.6 + i * 0.46, 1.0, -halfD + WALL_T + 0.06]}>
-              <circleGeometry args={[0.06, 8]} />
-              <meshStandardMaterial
-                color={["#22c55e","#22c55e","#f59e0b","#22c55e","#3b82f6","#22c55e","#f87171","#22c55e"][i]!}
-                emissive={["#22c55e","#22c55e","#f59e0b","#22c55e","#3b82f6","#22c55e","#f87171","#22c55e"][i]!}
-                emissiveIntensity={0.8}
-              />
-            </mesh>
-          ))}
+          {Array.from({ length: 8 }, (_, i) => {
+            const c = ["#22c55e", "#22c55e", "#f59e0b", "#22c55e", "#3b82f6", "#22c55e", "#f87171", "#22c55e"][i]!;
+            return (
+              <mesh key={i} position={[-3.6 + i * 0.28, 1.75, -halfD + WALL_T + 0.06]}>
+                <circleGeometry args={[0.07, 10]} />
+                <meshBasicMaterial color={c} toneMapped={false} />
+              </mesh>
+            );
+          })}
         </>
       )}
 
       {type === "payment" && (
         <>
-          <Workstation x={-2.0} z={-2.4} color={palette.accent} />
-          <PixelChair x={-2.0} z={-1.1} color={palette.accent} rotation={Math.PI} />
-          <Workstation x={0.4} z={-2.4} color={palette.accent} />
-          <PixelChair x={0.4} z={-1.1} color={palette.accent} rotation={Math.PI} />
-          <Workstation x={2.8} z={-2.4} color={palette.accent} />
-          <PixelChair x={2.8} z={-1.1} color={palette.accent} rotation={Math.PI} />
-          <Plant x={3.4} z={3.0} />
-          <Bookshelf x={-3.8} z={-1.2} color="#2d4060" />
+          <Plant x={3.8} z={3.3} />
+          <Bookshelf x={2.8} z={3.4} color="#2d4060" />
           {/* Cofre */}
-          <mesh position={[-3.5, 0.3, -2.5]} castShadow>
-            <boxGeometry args={[0.5, 0.6, 0.5]} />
-            <meshStandardMaterial color="#1a1a2e" metalness={0.7} />
+          <mesh position={[-3.6, 0.35, 3.2]} castShadow>
+            <boxGeometry args={[0.7, 0.7, 0.6]} />
+            <meshStandardMaterial color="#3a3f4a" metalness={0.7} roughness={0.35} />
           </mesh>
-          <mesh position={[-3.5, 0.62, -2.5]}>
-            <cylinderGeometry args={[0.08, 0.08, 0.06, 8]} />
+          <mesh position={[-3.6, 0.4, 3.51]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.1, 0.1, 0.04, 12]} />
             <meshStandardMaterial color="#c0c0c0" metalness={0.9} />
           </mesh>
         </>
@@ -1642,82 +1655,46 @@ function Room({
 
       {type === "generic" && (
         <>
-          <Workstation x={-2.2} z={-2.4} color={palette.accent} />
-          <PixelChair x={-2.2} z={-1.1} color={palette.accent} rotation={Math.PI} />
-          <Workstation x={0.8} z={-2.4} color={palette.accent} />
-          <PixelChair x={0.8} z={-1.1} color={palette.accent} rotation={Math.PI} />
-          <Workstation x={2.8} z={-2.4} color={palette.accent} />
-          <PixelChair x={2.8} z={-1.1} color={palette.accent} rotation={Math.PI} />
-          <Plant x={3.4} z={3.0} />
-          <CoffeeMachine x={-2.5} z={2.8} />
+          <Plant x={3.8} z={3.3} />
+          <CoffeeMachine x={-3.2} z={3.3} />
         </>
       )}
 
       {type === "mercado" && (
         <>
-          {/* 3 trading desks com gráfico de candles */}
-          <TradingDesk x={-2.5} z={-2.0} accent="#22c55e" />
-          <PixelChair x={-2.5} z={-0.7} color="#0d2a0d" rotation={Math.PI} />
-          <TradingDesk x={0.5} z={-2.0} accent="#22c55e" />
-          <PixelChair x={0.5} z={-0.7} color="#0d2a0d" rotation={Math.PI} />
-          <TradingDesk x={3.0} z={-2.0} accent="#ef4444" />
-          <PixelChair x={3.0} z={-0.7} color="#2a0d0d" rotation={Math.PI} />
-          {/* Tela de telão de mercado na parede traseira */}
-          <mesh position={[0, 1.4, -halfD + WALL_T + 0.04]}>
-            <boxGeometry args={[5.5, 1.0, 0.04]} />
-            <meshStandardMaterial color="#050e05" emissive="#003a10" emissiveIntensity={0.3} />
+          {/* Telão de mercado na parede do fundo */}
+          <mesh position={[-2.7, 1.75, -halfD + WALL_T + 0.03]}>
+            <boxGeometry args={[2.6, 0.8, 0.04]} />
+            <meshStandardMaterial color="#050e05" />
           </mesh>
-          {/* Linhas de preço no telão */}
-          {[-0.25, 0, 0.25].map((dy, i) => (
-            <mesh key={i} position={[0, 1.4 + dy, -halfD + WALL_T + 0.07]}>
-              <boxGeometry args={[5.0, 0.025, 0.003]} />
-              <meshStandardMaterial
-                color={["#22c55e","#60a5fa","#ef4444"][i]!}
-                emissive={["#22c55e","#60a5fa","#ef4444"][i]!}
-                emissiveIntensity={0.6}
-              />
-            </mesh>
-          ))}
-          {/* Ticker tickers simulados */}
-          {[-2.0, -0.5, 1.0, 2.5].map((tx, i) => (
-            <mesh key={i} position={[tx, 0.95, -halfD + WALL_T + 0.06]}>
-              <boxGeometry args={[0.9, 0.14, 0.01]} />
-              <meshStandardMaterial
-                color={i % 2 === 0 ? "#22c55e" : "#ef4444"}
-                emissive={i % 2 === 0 ? "#22c55e" : "#ef4444"}
-                emissiveIntensity={0.55}
-              />
-            </mesh>
-          ))}
-          {/* Mesa de briefing pequena + cadeiras */}
-          <mesh position={[-2.5, 0.6, 2.2]} castShadow>
-            <boxGeometry args={[1.6, 0.05, 0.8]} />
-            <meshStandardMaterial color="#162216" roughness={0.5} />
+          <mesh position={[-2.7, 1.75, -halfD + WALL_T + 0.06]}>
+            <planeGeometry args={[2.5, 0.7]} />
+            <meshBasicMaterial map={screenTexture("#22c55e", "chart", 3)} toneMapped={false} />
           </mesh>
-          <PixelChair x={-2.5} z={1.5} color="#0d2a0d" />
-          <PixelChair x={-2.5} z={2.9} color="#0d2a0d" rotation={Math.PI} />
-          <Plant x={3.4} z={2.8} tall />
-          <CoffeeMachine x={2.5} z={2.8} />
+          <Plant x={3.8} z={3.3} tall />
+          <CoffeeMachine x={-3.2} z={3.3} />
         </>
       )}
 
-      <DoorMesh x={0} z={halfD} roomCX={cx} roomCZ={cz} />
+      <DoorMesh x={0} z={halfD} roomCX={cx} roomCZ={cz} accent={palette.accent} />
     </group>
   );
 }
 
+function roomPalette(type: string, index: number) {
+  return type === "meeting" ? MEETING_PALETTE
+    : type === "ceo" ? CEO_PALETTE
+    : ROOM_PALETTES[index % ROOM_PALETTES.length]!;
+}
+
 // ─── Piso entre fileiras ──────────────────────────────────────────────────────
 
-function InterRowPassage({ corrZ, gridW }: { corrZ: number; gridW: number }) {
-  const rows = Math.max(1, Math.floor(corrZ / (ROOM_D + ROOM_GAP_Z)));
+function InterRowPassage({ rows, gridW }: { rows: number; gridW: number }) {
   const passages: JSX.Element[] = [];
   for (let r = 1; r < rows; r++) {
-    const z = r * (ROOM_D + ROOM_GAP_Z) - ROOM_GAP_Z / 2;
+    const z = r * (ROOM_D + ROOM_GAP_Z) - ROOM_GAP_Z / 2 - ROOM_D / 2;
     passages.push(
-      <mesh key={r} rotation={[-Math.PI / 2, 0, 0]} position={[gridW / 2, 0.011, z]} receiveShadow>
-        <planeGeometry args={[gridW + 4, ROOM_GAP_Z]} />
-        <meshStandardMaterial color="#eaeff8" roughness={0.85} />
-      </mesh>
+      <WalkwaySlab key={r} x={gridW / 2 - ROOM_W / 2} z={z} w={gridW} d={ROOM_GAP_Z} color="#ebe5da" />,
     );
   }
   return <>{passages}</>;
@@ -1725,9 +1702,15 @@ function InterRowPassage({ corrZ, gridW }: { corrZ: number; gridW: number }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
+// Status de Task agrupados como no quadro de tarefas: fazendo / próximas / feitas.
+const TASK_DOING: Task["status"][] = ["in_progress"];
+const TASK_NEXT:  Task["status"][] = ["created", "adapted", "paused_ceo"];
+const TASK_DONE:  Task["status"][] = ["approved"];
+
 export default function CompanyOffice3D() {
   const [sectors,   setSectors]   = useState<Sector[]>([]);
   const [rawAgents, setRawAgents] = useState<Agent[]>([]);
+  const [tasks,     setTasks]     = useState<Task[]>([]);
   const [error,   setError]     = useState<string | null>(null);
   const [loading, setLoading]   = useState(true);
 
@@ -1737,6 +1720,9 @@ export default function CompanyOffice3D() {
   const [autonomySlider, setAutonomySlider] = useState(1); // 0=Baixo 1=Médio 2=Alto
   const [zoom,           setZoom]           = useState(1);
   const [camMode,        setCamMode]        = useState<CamMode>("overview");
+  const [homeKey,        setHomeKey]        = useState(0);
+  const [showCards,      setShowCards]      = useState(true);
+  const [showWires,      setShowWires]      = useState(true);
 
   // Intervalo de polling derivado do slider (não estado separado)
   const speed = AUTONOMY_SPEEDS[autonomySlider] ?? 30_000;
@@ -1758,7 +1744,12 @@ export default function CompanyOffice3D() {
     async function fetchAll() {
       try {
         const [s, a] = await Promise.all([listSectors(), listAgents()]);
-        if (!cancelled) { setSectors(s); setRawAgents(a); setError(null); }
+        // Tasks só alimentam os KPIs dos cartões — falha aqui não derruba o escritório
+        const t = await listTasks().catch(() => null);
+        if (!cancelled) {
+          setSectors(s); setRawAgents(a); setError(null);
+          if (t) setTasks(t);
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof ApiError ? err.message : "Falha ao carregar.");
       } finally {
@@ -1771,7 +1762,7 @@ export default function CompanyOffice3D() {
     return () => { cancelled = true; clearInterval(iv); };
   }, [paused, speed]);
 
-  const { connected, lastAgentEvent } = useRealtime();
+  const { connected, lastAgentEvent, lastTaskEvent } = useRealtime();
 
   const addLog = useCallback((agent: OfficeAgent, action: string) => {
     setActivityLogs((prev) => [
@@ -1789,6 +1780,15 @@ export default function CompanyOffice3D() {
     );
   }, [lastAgentEvent]);
 
+  useEffect(() => {
+    if (!lastTaskEvent) return;
+    setTasks((prev) =>
+      prev.some((t) => t.id === lastTaskEvent.id)
+        ? prev.map((t) => (t.id === lastTaskEvent.id ? lastTaskEvent : t))
+        : [lastTaskEvent, ...prev],
+    );
+  }, [lastTaskEvent]);
+
   // Quando uma reunião local está ativa, sobrescreve o status dos participantes
   // para "meeting" independentemente do que o backend retorna — sem isso o
   // AgentAvatar3D nunca recebe status=meeting e os agentes não se movem.
@@ -1802,17 +1802,6 @@ export default function CompanyOffice3D() {
     }),
     [rawAgents, sectors, meetingAgentIds],
   );
-
-  const agentsBySector = useMemo(() => {
-    const map = new Map<number, OfficeAgent[]>();
-    for (const a of officeAgents) {
-      if (a.sectorId == null) continue;
-      const list = map.get(a.sectorId) ?? [];
-      list.push(a);
-      map.set(a.sectorId, list);
-    }
-    return map;
-  }, [officeAgents]);
 
   const prevStatusRef = useRef<Map<number, string>>(new Map());
   useEffect(() => {
@@ -1834,6 +1823,7 @@ export default function CompanyOffice3D() {
   //   índice 0         → Sala CEO (sempre canto superior esquerdo — paredes verdes)
   //   índices 1..N     → setores reais (cada sector[i] ocupa slot i+1)
   //   índice N+1       → Sala de Reunião
+  //   à frente         → corredor + praça do Cérebro
   const CEO_ROOM_INDEX     = 0;
   const totalRooms         = sectors.length + 2; // +1 CEO, +1 Reunião
   const cols               = Math.min(Math.max(totalRooms, 1), ROOMS_PER_ROW);
@@ -1841,34 +1831,119 @@ export default function CompanyOffice3D() {
   const gridW              = cols * (ROOM_W + ROOM_GAP_X) - ROOM_GAP_X;
   const CORR_Z             = corridorZ(rows);
 
-  // Posição da Sala CEO
   const [ceoCX, ceoCZ]    = roomCenter(CEO_ROOM_INDEX);
   const ceoDoor            = roomDoorVec(ceoCX, ceoCZ);
 
-  // Sala de Reunião: último slot
   const meetingRoomIndex   = sectors.length + 1;
   const [meetingCX, meetingCZ] = roomCenter(meetingRoomIndex);
   const meetingRoomPos: [number, number, number] = [meetingCX, 0, meetingCZ];
   const meetingDoor        = roomDoorVec(meetingCX, meetingCZ);
 
-  const sceneCX = (cols - 1) * (ROOM_W + ROOM_GAP_X) / 2;
-  const sceneCZ = rows * (ROOM_D + ROOM_GAP_Z) / 2;
-
-  // Distância de câmera que enquadra todo o escritório
-  const camDist = Math.max(gridW, CORR_Z + 4) * 0.65 + 8;
+  // Praça do Cérebro: logo à frente do corredor, centralizada na planta
+  const sceneCX  = (cols - 1) * (ROOM_W + ROOM_GAP_X) / 2;
+  const brainPos: [number, number] = [sceneCX, CORR_Z + CORRIDOR_D / 2 + 3.2];
+  const minZ     = -ROOM_D / 2;
+  const maxZ     = brainPos[1] + 2.6;
+  const sceneCZ  = (minZ + maxZ) / 2;
+  const extent: [number, number] = [gridW + 2, maxZ - minZ];
 
   const meetingAgentList = useMemo(
     () => officeAgents.filter((a) => meetingAgentIds.has(a.id)),
     [officeAgents, meetingAgentIds],
   );
 
-  // Agentes da sala CEO: CEO + general_orchestrator (sector=null)
-  const ceoRoomAgents = useMemo(
-    () => officeAgents.filter(
-      (a) => a.access_level === "ceo" || a.access_level === "general_orchestrator",
-    ),
-    [officeAgents],
+  // Mesas por sala (coordenada local) + casa de cada agente (coordenada mundial).
+  // Ordem: CEO, depois orquestradores, depois operacionais — o líder fica na 1ª mesa.
+  const { desksByRoom, homeById } = useMemo(() => {
+    const desksByRoom = new Map<number, DeskSpec[]>();
+    const homeById = new Map<number, [number, number]>();
+    const byRoom = new Map<number, OfficeAgent[]>();
+    for (const a of officeAgents) {
+      const isCeoRoom = a.access_level === "ceo" || a.access_level === "general_orchestrator";
+      const sIdx = isCeoRoom ? -1 : sectors.findIndex((s) => s.id === a.sectorId);
+      const roomIdx = sIdx >= 0 ? sIdx + 1 : CEO_ROOM_INDEX;
+      const list = byRoom.get(roomIdx) ?? [];
+      list.push(a);
+      byRoom.set(roomIdx, list);
+    }
+    const rank = (a: OfficeAgent) => (a.access_level === "ceo" ? 0 : a.isOrchestrator ? 1 : 2);
+    for (const [roomIdx, list] of byRoom) {
+      list.sort((a, b) => rank(a) - rank(b) || a.id - b.id);
+      const slots = roomIdx === CEO_ROOM_INDEX ? ceoDeskLayout(list.length) : deskLayout(list.length).slots;
+      const [rcx, rcz] = roomCenter(roomIdx);
+      desksByRoom.set(roomIdx, list.map((a, i) => {
+        const [x, z] = slots[i] ?? [0, 0];
+        const seat = DESK_SEAT_Z + (roomIdx === CEO_ROOM_INDEX && i === 0 ? 0.5 : 0);
+        homeById.set(a.id, [rcx + x, rcz + z + seat]);
+        return {
+          agentId: a.id,
+          name: a.name.split(" ").slice(0, 2).join(" "),
+          x, z,
+          active: a.status === "working",
+          lead: a.isOrchestrator || a.access_level === "ceo",
+        };
+      }));
+    }
+    return { desksByRoom, homeById };
+  }, [officeAgents, sectors]);
+
+  // KPIs reais por setor (agentes + tasks)
+  const statsBySector = useMemo(() => {
+    const agentSector = new Map<number, number | null>();
+    for (const a of officeAgents) agentSector.set(a.id, a.sectorId);
+    const map = new Map<number, SectorStats>();
+    const get = (id: number) => {
+      let st = map.get(id);
+      if (!st) { st = { agents: 0, working: 0, paused: 0, doing: 0, next: 0, done: 0 }; map.set(id, st); }
+      return st;
+    };
+    for (const a of officeAgents) {
+      const key = a.access_level === "ceo" || a.access_level === "general_orchestrator" ? -2 : (a.sectorId ?? -2);
+      const st = get(key);
+      st.agents++;
+      if (a.status === "working") st.working++;
+      if (a.status === "paused") st.paused++;
+    }
+    for (const t of tasks) {
+      const sec = agentSector.get(t.agent);
+      const key = sec ?? -2;
+      const st = get(key);
+      if (TASK_DOING.includes(t.status)) st.doing++;
+      else if (TASK_NEXT.includes(t.status)) st.next++;
+      else if (TASK_DONE.includes(t.status)) st.done++;
+    }
+    return map;
+  }, [officeAgents, tasks]);
+
+  const brainLinks = useMemo<BrainLink[]>(() => {
+    const links: BrainLink[] = [];
+    const push = (id: number, idx: number, name: string, connected: boolean) => {
+      const [rcx, rcz] = roomCenter(idx);
+      const type = inferRoomType(name);
+      links.push({
+        id,
+        to: [rcx, WALL_H + 0.08, rcz - ROOM_D / 2],
+        color: roomPalette(type, idx).accent,
+        connected,
+        working: statsBySector.get(id)?.working ?? 0,
+      });
+    };
+    // Sala CEO = acesso ao cérebro principal inteiro (sem filtro de fonte)
+    push(-2, CEO_ROOM_INDEX, "CEO", true);
+    sectors.forEach((s, i) => push(s.id, i + 1, s.name, s.knowledge_source != null));
+    return links;
+  }, [sectors, statsBySector]);
+
+  const sourcesCount = useMemo(
+    () => new Set(sectors.map((s) => s.knowledge_source).filter((k) => k != null)).size,
+    [sectors],
   );
+
+  const lastBrainActivity = useMemo(() => {
+    const w = officeAgents.find((a) => a.status === "working");
+    if (!w) return null;
+    return `${w.name.split(" ")[0]} · ${w.sectorName}`;
+  }, [officeAgents]);
 
   const handleAgentClick  = useCallback((a: OfficeAgent) => { setSelectedAgent(a); setAgentModalOpen(true); }, []);
   const handleRoomClick   = useCallback((id: number, name: string) => {
@@ -1896,18 +1971,29 @@ export default function CompanyOffice3D() {
   );
 
   if (loading) return (
-    <div className="flex h-full items-center justify-center bg-[#d8dce6]">
-      <p className="text-sm text-slate-500">Carregando escritório...</p>
+    <div className="flex h-full items-center justify-center bg-[#f1eee8]">
+      <p className="text-sm text-stone-500">Carregando escritório...</p>
     </div>
   );
   if (error) return (
-    <div className="flex h-full items-center justify-center bg-[#d8dce6]">
+    <div className="flex h-full items-center justify-center bg-[#f1eee8]">
       <p className="text-sm text-red-500">{error}</p>
     </div>
   );
 
+  const rowColsOf = (idx: number) => {
+    const roomRow = Math.floor(idx / ROOMS_PER_ROW);
+    return roomRow === rows - 1 ? totalRooms - roomRow * ROOMS_PER_ROW : cols;
+  };
+
+  const roomEntries: Array<{ key: string | number; sector: Sector; idx: number; meeting?: boolean }> = [
+    { key: "ceo", sector: ceoRoomSector, idx: CEO_ROOM_INDEX },
+    ...sectors.map((sector, i) => ({ key: sector.id, sector, idx: i + 1 })),
+    { key: "meeting", sector: meetingRoomSector, idx: meetingRoomIndex, meeting: true },
+  ];
+
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[#d8dce6]">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[#f1eee8]">
       <OfficeTopBar
         agents={officeAgents} connected={connected} paused={paused}
         autonomySlider={autonomySlider} zoom={zoom}
@@ -1924,166 +2010,174 @@ export default function CompanyOffice3D() {
       />
 
       <div className="relative flex min-h-0 flex-1">
-        {/* Botões de modo de câmera */}
-        <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-1 rounded-lg border border-white/10 bg-black/40 p-1 backdrop-blur-sm">
+        {/* Modo de câmera + camadas */}
+        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-1 rounded-full border border-stone-200 bg-white/90 p-1 shadow-sm backdrop-blur-sm">
           {(["overview", "topdown", "front"] as CamMode[]).map((m) => (
             <button
               key={m}
-              onClick={() => setCamMode(m)}
+              onClick={() => { setCamMode(m); setHomeKey((k) => k + 1); }}
               className={[
-                "rounded px-3 py-1 text-xs font-medium transition-colors",
-                camMode === m
-                  ? "bg-white/20 text-white"
-                  : "text-white/50 hover:bg-white/10 hover:text-white/80",
+                "rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wider transition-colors",
+                camMode === m ? "bg-stone-900 text-white" : "text-stone-500 hover:bg-stone-100 hover:text-stone-800",
               ].join(" ")}
             >
-              {m === "overview" ? "Visão Geral" : m === "topdown" ? "Topo" : "Frontal"}
+              {m === "overview" ? "Isométrica" : m === "topdown" ? "Planta" : "Frontal"}
             </button>
           ))}
+          <span className="mx-1 w-px bg-stone-200" />
+          <button
+            onClick={() => setShowCards((v) => !v)}
+            className={`rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wider ${showCards ? "bg-stone-200 text-stone-900" : "text-stone-500 hover:bg-stone-100"}`}
+          >
+            Cartões
+          </button>
+          <button
+            onClick={() => setShowWires((v) => !v)}
+            className={`rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-wider ${showWires ? "bg-emerald-100 text-emerald-800" : "text-stone-500 hover:bg-stone-100"}`}
+          >
+            Fios
+          </button>
         </div>
+
         <ActivityPanel logs={activityLogs} open={activityOpen} onClose={() => setActivityOpen(false)} />
 
-        <div className="min-w-0 flex-1" style={{ height: "100%" }}>
+        {/* overflow-hidden: rótulos Html do drei são DOM posicionado — sem isso
+            vazam por cima do painel lateral quando o zoom aproxima */}
+        <div className="relative min-w-0 flex-1 overflow-hidden" style={{ height: "100%" }}>
+          {/* Zoom + voltar ao início */}
+          <div className="absolute bottom-4 z-20 flex flex-col gap-2 transition-[right]" style={{ right: panelOpen ? 272 : 16 }}>
+            {[
+              { label: "+", title: "Aproximar", on: () => setZoom((v) => Math.min(v + 0.15, 3)) },
+              { label: "−", title: "Afastar", on: () => setZoom((v) => Math.max(v - 0.15, 0.3)) },
+              { label: "⌂", title: "Enquadrar tudo", on: () => { setZoom(1); setHomeKey((k) => k + 1); } },
+            ].map((b) => (
+              <button
+                key={b.label}
+                title={b.title}
+                onClick={b.on}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-200 bg-white text-lg text-stone-700 shadow-sm hover:bg-stone-50"
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
+
           <Canvas
             shadows
-            camera={{
-              position: [sceneCX + camDist * 0.7, camDist * 0.65, sceneCZ + camDist * 0.85],
-              fov: 46,
-            }}
+            orthographic
+            camera={{ position: [sceneCX + 60, 60, sceneCZ + 66], zoom: 20, near: 0.1, far: 1000 }}
             style={{ width: "100%", height: "100%" }}
+            onPointerMissed={() => { document.body.style.cursor = ""; }}
           >
             <AgentPosCtx.Provider value={agentPosRef}>
-            <color attach="background" args={["#d8dce6"]} />
-            <fog attach="fog" args={["#ccd0de", camDist * 3.5, camDist * 7]} />
+            <color attach="background" args={["#f1eee8"]} />
 
-            {/* Iluminação ambiente IBL */}
-            <Environment preset="warehouse" background={false} />
+            <IsoCamera mode={camMode} center={[sceneCX, sceneCZ]} extent={extent} zoom={zoom} homeKey={homeKey} />
 
-            <ambientLight intensity={0.8} />
-            <hemisphereLight args={["#f5f0e8", "#c0cce0", 0.7]} />
+            {/* Iluminação IBL gerada localmente (Lightformers) — o preset
+                "warehouse" baixava um .hdr de CDN externa e, sem rede,
+                derrubava o Canvas inteiro. Local-first (CLAUDE.md §1.3). */}
+            <Environment resolution={64} background={false}>
+              <Lightformer form="rect" intensity={2} position={[0, 10, 0]} rotation-x={Math.PI / 2} scale={[20, 20, 1]} />
+              <Lightformer form="rect" intensity={0.8} position={[-10, 4, 6]} rotation-y={Math.PI / 2} scale={[12, 6, 1]} color="#fff4e0" />
+              <Lightformer form="rect" intensity={0.6} position={[10, 4, -6]} rotation-y={-Math.PI / 2} scale={[12, 6, 1]} color="#e0ecff" />
+            </Environment>
+
+            <ambientLight intensity={0.75} />
+            <hemisphereLight args={["#fffaf0", "#c8c0b4", 0.7]} />
             <directionalLight
-              position={[sceneCX + 12, 28, sceneCZ + 10]}
-              intensity={1.8} castShadow
+              position={[sceneCX - 14, 30, sceneCZ + 18]}
+              intensity={1.7} castShadow
               shadow-mapSize={[2048, 2048]}
-              shadow-camera-left={-gridW * 1.4} shadow-camera-right={gridW * 1.4}
-              shadow-camera-top={CORR_Z * 1.5}  shadow-camera-bottom={-6}
-              shadow-camera-near={1} shadow-camera-far={camDist * 5}
+              shadow-bias={-0.0004}
+              shadow-camera-left={-extent[0]} shadow-camera-right={extent[0]}
+              shadow-camera-top={extent[1]}  shadow-camera-bottom={-extent[1]}
+              shadow-camera-near={1} shadow-camera-far={120}
             />
-            <directionalLight position={[sceneCX - 10, 20, sceneCZ - 8]} intensity={0.6} />
+            <directionalLight position={[sceneCX + 12, 18, sceneCZ - 10]} intensity={0.45} />
 
-            {/* Sombras de contato no piso */}
+            {/* Sombra suave da maquete no "papel" */}
             <ContactShadows
-              position={[sceneCX, 0.005, sceneCZ]}
-              opacity={0.28}
-              scale={[gridW + 20, rows * (ROOM_D + ROOM_GAP_Z) + 16]}
-              blur={1.8}
-              far={3}
-              color="#5060a0"
+              position={[sceneCX, -SLAB_H - 0.01, sceneCZ]}
+              opacity={0.35}
+              scale={[extent[0] + 16, extent[1] + 16]}
+              blur={2.6}
+              far={4}
+              color="#6b5d4a"
             />
 
-            {/* Preset de câmera */}
-            <CameraPreset mode={camMode} sceneCX={sceneCX} sceneCZ={sceneCZ} camDist={camDist} />
-
-            {/* Piso global — off-white neutro abaixo de tudo */}
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[sceneCX, -0.02, sceneCZ]} receiveShadow>
-              <planeGeometry args={[gridW + 16, rows * (ROOM_D + ROOM_GAP_Z) + 12]} />
-              <meshStandardMaterial color="#f2efea" roughness={0.92} />
+            {/* Base: papel off-white */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[sceneCX, -SLAB_H - 0.02, sceneCZ]} receiveShadow>
+              <planeGeometry args={[extent[0] + 200, extent[1] + 200]} />
+              <meshStandardMaterial color="#f1eee8" roughness={1} />
             </mesh>
-            {/* Grade sutil */}
-            {Array.from({ length: Math.floor((gridW + 16) / 2) + 1 }, (_, i) => (
-              <mesh key={`gv${i}`} rotation={[-Math.PI / 2, 0, 0]}
-                position={[sceneCX - (gridW / 2 + 6) + i * 2, -0.014, sceneCZ]}>
-                <planeGeometry args={[0.03, rows * (ROOM_D + ROOM_GAP_Z) + 12]} />
-                <meshBasicMaterial color="#d8d0c8" />
-              </mesh>
+
+            {/* Passagens entre fileiras e corredor principal */}
+            <InterRowPassage rows={rows} gridW={gridW} />
+            <CorridorFloor corrZ={CORR_Z} gridW={gridW} />
+
+            {/* Praça do Cérebro, ligada ao corredor */}
+            <WalkwaySlab x={brainPos[0]} z={(CORR_Z + CORRIDOR_D / 2 + brainPos[1] + 2.6) / 2}
+              w={7} d={brainPos[1] + 2.6 - (CORR_Z + CORRIDOR_D / 2)} color="#e9e3d6" />
+            <BrainHub
+              position={brainPos}
+              links={showWires ? brainLinks : []}
+              sourcesCount={sourcesCount}
+              lastActivity={lastBrainActivity}
+            />
+
+            {/* Salas */}
+            {roomEntries.map(({ key, sector, idx, meeting }) => (
+              <Room
+                key={key}
+                sector={sector}
+                index={idx}
+                col={idx % ROOMS_PER_ROW}
+                totalCols={rowColsOf(idx)}
+                isMeetingRoom={meeting}
+                desks={meeting ? [] : desksByRoom.get(idx) ?? []}
+                onRoomClick={handleRoomClick}
+              />
             ))}
 
-            {/* Passagens entre fileiras */}
-            <InterRowPassage corrZ={CORR_Z} gridW={gridW} />
-
-            {/* Corredor principal (apenas se houver mais de uma fileira) */}
-            {rows > 1 && <CorridorFloor corrZ={CORR_Z} gridW={gridW} />}
-
-            {/* Sala CEO — índice 0, canto superior esquerdo */}
-            {(() => {
-              const roomRow = Math.floor(CEO_ROOM_INDEX / ROOMS_PER_ROW);
-              const isLast  = roomRow === rows - 1;
-              const rowCols = isLast ? (totalRooms - roomRow * ROOMS_PER_ROW) : cols;
+            {/* Cartões de KPI por setor */}
+            {showCards && roomEntries.filter((r) => !r.meeting).map(({ key, sector, idx }) => {
+              const [rcx, rcz] = roomCenter(idx);
+              const type = inferRoomType(sector.name);
+              const stats = statsBySector.get(sector.id) ?? { agents: 0, working: 0, paused: 0, doing: 0, next: 0, done: 0 };
               return (
-                <Room
-                  sector={ceoRoomSector}
-                  index={CEO_ROOM_INDEX}
-                  col={CEO_ROOM_INDEX % ROOMS_PER_ROW}
-                  totalCols={rowCols}
-                  onRoomClick={handleRoomClick}
-                />
-              );
-            })()}
-
-            {/* Salas dos setores — começam no índice 1 (0 é reservado para CEO) */}
-            {sectors.map((sector, i) => {
-              const idx     = i + 1;
-              const roomRow = Math.floor(idx / ROOMS_PER_ROW);
-              const isLast  = roomRow === rows - 1;
-              const rowCols = isLast ? (totalRooms - roomRow * ROOMS_PER_ROW) : cols;
-              return (
-                <Room
-                  key={sector.id}
-                  sector={sector}
-                  index={idx}
-                  col={idx % ROOMS_PER_ROW}
-                  totalCols={rowCols}
-                  onRoomClick={handleRoomClick}
+                <SectorCard
+                  key={`card-${key}`}
+                  position={[rcx - ROOM_W / 2 + 1.2, WALL_H + 1.9, rcz - ROOM_D / 2 + 0.6]}
+                  name={sector.name}
+                  color={roomPalette(type, idx).accent}
+                  stats={stats}
+                  brain={sector.id === -2 ? "Cérebro principal" : sector.knowledge_source_name}
+                  onClick={() => sector.id !== -2 && handleRoomClick(sector.id, sector.name)}
                 />
               );
             })}
 
-            {/* Sala de reunião — integrada no grid, no último slot */}
-            {(() => {
-              const idx     = meetingRoomIndex;
-              const roomRow = Math.floor(idx / ROOMS_PER_ROW);
-              const isLast  = roomRow === rows - 1;
-              const rowCols = isLast ? (totalRooms - roomRow * ROOMS_PER_ROW) : cols;
-              return (
-                <Room
-                  sector={meetingRoomSector}
-                  index={idx}
-                  col={idx % ROOMS_PER_ROW}
-                  totalCols={rowCols}
-                  isMeetingRoom
-                  onRoomClick={handleRoomClick}
-                />
-              );
-            })()}
-
             {/* Agentes */}
             {officeAgents.map((agent) => {
-              // CEO e Orquestrador-Geral (sector=null) ficam na Sala CEO
               const isCeoRoom =
                 agent.access_level === "ceo" || agent.access_level === "general_orchestrator";
 
               let cx: number, cz: number;
-              let sAgents: OfficeAgent[];
-              let aIdx: number;
               let fromDoor: THREE.Vector3;
 
               if (isCeoRoom) {
                 [cx, cz] = [ceoCX, ceoCZ];
-                sAgents  = ceoRoomAgents;
-                aIdx     = ceoRoomAgents.findIndex((a) => a.id === agent.id);
                 fromDoor = ceoDoor;
               } else {
-                // Sector rooms estão no índice sIdx+1 (slot 0 é CEO)
                 const sIdx = sectors.findIndex((s) => s.id === agent.sectorId);
                 const pos  = sIdx >= 0 ? roomCenter(sIdx + 1) : roomCenter(CEO_ROOM_INDEX);
                 cx = pos[0]; cz = pos[1];
-                sAgents  = agentsBySector.get(agent.sectorId ?? -1) ?? [];
-                aIdx     = sAgents.findIndex((a) => a.id === agent.id);
                 fromDoor = roomDoorVec(cx, cz);
               }
 
-              const [ax, az] = deskSlot(aIdx >= 0 ? aIdx : 0, Math.max(sAgents.length, 1));
-              const homePos: [number, number, number] = [cx + ax, 0, cz + az];
+              const [hx, hz] = homeById.get(agent.id) ?? [cx, cz];
+              const homePos: [number, number, number] = [hx, 0, hz];
 
               const mIdx = meetingAgentList.findIndex((a) => a.id === agent.id);
               const meetingPos: [number, number, number] | null =
@@ -2110,6 +2204,7 @@ export default function CompanyOffice3D() {
                   meetingPos={meetingPos}
                   fromDoor={fromDoor}
                   meetingDoor={meetingDoor}
+                  meetingCenter={[meetingCX, meetingCZ]}
                   corrZ={CORR_Z}
                   roomBounds={roomBounds}
                   onSelect={handleAgentClick}
@@ -2117,13 +2212,14 @@ export default function CompanyOffice3D() {
               );
             })}
 
-            {/* OrbitControls sem limite de ângulo polar → 360° completo */}
             <OrbitControls
+              makeDefault
               target={[sceneCX, 0, sceneCZ]}
               enableDamping
-              dampingFactor={0.06}
-              minDistance={6}
-              maxDistance={camDist * 3.5}
+              dampingFactor={0.08}
+              minZoom={4}
+              maxZoom={220}
+              maxPolarAngle={Math.PI / 2.15}
             />
             </AgentPosCtx.Provider>
           </Canvas>
