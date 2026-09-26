@@ -23,6 +23,8 @@ class ServiceCredential(TenantMixin, models.Model):
         # token = API token do hPanel (VPS, domínios). E-mail da Hostinger é SMTP/IMAP
         # e fica em EmailAccount, não aqui.
         HOSTINGER = "hostinger", "Hostinger"
+        # token = chave da API Pública do DataJud (CNJ) — andamentos de processos
+        DATAJUD = "datajud", "DataJud (CNJ)"
 
     provider = models.CharField(max_length=20, choices=Provider.choices)
     label = models.CharField(max_length=100, blank=True)

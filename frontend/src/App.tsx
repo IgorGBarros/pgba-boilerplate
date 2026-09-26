@@ -8,6 +8,7 @@ import { isLoggedIn, logout } from "@/lib/auth";
 import { RealtimeProvider } from "@/lib/RealtimeContext";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { AdminPanelHost } from "@/components/admin/AdminPanel";
+import { AssinarPage, VerificarPage } from "@/pages/AssinarPage";
 import type { Section } from "@/lib/navigation";
 
 // Carregado sob demanda: só quem abre o Estúdio paga o custo de
@@ -60,7 +61,17 @@ const params = new URLSearchParams(window.location.search);
 const isEmbedded = params.get("embed") === "1";
 const embeddedTab = (params.get("tab") as EmbedTab | null) ?? "pages";
 
+// Páginas públicas (sem login): assinatura por link pessoal e verificação de PDF
+const assinarToken = window.location.pathname.match(/^\/assinar\/([\w-]+)\/?$/)?.[1];
+const isVerificar = /^\/verificar\/?$/.test(window.location.pathname);
+
 export default function App() {
+  if (assinarToken) return <AssinarPage token={assinarToken} />;
+  if (isVerificar) return <VerificarPage />;
+  return <MainApp />;
+}
+
+function MainApp() {
   const [section, setSectionState] = useState<Section>(readSection);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [authed, setAuthed] = useState(isLoggedIn());

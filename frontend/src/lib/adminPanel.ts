@@ -42,14 +42,17 @@ export function openEmpresaModule(key: string) {
   window.dispatchEvent(new CustomEvent<string>(MODULE_EVENT, { detail: key }));
 }
 
-export function takePendingModule(): string | null {
+/** Lê o pedido sem apagar (inicializador de estado roda 2x no StrictMode). */
+export function peekPendingModule(): string | null {
   try {
-    const k = sessionStorage.getItem(MODULE_KEY);
-    if (k) sessionStorage.removeItem(MODULE_KEY);
-    return k;
+    return sessionStorage.getItem(MODULE_KEY);
   } catch {
     return null;
   }
+}
+
+export function clearPendingModule() {
+  try { sessionStorage.removeItem(MODULE_KEY); } catch { /* aba privada */ }
 }
 
 export function useModuleRequests(onOpen: (key: string) => void) {

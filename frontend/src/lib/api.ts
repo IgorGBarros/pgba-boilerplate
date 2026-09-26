@@ -1930,15 +1930,43 @@ export async function updateFuncionario(id: number, data: Partial<Funcionario>):
 export interface Processo {
   id: number;
   titulo: string;
+  numero_cnj: string;
   tipo: string;
-  status: "em_andamento" | "ganho" | "perdido" | "acordo" | "arquivado";
+  status: "em_andamento" | "suspenso" | "ganho" | "perdido" | "acordo" | "arquivado";
+  fase: "conhecimento" | "recursal" | "execucao" | "encerrado";
+  instancia: string;
+  polo: "ativo" | "passivo" | "terceiro";
+  cliente: number | null;
+  cliente_nome: string;
   parte: string;
+  parte_contraria: string;
   advogado: string;
+  tribunal: string;
   foro: string;
+  orgao_julgador: string;
+  classe: string;
+  assunto: string;
+  data_distribuicao: string | null;
   risco: "alto" | "medio" | "baixo";
+  probabilidade_perda: "provavel" | "possivel" | "remota";
   valor_causa: string;
+  valor_estimado_perda: string;
+  valor_provisionado: string;
   prazo_proximo: string | null;
   observacoes: string;
+  ultima_sincronizacao: string | null;
+  sincronizacao_msg: string;
+  andamentos_count: number;
+  ultimo_andamento: { data: string; descricao: string; origem: string } | null;
+  created_at: string;
+}
+
+export interface Andamento {
+  id: number;
+  processo: number;
+  data: string;
+  descricao: string;
+  origem: "manual" | "datajud";
   created_at: string;
 }
 
@@ -1946,13 +1974,19 @@ export interface ContratoJuridico {
   id: number;
   titulo: string;
   tipo: string;
+  parceiro: number | null;
+  parceiro_nome: string;
   partes: string;
+  responsavel: string;
   data_inicio: string;
   data_fim: string | null;
+  aviso_dias: number;
+  indice_reajuste: string;
   valor_anual: string;
-  status: "vigente" | "expirando" | "vencido" | "negociacao" | "cancelado";
-  renovacao: string;
+  status: string;
+  renovacao: "automatica" | "negociacao" | "nao_renovar";
   observacoes: string;
+  dias_para_vencer: number | null;
   created_at: string;
 }
 
@@ -1961,51 +1995,261 @@ export interface Prazo {
   titulo: string;
   tipo: string;
   prazo: string;
+  data_inicio: string | null;
+  dias: number | null;
+  contagem: "uteis" | "corridos";
   urgencia: "critica" | "alta" | "media" | "baixa";
   responsavel: string;
   descricao: string;
   processo: number | null;
   processo_titulo: string;
+  processo_numero: string;
   contrato: number | null;
   contrato_titulo: string;
   concluido: boolean;
+  concluido_em: string | null;
+  dias_restantes: number | null;
   created_at: string;
 }
 
-export async function listProcessos(params?: Record<string, string>): Promise<Processo[]> {
-  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-  return requestList<Processo>(`/api/v1/juridico/processos/${qs}`);
-}
-export async function createProcesso(data: Partial<Processo>): Promise<Processo> {
-  return request<Processo>("/api/v1/juridico/processos/", { method: "POST", body: JSON.stringify(data) });
-}
-export async function updateProcesso(id: number, data: Partial<Processo>): Promise<Processo> {
-  return request<Processo>(`/api/v1/juridico/processos/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
-}
-export async function deleteProcesso(id: number): Promise<void> {
-  await request<void>(`/api/v1/juridico/processos/${id}/`, { method: "DELETE" });
-}
-
-export async function listContratosJuridico(params?: Record<string, string>): Promise<ContratoJuridico[]> {
-  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-  return requestList<ContratoJuridico>(`/api/v1/juridico/contratos/${qs}`);
-}
-export async function createContratoJuridico(data: Partial<ContratoJuridico>): Promise<ContratoJuridico> {
-  return request<ContratoJuridico>("/api/v1/juridico/contratos/", { method: "POST", body: JSON.stringify(data) });
-}
-export async function updateContratoJuridico(id: number, data: Partial<ContratoJuridico>): Promise<ContratoJuridico> {
-  return request<ContratoJuridico>(`/api/v1/juridico/contratos/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+export interface PainelJuridico {
+  processos_ativos: number;
+  valor_em_disputa: string;
+  provisao: string;
+  contingencia_possivel: string;
+  contingencia_remota: string;
+  taxa_exito: number | null;
+  encerrados: number;
+  prazos_vencidos: number;
+  prazos_7_dias: number;
+  contratos_vigentes: number;
+  contratos_vencendo_30: number;
+  assinaturas_pendentes: number;
+  por_tipo: { tipo: string; n: number }[];
+  proximos_prazos: Prazo[];
+  contratos_a_vencer: ContratoJuridico[];
 }
 
+export async function getPainelJuridico(): Promise<PainelJuridico> {
+  return request<PainelJuridico>("/api/v1/juridico/painel/");
+}
+export async function listAndamentos(processo: number): Promise<Andamento[]> {
+  return requestList<Andamento>(`/api/v1/juridico/andamentos/?processo=${processo}&page_size=500&ordering=-data`);
+}
+export async function createAndamento(data: { processo: number; data: string; descricao: string }): Promise<Andamento> {
+  return request<Andamento>("/api/v1/juridico/andamentos/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function syncDataJud(processo: number): Promise<{ novos: number; mensagem: string }> {
+  return request(`/api/v1/juridico/processos/${processo}/sincronizar/`, { method: "POST" });
+}
+export async function calcularPrazo(inicio: string, dias: number, contagem: "uteis" | "corridos") {
+  return request<{ vencimento: string; pulados: { data: string; motivo: string }[] }>(
+    "/api/v1/juridico/prazos/calcular/", { method: "POST", body: JSON.stringify({ inicio, dias, contagem }) },
+  );
+}
 export async function listPrazos(params?: Record<string, string>): Promise<Prazo[]> {
-  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-  return requestList<Prazo>(`/api/v1/juridico/prazos/${qs}`);
-}
-export async function createPrazo(data: Partial<Prazo>): Promise<Prazo> {
-  return request<Prazo>("/api/v1/juridico/prazos/", { method: "POST", body: JSON.stringify(data) });
+  const qs = new URLSearchParams({ page_size: "500", ...(params ?? {}) }).toString();
+  return requestList<Prazo>(`/api/v1/juridico/prazos/?${qs}`);
 }
 export async function updatePrazo(id: number, data: Partial<Prazo>): Promise<Prazo> {
   return request<Prazo>(`/api/v1/juridico/prazos/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export interface ModeloDocumento {
+  id: number;
+  nome: string;
+  tipo: string;
+  descricao: string;
+  corpo: string;
+  campos: string[];
+  created_at: string;
+}
+export interface DocumentoJuridico {
+  id: number;
+  titulo: string;
+  tipo: string;
+  status: "rascunho" | "final" | "em_assinatura" | "assinado";
+  processo: number | null;
+  processo_titulo: string;
+  contrato: number | null;
+  contrato_titulo: string;
+  modelo: number | null;
+  conteudo: string;
+  nome_arquivo: string;
+  tamanho: number;
+  sha256: string;
+  versao: number;
+  tem_arquivo: boolean;
+  assinaturas: { id: number; status: string }[];
+  created_at: string;
+  updated_at: string;
+}
+export async function listModelos(): Promise<ModeloDocumento[]> {
+  return requestList<ModeloDocumento>("/api/v1/juridico/modelos/?page_size=500");
+}
+export async function criarModelosPadrao(): Promise<{ criados: number }> {
+  return request("/api/v1/juridico/modelos/padrao/", { method: "POST" });
+}
+export async function gerarDocumento(modelo: number, data: { titulo?: string; processo?: number | null; contrato?: number | null; parceiro?: number | null }) {
+  return request<DocumentoJuridico & { faltando: string[] }>(`/api/v1/juridico/modelos/${modelo}/gerar/`, {
+    method: "POST", body: JSON.stringify(data),
+  });
+}
+export async function listDocumentosJuridicos(params: Record<string, string> = {}): Promise<DocumentoJuridico[]> {
+  const qs = new URLSearchParams({ page_size: "500", ...params }).toString();
+  return requestList<DocumentoJuridico>(`/api/v1/juridico/documentos/?${qs}`);
+}
+export async function updateDocumentoJuridico(id: number, data: Partial<DocumentoJuridico>): Promise<DocumentoJuridico> {
+  return request<DocumentoJuridico>(`/api/v1/juridico/documentos/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+}
+export async function deleteDocumentoJuridico(id: number): Promise<void> {
+  await request<void>(`/api/v1/juridico/documentos/${id}/`, { method: "DELETE" });
+}
+/** Upload de PDF (multipart — não passa pelo `request`, que manda JSON). */
+export async function uploadDocumentoJuridico(form: FormData): Promise<DocumentoJuridico> {
+  const token = getAccessToken();
+  const res = await fetch(`${API_URL}/api/v1/juridico/documentos/`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, body.detail ?? firstFieldError(body) ?? `Erro ${res.status}`, body);
+  return body as DocumentoJuridico;
+}
+/** Baixa um arquivo (PDF) da API com o login — pra mostrar num <iframe> via blob URL. */
+export async function fetchBlob(path: string, auth = true): Promise<Blob> {
+  const token = auth ? getAccessToken() : null;
+  const res = await fetch(`${API_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, body.detail ?? `Erro ${res.status}`, body);
+  }
+  return res.blob();
+}
+
+export interface SignatarioInfo {
+  id: number;
+  nome: string;
+  email: string;
+  cpf_mascarado: string;
+  papel: string;
+  papel_display: string;
+  ordem: number;
+  status: "pendente" | "visualizou" | "assinou" | "recusou";
+  convite_enviado_em: string | null;
+  visualizado_em: string | null;
+  assinado_em: string | null;
+  ip: string | null;
+  recusa_motivo: string;
+}
+export interface SolicitacaoAssinatura {
+  id: number;
+  documento: number;
+  documento_titulo: string;
+  titulo: string;
+  mensagem: string;
+  status: "rascunho" | "enviada" | "concluida" | "recusada" | "cancelada" | "expirada";
+  provedor: string;
+  exigir_codigo_email: boolean;
+  ordem_sequencial: boolean;
+  expira_em: string | null;
+  hash_original: string;
+  hash_assinado: string;
+  enviada_em: string | null;
+  concluida_em: string | null;
+  criado_por: string;
+  signatarios: SignatarioInfo[];
+  assinados: { feitos: number; total: number };
+  created_at: string;
+  envio?: { convites_enviados: number; sem_email: boolean } | null;
+}
+export interface NovoSignatario {
+  nome: string;
+  email: string;
+  cpf?: string;
+  papel: string;
+}
+export async function listAssinaturas(params: Record<string, string> = {}): Promise<SolicitacaoAssinatura[]> {
+  const qs = new URLSearchParams({ page_size: "500", ...params }).toString();
+  return requestList<SolicitacaoAssinatura>(`/api/v1/juridico/assinaturas/?${qs}`);
+}
+export async function criarAssinatura(data: {
+  documento: number; titulo?: string; mensagem?: string; exigir_codigo_email: boolean;
+  ordem_sequencial: boolean; expira_dias: number; signatarios: NovoSignatario[];
+}): Promise<SolicitacaoAssinatura> {
+  return request<SolicitacaoAssinatura>("/api/v1/juridico/assinaturas/", { method: "POST", body: JSON.stringify(data) });
+}
+export async function cancelarAssinatura(id: number, motivo = ""): Promise<SolicitacaoAssinatura> {
+  return request(`/api/v1/juridico/assinaturas/${id}/cancelar/`, { method: "POST", body: JSON.stringify({ motivo }) });
+}
+export async function linksAssinatura(id: number): Promise<{ signatario: number; nome: string; email: string; status: string; link: string }[]> {
+  return request(`/api/v1/juridico/assinaturas/${id}/links/`);
+}
+export async function reenviarConvite(id: number, signatario: number): Promise<{ enviado: boolean }> {
+  return request(`/api/v1/juridico/assinaturas/${id}/reenviar/`, { method: "POST", body: JSON.stringify({ signatario }) });
+}
+export async function eventosAssinatura(id: number): Promise<{
+  trilha_integra: boolean;
+  eventos: { id: number; tipo: string; detalhe: string; signatario_nome: string; ip: string | null; hash_encadeado: string; created_at: string }[];
+}> {
+  return request(`/api/v1/juridico/assinaturas/${id}/eventos/`);
+}
+
+// Página pública de assinatura (sem login)
+export interface AssinarInfo {
+  titulo: string;
+  mensagem: string;
+  empresa: string;
+  remetente: string;
+  hash_original: string;
+  expira_em: string | null;
+  status: string;
+  exigir_codigo_email: boolean;
+  pedir_cpf: boolean;
+  signatario: { nome: string; email: string; papel: string; status: string };
+  bloqueio: string | null;
+  concluida: boolean;
+  hash_assinado: string;
+  outros: { nome: string; status: string }[];
+}
+async function publicRequest<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, data.detail ?? `Erro ${res.status}`, data);
+  return data as T;
+}
+export const assinarPublico = {
+  info: (token: string) => publicRequest<AssinarInfo>(`/api/v1/juridico/assinar/${token}/`),
+  codigo: (token: string) => publicRequest<{ ok: boolean; email: string }>(`/api/v1/juridico/assinar/${token}/codigo/`, {}),
+  assinar: (token: string, data: { nome: string; cpf?: string; codigo?: string; aceite: boolean }) =>
+    publicRequest<{ ok: boolean; concluida: boolean; hash_assinado: string }>(`/api/v1/juridico/assinar/${token}/assinar/`, data),
+  recusar: (token: string, motivo: string) => publicRequest<{ ok: boolean }>(`/api/v1/juridico/assinar/${token}/recusar/`, { motivo }),
+  pdf: (token: string, assinada = false) => fetchBlob(`/api/v1/juridico/assinar/${token}/pdf/${assinada ? "?via=assinada" : ""}`, false),
+};
+export interface VerificacaoAssinatura {
+  encontrado: boolean;
+  hash: string;
+  arquivo?: string;
+  titulo?: string;
+  status?: string;
+  concluida_em?: string | null;
+  hash_original?: string;
+  hash_assinado?: string;
+  trilha_integra?: boolean;
+  signatarios?: { nome: string; papel: string; status: string; assinado_em: string | null; email: string }[];
+}
+export async function verificarDocumento(arquivo: File): Promise<VerificacaoAssinatura> {
+  const form = new FormData();
+  form.append("arquivo", arquivo);
+  const res = await fetch(`${API_URL}/api/v1/juridico/verificar/`, { method: "POST", body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, data.detail ?? `Erro ${res.status}`, data);
+  return data as VerificacaoAssinatura;
 }
 
 // ─── Helpdesk ─────────────────────────────────────────────────────────────────
@@ -2648,7 +2892,12 @@ export type ErpResource =
   | "linhas-dre"
   | "balancete"
   | "contratos"
-  | "contratos-itens";
+  | "contratos-itens"
+  // Outros módulos com o mesmo CRUD genérico (ErpCrud): caminho completo depois de /api/v1/
+  | `juridico/${"processos" | "andamentos" | "contratos" | "prazos" | "modelos" | "documentos"}`;
+
+/** "parceiros" → /api/v1/erp/parceiros ; "juridico/prazos" → /api/v1/juridico/prazos */
+const erpBase = (resource: ErpResource) => (resource.includes("/") ? `/api/v1/${resource}` : `/api/v1/erp/${resource}`);
 
 export interface ErpPage<T> {
   results: T[];
@@ -2657,19 +2906,19 @@ export interface ErpPage<T> {
 
 export async function erpList<T>(resource: ErpResource, params: Record<string, string> = {}): Promise<ErpPage<T>> {
   const qs = new URLSearchParams({ page_size: "500", ...params }).toString();
-  const data = await request<T[] | { results: T[]; count: number }>(`/api/v1/erp/${resource}/?${qs}`);
+  const data = await request<T[] | { results: T[]; count: number }>(`${erpBase(resource)}/?${qs}`);
   if (Array.isArray(data)) return { results: data, count: data.length };
   return { results: data.results ?? [], count: data.count ?? 0 };
 }
 export async function erpCreate<T>(resource: ErpResource, data: Record<string, unknown>): Promise<T> {
-  return request<T>(`/api/v1/erp/${resource}/`, { method: "POST", body: JSON.stringify(data) });
+  return request<T>(`${erpBase(resource)}/`, { method: "POST", body: JSON.stringify(data) });
 }
 export async function erpUpdate<T>(resource: ErpResource, id: number, data: Record<string, unknown>): Promise<T> {
-  return request<T>(`/api/v1/erp/${resource}/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
+  return request<T>(`${erpBase(resource)}/${id}/`, { method: "PATCH", body: JSON.stringify(data) });
 }
 /** Exclusão lógica no backend (`is_active=False`) — o histórico continua. */
 export async function erpDelete(resource: ErpResource, id: number): Promise<void> {
-  await request<void>(`/api/v1/erp/${resource}/${id}/`, { method: "DELETE" });
+  await request<void>(`${erpBase(resource)}/${id}/`, { method: "DELETE" });
 }
 
 export type ContratoStatus = "rascunho" | "ativo" | "suspenso" | "encerrado" | "cancelado";
@@ -2811,7 +3060,7 @@ export async function getProntidaoNotaFiscal(): Promise<ProntidaoNotaFiscal> {
 
 // --- integrations: painel administrativo --------------------------------------
 
-export type CredentialProvider = "github" | "n8n" | "hostinger" | "vercel" | "render" | "supabase";
+export type CredentialProvider = "github" | "n8n" | "hostinger" | "datajud" | "vercel" | "render" | "supabase";
 
 export interface ServiceCredentialInfo {
   id: number;

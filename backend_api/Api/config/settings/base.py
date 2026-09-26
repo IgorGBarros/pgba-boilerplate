@@ -93,6 +93,8 @@ REST_FRAMEWORK = {
         "user": "200/min",
         "auth": "10/min",
         "webhook": "120/min",
+        # Links públicos de assinatura eletrônica (juridico) e verificação de documento
+        "assinatura": "60/min",
     },
 }
 
