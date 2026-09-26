@@ -8,6 +8,7 @@ from ingestion.views import (
     DocumentUploadView,
     DocumentFileUploadView,
     RAGQueryView,
+    KnowledgeGraphView,
 )
 
 router = DefaultRouter()
@@ -18,5 +19,6 @@ urlpatterns = [
     path("documents/upload/", DocumentUploadView.as_view(), name="document-upload"),
     path("documents/upload-file/", DocumentFileUploadView.as_view(), name="document-upload-file"),
     path("query/", RAGQueryView.as_view(), name="rag-query"),
+    path("graph/", KnowledgeGraphView.as_view(), name="knowledge-graph"),
     path("", include(router.urls)),
 ]

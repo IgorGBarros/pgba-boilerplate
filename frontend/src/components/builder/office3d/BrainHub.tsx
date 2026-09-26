@@ -193,13 +193,18 @@ export function BrainHub({
           />
         </mesh>
         <NeuralCore active={anyActive} />
-        <Html center zIndexRange={[10, 7]} position={[0, BRAIN_Y + 1.75, 0]} style={{ pointerEvents: "none", userSelect: "none" }}>
-          <div className="flex flex-col items-center gap-1">
+        <Html center zIndexRange={[10, 7]} position={[0, BRAIN_Y + 1.75, 0]} style={{ userSelect: "none" }}>
+          <div
+            className={`flex flex-col items-center gap-1 ${onClick ? "cursor-pointer" : ""}`}
+            onClick={onClick}
+            title={onClick ? "Abrir o Cérebro (grafo das notas)" : undefined}
+          >
             <div className="flex items-center gap-2 whitespace-nowrap rounded-full border border-stone-200 bg-white/95 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-700 shadow-sm">
               <span className={`h-1.5 w-1.5 rounded-full ${anyActive ? "animate-pulse bg-emerald-500" : "bg-stone-400"}`} />
               Cérebro
               <span className="font-mono text-[11px] text-stone-900">{sourcesCount}</span>
               <span className="text-stone-400">{sourcesCount === 1 ? "fonte" : "fontes"}</span>
+              {onClick && <span className="ml-1 rounded-full bg-emerald-50 px-1.5 text-[9px] text-emerald-700">abrir ↗</span>}
             </div>
             {lastActivity && (
               <div className="max-w-[220px] truncate rounded-full border border-emerald-300 bg-emerald-50/95 px-2.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-emerald-700">

@@ -4,16 +4,15 @@
 // os tipos reais de Agent/Sector do backend (via office-types.ts).
 import { useEffect, useRef, useState } from "react";
 import {
-  AlertOctagon,
+  Activity,
   Crown,
   CheckCircle2,
   ChevronRight,
   DoorOpen,
   Gauge,
-  Minus,
+  PanelRight,
   Pause,
   Play,
-  Plus,
   Send,
   TrendingUp,
   Users,
@@ -56,55 +55,52 @@ export function ActivityPanel({
   if (!open) return null;
 
   return (
-    <div className="absolute left-0 top-0 z-30 flex h-full w-60 flex-col border-r border-white/10 bg-[#0d1117]/90 backdrop-blur-sm">
-      <div className="border-b border-white/10 p-3">
+    <div className="absolute bottom-3 left-3 top-3 z-30 flex w-64 flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white/95 shadow-lg backdrop-blur-sm">
+      <div className="border-b border-stone-100 px-3.5 pb-2.5 pt-3">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-xs font-bold tracking-widest text-white">📡 ATIVIDADES</h2>
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-white">
+          <div className="flex items-center gap-1.5">
+            <Activity className="size-3.5 text-stone-500" />
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-800">Atividade</h2>
+            <span className="rounded-full bg-stone-100 px-1.5 font-mono text-[10px] text-stone-500">{logs.length}</span>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-800">
             <X className="size-3.5" />
           </button>
         </div>
         <div className="flex flex-wrap gap-1">
-          {(["all", "working", "thinking", "idle", "meeting", "blocked", "paused"] as const).map((s) => (
+          {(["all", "working", "idle", "meeting", "paused"] as const).map((st) => (
             <button
-              key={s}
+              key={st}
               type="button"
-              onClick={() => setFilter(s)}
+              onClick={() => setFilter(st)}
               className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                filter === s
-                  ? "bg-indigo-600 text-white"
-                  : "bg-white/5 text-slate-400 hover:bg-white/10"
+                filter === st ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-500 hover:bg-stone-200"
               }`}
             >
-              {s === "all" ? "Todos" : STATUS_LABELS[s]}
+              {st === "all" ? "Todos" : STATUS_LABELS[st]}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="flex-1 space-y-1 overflow-y-auto p-2">
-        {filtered.slice(0, 50).map((log) => (
-          <div
-            key={log.id}
-            className="rounded-lg bg-white/5 p-2 transition-colors hover:bg-white/8"
-          >
-            <div className="flex items-center gap-1.5">
-              <span className={`size-2 shrink-0 rounded-full ${STATUS_DOT[log.status]}`} />
-              <span className="truncate text-xs font-semibold text-white">{log.agentName}</span>
-              <span className="ml-auto shrink-0 font-mono text-[10px] text-slate-500">
-                {log.timestamp.toLocaleTimeString("pt-BR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                })}
+      <div className="flex-1 overflow-y-auto px-2 py-1.5">
+        {filtered.slice(0, 60).map((log) => (
+          <div key={log.id} className="relative border-l border-stone-200 py-1.5 pl-3 ml-1.5">
+            <span className={`absolute -left-[4.5px] top-2.5 size-2 rounded-full ring-2 ring-white ${STATUS_DOT[log.status]}`} />
+            <div className="flex items-baseline gap-1.5">
+              <span className="truncate text-[11px] font-semibold text-stone-800">{log.agentName}</span>
+              <span className="ml-auto shrink-0 font-mono text-[9px] text-stone-400">
+                {log.timestamp.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </span>
             </div>
-            <p className="mt-0.5 pl-3.5 text-[11px] text-slate-400">{log.action}</p>
-            <p className="pl-3.5 text-[10px] text-slate-600">{log.room}</p>
+            <p className="text-[11px] leading-snug text-stone-600">{log.action}</p>
+            <p className="text-[10px] text-stone-400">{log.room}</p>
           </div>
         ))}
         {filtered.length === 0 && (
-          <p className="py-8 text-center text-xs text-slate-500">Nenhuma atividade</p>
+          <p className="px-4 py-10 text-center text-[11px] text-stone-400">
+            Nenhuma atividade ainda — mudanças de status dos agentes aparecem aqui em tempo real.
+          </p>
         )}
       </div>
     </div>
@@ -121,13 +117,10 @@ export function OfficeTopBar({
   connected,
   paused,
   autonomySlider,
-  zoom,
   activityOpen,
   panelOpen,
   onTogglePause,
   onAutonomyChange,
-  onZoomIn,
-  onZoomOut,
   onCallMeeting,
   onEndMeeting,
   onToggleActivity,
@@ -138,13 +131,10 @@ export function OfficeTopBar({
   connected: boolean;
   paused: boolean;
   autonomySlider: number;
-  zoom: number;
   activityOpen: boolean;
   panelOpen: boolean;
   onTogglePause: () => void;
   onAutonomyChange: (v: number) => void;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
   onCallMeeting: () => void;
   onEndMeeting: () => void;
   onToggleActivity: () => void;
@@ -153,158 +143,128 @@ export function OfficeTopBar({
 }) {
   const active = agents.filter((a) => a.status === "working" || a.status === "thinking").length;
   const inMeeting = agents.filter((a) => a.status === "meeting").length;
-  const efficiency = agents.length > 0 ? Math.round((active / agents.length) * 100) : 0;
+  const pausedCount = agents.filter((a) => a.status === "paused").length;
+  const occupancy = agents.length > 0 ? Math.round((active / agents.length) * 100) : 0;
   const hasMeeting = inMeeting > 0;
 
-  const effColor =
-    efficiency >= 70 ? "#4ade80" : efficiency >= 40 ? "#facc15" : "#f87171";
-
+  // Zoom e vistas ficam na barra da própria cena (CompanyOffice3D) — aqui
+  // só o que é sobre a EMPRESA: estado ao vivo, ocupação, comportamento,
+  // reunião, console e painéis.
   return (
-    <div className="flex items-center gap-2 bg-[#0d1117] px-3 py-1.5 border-b border-white/10">
-      {/* Play/Pause */}
-      <button
-        type="button"
-        onClick={onTogglePause}
-        className="rounded-md bg-white/10 p-1.5 text-white transition hover:bg-white/20"
-        title={paused ? "Retomar" : "Pausar simulação"}
-      >
-        {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
-      </button>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-stone-200 bg-[#faf8f4] px-4 py-2">
+      {/* Título + ao vivo */}
+      <div className="flex items-center gap-2">
+        <span
+          className={`size-2 rounded-full ${connected ? "animate-pulse bg-emerald-500" : "bg-amber-500"}`}
+          title={connected ? "Tempo real conectado (WebSocket)" : "Reconectando — usando polling"}
+        />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-800">Escritório</span>
+        <span className="text-[10px] text-stone-400">{connected ? "ao vivo" : "reconectando…"}</span>
+      </div>
 
-      {/* Autonomia dos agentes — estilo "Esforço" do Claude */}
-      <div className="flex items-center gap-1">
-        <span className="text-[10px] font-medium text-slate-400">Comportamento:</span>
-        <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
+      {/* KPIs */}
+      <div className="flex items-center gap-3 text-[11px] text-stone-500">
+        <span>
+          <b className="font-mono text-sm text-stone-900">{active}</b>
+          <span className="text-stone-400">/{agents.length}</span> trabalhando
+        </span>
+        {hasMeeting && (
+          <span>
+            <b className="font-mono text-sm text-violet-600">{inMeeting}</b> em reunião
+          </span>
+        )}
+        {pausedCount > 0 && (
+          <span>
+            <b className="font-mono text-sm text-amber-600">{pausedCount}</b> pausado{pausedCount > 1 ? "s" : ""}
+          </span>
+        )}
+        <span className="flex items-center gap-1.5" title="Agentes trabalhando agora ÷ total de agentes">
+          Ocupação
+          <span className="h-1.5 w-16 overflow-hidden rounded-full bg-stone-200">
+            <span className="block h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${occupancy}%` }} />
+          </span>
+          <span className="font-mono text-[10px] text-stone-700">{occupancy}%</span>
+        </span>
+      </div>
+
+      {/* Comportamento (autonomia) */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] uppercase tracking-wider text-stone-400">Comportamento</span>
+        <div className="flex rounded-full border border-stone-200 bg-white p-0.5">
           {AUTONOMY_SLIDER_LABELS.map((label, i) => (
             <button
               key={label}
               type="button"
               onClick={() => onAutonomyChange(i)}
               title={AUTONOMY_SLIDER_DESC[i]}
-              className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
-                autonomySlider === i
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-400 hover:bg-white/10 hover:text-white"
+              className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                autonomySlider === i ? "bg-stone-900 text-white" : "text-stone-500 hover:text-stone-900"
               }`}
             >
               {label}
             </button>
           ))}
         </div>
-        <span className="text-[10px] text-slate-500 italic">
-          {AUTONOMY_SLIDER_DESC[autonomySlider]}
-        </span>
+        <span className="text-[10px] italic text-stone-400">{AUTONOMY_SLIDER_DESC[autonomySlider]}</span>
       </div>
 
-      <div className="h-4 w-px bg-white/15" />
-
-      {/* Counts */}
-      <span className="text-xs font-bold text-white">
-        Trabalhando:{" "}
-        <span className="text-green-400">{active}</span>
-      </span>
-      {hasMeeting && (
-        <span className="text-xs font-bold text-white">
-          Reunião:{" "}
-          <span className="text-purple-400">{inMeeting}</span>
-        </span>
-      )}
-
-      <div className="h-4 w-px bg-white/15" />
-
-      {/* Efficiency bar */}
-      <div className="flex w-28 items-center gap-1.5 text-xs">
-        <span className="shrink-0 text-slate-400">Eficiência</span>
-        <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-white/10">
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{ width: `${efficiency}%`, backgroundColor: effColor }}
-          />
-        </div>
-        <span className="shrink-0 w-8 text-right font-mono text-[10px]" style={{ color: effColor }}>
-          {efficiency}%
-        </span>
-      </div>
-
-      <div className="h-4 w-px bg-white/15" />
-
-      {/* Meeting controls */}
-      <button
-        type="button"
-        onClick={onCallMeeting}
-        className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-indigo-500"
-      >
-        <Users className="size-3.5" />
-        Reunião
-      </button>
-      {hasMeeting && (
-        <>
-          <button
-            type="button"
-            onClick={() => {}}
-            className="flex items-center gap-1 rounded-md bg-red-600/80 px-2 py-1 text-xs font-bold text-white transition hover:bg-red-500"
-            title="CEO interrompe reunião"
-          >
-            <AlertOctagon className="size-3.5" />
-            CEO: Pausar
-          </button>
+      {/* Ações */}
+      <div className="ml-auto flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onCallMeeting}
+          className="flex items-center gap-1.5 rounded-full bg-stone-900 px-3 py-1 text-[11px] font-semibold text-white transition hover:bg-stone-700"
+        >
+          <Users className="size-3.5" />
+          Reunião
+        </button>
+        {hasMeeting && (
           <button
             type="button"
             onClick={onEndMeeting}
-            className="flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs font-bold text-white transition hover:bg-white/20"
+            className="flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-semibold text-violet-700 transition hover:bg-violet-100"
           >
             <DoorOpen className="size-3.5" />
-            Encerrar
+            Encerrar reunião
           </button>
-        </>
-      )}
-
-      {/* Console */}
-      <button
-        type="button"
-        onClick={onOpenConsole}
-        className="ml-auto flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1 font-mono text-xs uppercase tracking-wider text-slate-300 transition hover:bg-white/20 hover:text-white"
-        title="Console — tokens e custo por setor"
-      >
-        <Gauge className="size-3.5" />
-        Console
-      </button>
-
-      {/* Zoom */}
-      <div className="flex items-center gap-0.5">
-        <button type="button" onClick={onZoomOut} className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-white">
-          <Minus className="size-3.5" />
+        )}
+        <button
+          type="button"
+          onClick={onOpenConsole}
+          className="flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1 text-[11px] font-medium text-stone-700 transition hover:bg-stone-50"
+          title="Console — tokens e custo por setor"
+        >
+          <Gauge className="size-3.5" />
+          Console
         </button>
-        <span className="w-10 text-center font-mono text-[10px] text-slate-400">
-          {Math.round(zoom * 100)}%
-        </span>
-        <button type="button" onClick={onZoomIn} className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-white">
-          <Plus className="size-3.5" />
+
+        <span className="mx-1 h-4 w-px bg-stone-200" />
+
+        <button
+          type="button"
+          onClick={onToggleActivity}
+          title="Painel de atividade"
+          className={`rounded-full p-1.5 transition ${activityOpen ? "bg-stone-900 text-white" : "text-stone-500 hover:bg-stone-200 hover:text-stone-900"}`}
+        >
+          <Activity className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={onTogglePanel}
+          title="Painel de agentes"
+          className={`rounded-full p-1.5 transition ${panelOpen ? "bg-stone-900 text-white" : "text-stone-500 hover:bg-stone-200 hover:text-stone-900"}`}
+        >
+          <PanelRight className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={onTogglePause}
+          className="rounded-full p-1.5 text-stone-500 transition hover:bg-stone-200 hover:text-stone-900"
+          title={paused ? "Retomar atualização" : "Pausar atualização (polling)"}
+        >
+          {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
         </button>
       </div>
-
-      <div className="h-4 w-px bg-white/15" />
-
-      {/* Toggle side panels */}
-      <button
-        type="button"
-        onClick={onToggleActivity}
-        title="Painel de atividades"
-        className={`rounded p-1 text-xs transition ${activityOpen ? "bg-indigo-600/30 text-indigo-400" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}
-      >
-        📡
-      </button>
-      <button
-        type="button"
-        onClick={onTogglePanel}
-        title="Painel de agentes"
-        className={`rounded p-1 transition ${panelOpen ? "bg-indigo-600/30 text-indigo-400" : "text-slate-500 hover:bg-white/10 hover:text-white"}`}
-      >
-        <Users className="size-3.5" />
-      </button>
-
-      {/* Connection */}
-      <div className={`size-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`} title={connected ? "Ao vivo" : "Reconectando"} />
     </div>
   );
 }
@@ -897,44 +857,78 @@ export function AgentInfoPanel({
   onClose: () => void;
   onAgentClick: (agent: OfficeAgent) => void;
 }) {
+  const [query, setQuery] = useState("");
   if (!open) return null;
+
+  const q = query.trim().toLowerCase();
+  const visible = q
+    ? agents.filter((a) => `${a.name} ${a.role} ${a.sectorName}`.toLowerCase().includes(q))
+    : agents;
+  // Agrupa por setor; CEO/Orquestrador-Geral (sem setor) viram "Diretoria", no topo
+  const groups = new Map<string, OfficeAgent[]>();
+  for (const a of visible) {
+    const key = a.sectorId == null ? "Diretoria" : a.sectorName;
+    groups.set(key, [...(groups.get(key) ?? []), a]);
+  }
+  const order = [...groups.keys()].sort((a, b) => (a === "Diretoria" ? -1 : b === "Diretoria" ? 1 : a.localeCompare(b)));
+  const working = agents.filter((a) => a.status === "working").length;
+
   return (
-    <div className="absolute right-0 top-0 z-30 flex h-full w-64 flex-col border-l border-white/10 bg-[#0d1117]/90 backdrop-blur-sm">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-        <p className="text-xs font-bold tracking-widest text-white">AGENTS INFO</p>
-        <button type="button" onClick={onClose} className="text-slate-400 hover:text-white">
-          <X className="size-4" />
-        </button>
-      </div>
-      <div className="flex-1 divide-y divide-white/5 overflow-y-auto">
-        {agents.map((agent) => (
-          <button
-            key={agent.id}
-            type="button"
-            className="w-full px-4 py-3 text-left transition hover:bg-white/5"
-            onClick={() => onAgentClick(agent)}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="truncate text-xs font-bold text-white">{agent.name}</p>
-                <p className="truncate text-[10px] text-slate-400">{agent.role}</p>
-              </div>
-              <ChevronRight className="mt-0.5 size-3 shrink-0 text-slate-600" />
-            </div>
-            <div className="mt-1.5 flex items-center justify-between text-[10px]">
-              <div className="flex items-center gap-1">
-                <span className={`size-1.5 rounded-full ${STATUS_DOT[agent.status]}`} />
-                <span style={{ color: agent.status === "working" ? "#4ade80" : agent.status === "paused" ? "#facc15" : "#64748b" }}>
-                  {STATUS_LABELS[agent.status]}
-                </span>
-              </div>
-              <span className="text-slate-500">{agent.sectorName}</span>
-            </div>
-            {agent.status === "working" && agent.currentTask !== "Sem tarefa ativa" && (
-              <p className="mt-0.5 truncate text-[10px] text-slate-500">{agent.currentTask}</p>
-            )}
+    <div className="absolute bottom-3 right-3 top-3 z-30 flex w-72 flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white/95 shadow-lg backdrop-blur-sm">
+      <div className="border-b border-stone-100 px-3.5 pb-2.5 pt-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-baseline gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-800">Agentes</p>
+            <span className="text-[10px] text-stone-400">{agents.length} · {working} trabalhando</span>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-800">
+            <X className="size-3.5" />
           </button>
+        </div>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Buscar agente, função ou setor"
+          className="mt-2 h-7 w-full rounded-full border border-stone-200 bg-stone-50 px-3 text-[11px] text-stone-800 outline-none focus:border-stone-400"
+        />
+      </div>
+      <div className="flex-1 overflow-y-auto pb-2">
+        {order.map((group) => (
+          <div key={group}>
+            <p className="sticky top-0 z-10 bg-white/95 px-3.5 pb-1 pt-2.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-stone-400">
+              {group} · {groups.get(group)!.length}
+            </p>
+            {groups.get(group)!.map((agent) => (
+              <button
+                key={agent.id}
+                type="button"
+                className="flex w-full items-center gap-2.5 px-3.5 py-1.5 text-left transition hover:bg-stone-50"
+                onClick={() => onAgentClick(agent)}
+              >
+                <span
+                  className="relative flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                  style={{ background: agent.appearance.shirtColor }}
+                >
+                  {agent.initials}
+                  <span className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-white ${STATUS_DOT[agent.status]}`} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1">
+                    {(agent.isOrchestrator || agent.access_level === "ceo") && <Crown className="size-3 shrink-0 text-amber-500" />}
+                    <span className="truncate text-[12px] font-medium text-stone-900">{agent.name}</span>
+                  </span>
+                  <span className="block truncate text-[10px] text-stone-500">
+                    {agent.status === "working" && agent.currentTask !== "Sem tarefa ativa"
+                      ? <span className="text-emerald-700">{agent.currentTask}</span>
+                      : `${STATUS_LABELS[agent.status]} · ${agent.role}`}
+                  </span>
+                </span>
+                <ChevronRight className="size-3 shrink-0 text-stone-300" />
+              </button>
+            ))}
+          </div>
         ))}
+        {visible.length === 0 && <p className="px-4 py-8 text-center text-[11px] text-stone-400">Nenhum agente encontrado.</p>}
       </div>
     </div>
   );
