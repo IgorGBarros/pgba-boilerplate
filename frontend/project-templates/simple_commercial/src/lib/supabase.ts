@@ -12,4 +12,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Sem as chaves, cria o cliente com um endereço de exemplo em vez de
+// quebrar o import: a página abre, e cada chamada falha com erro tratável.
+export const supabase = createClient(
+  supabaseUrl || "https://exemplo.supabase.co",
+  supabaseAnonKey || "chave-anon-nao-configurada",
+);

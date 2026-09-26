@@ -298,6 +298,37 @@ export interface Timeline {
   truncated: boolean;
 }
 
+/** Resumo do dia escrito pelo CEO, só com fatos registrados (cada fato: id "E#"). */
+export interface DailySummaryFact {
+  id: string;
+  text: string;
+  at: string | null;
+}
+
+export interface DailySummary {
+  since: string;
+  until: string;
+  facts: DailySummaryFact[];
+  summary: string;
+  cited: string[];
+  /** Citações a fatos que não existem — removidas do texto. */
+  invalid_citations: string[];
+  author: string | null;
+  provider: string | null;
+  model: string | null;
+}
+
+export async function getDailySummary(params?: { since?: string; until?: string }): Promise<DailySummary> {
+  return request<DailySummary>("/api/v1/agency/daily-summary/", { method: "POST", body: JSON.stringify(params ?? {}) });
+}
+
+export async function saveDailySummary(params: { markdown: string; facts?: DailySummaryFact[]; day?: string }) {
+  return request<{ document_id: number; source_id: number; indexing_queued: boolean }>(
+    "/api/v1/agency/daily-summary/save/",
+    { method: "POST", body: JSON.stringify(params) },
+  );
+}
+
 export async function getTimeline(params?: { since?: string; until?: string }): Promise<Timeline> {
   const query = new URLSearchParams();
   if (params?.since) query.set("since", params.since);
@@ -1382,6 +1413,31 @@ export async function createAIProvider(data: AIProviderCredentialInput): Promise
 
 export async function deleteAIProvider(id: number): Promise<void> {
   await request<void>(`/api/v1/harness/providers/${id}/`, { method: "DELETE" });
+}
+
+/** Pronto = credencial + modelo resolvidos (sem chamar o provedor). source: de onde vem a chave. */
+export interface AIProviderStatus {
+  provider: AIProvider;
+  ready: boolean;
+  detail: string;
+  source: "tenant" | "global" | "env" | null;
+  default_model: string;
+}
+
+export async function getAIProviderStatus(): Promise<{ active_provider: string; providers: AIProviderStatus[] }> {
+  return request("/api/v1/harness/providers/status/");
+}
+
+export type AIProviderTestResult =
+  | { ok: true; model: string; reply: string; latency_ms: number; tokens_in: number; tokens_out: number }
+  | { ok: false; error: string };
+
+/** Uma chamada curta de verdade ao provedor (custa poucos tokens). */
+export async function testAIProvider(provider: AIProvider, model?: string): Promise<AIProviderTestResult> {
+  return request<AIProviderTestResult>("/api/v1/harness/providers/test/", {
+    method: "POST",
+    body: JSON.stringify({ provider, ...(model ? { model } : {}) }),
+  });
 }
 
 // ─── CRM legacy types (usados por crm.tsx) ────────────────────────────────────

@@ -22,7 +22,29 @@ export function toPascalCase(text) {
   );
 }
 
-async function callHarness({ apiUrl, accessToken, prompt, previousCode, validationError, provider, model }) {
+/**
+ * Regras de geração do PRÓPRIO projeto (`.pgba/generate-prompt.md`, vem do
+ * template simple_commercial): um projeto comercial não tem `@/lib/api` nem
+ * os tokens do Studio, então o prompt padrão do harness (feito pro PGBA)
+ * gerava código que nunca passava no typecheck ali. Sem o arquivo (app
+ * principal), vale o prompt padrão do harness.
+ */
+function projectSystemPrompt(root) {
+  const file = path.join(root, ".pgba", "generate-prompt.md");
+  if (!fs.existsSync(file)) return undefined;
+  return fs.readFileSync(file, "utf-8").slice(0, 4000);
+}
+
+function hasScript(root, name) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf-8"));
+    return Boolean(pkg.scripts?.[name]);
+  } catch {
+    return false;
+  }
+}
+
+async function callHarness({ apiUrl, accessToken, prompt, previousCode, validationError, provider, model, systemPrompt }) {
   if (!accessToken) {
     throw new Error(
       "PGBA_ACCESS_TOKEN não configurado. Gere um token JWT (POST /api/v1/users/token/) " +
@@ -45,6 +67,7 @@ async function callHarness({ apiUrl, accessToken, prompt, previousCode, validati
       // Desenvolvimento → Claude). Sem isso, vale o provedor do tenant.
       ...(provider ? { provider } : {}),
       ...(model ? { model } : {}),
+      ...(systemPrompt ? { system_prompt: systemPrompt } : {}),
     }),
   });
 
@@ -67,20 +90,33 @@ function runCheck(root, command, args) {
   }
 }
 
+/**
+ * Onde as páginas geradas moram. Projeto criado pelo Studio (tem `.pgba/`):
+ * `src/pages/` — é o produto, toda página conta. App principal (o próprio
+ * Studio): `src/pages/generated/` — antes era `src/pages/`, e a lista de
+ * rotas geradas incluía Studio/GerarPage/AdminCreate, então o preview
+ * "páginas geradas" abria o próprio Studio dentro dele.
+ */
+function pagesRelDir(root) {
+  return fs.existsSync(path.join(root, ".pgba")) ? "src/pages" : "src/pages/generated";
+}
+
 function updateRoutes(root) {
-  const pagesDir = path.join(root, "src", "pages");
+  const pagesRel = pagesRelDir(root);
+  const pagesDir = path.join(root, pagesRel);
+  const importBase = `@/${pagesRel.replace(/^src\//, "")}`;
   const routesFile = path.join(root, "src", "generated-config", "routes.ts");
-  const files = fs.readdirSync(pagesDir).filter((f) => f.endsWith(".tsx"));
+  const files = fs.existsSync(pagesDir) ? fs.readdirSync(pagesDir).filter((f) => f.endsWith(".tsx")).sort() : [];
 
   const lines = [
-    "// frontend/src/generated-config/routes.ts",
+    "// src/generated-config/routes.ts",
     "// Gerado automaticamente — não edite à mão.",
     'import type { GeneratedRoute } from "./routes.types";',
     "",
   ];
   files.forEach((f) => {
     const name = f.replace(".tsx", "");
-    lines.push(`import ${name} from "@/pages/${name}";`);
+    lines.push(`import ${name} from "${importBase}/${name}";`);
   });
   lines.push("", "export const routes: GeneratedRoute[] = [");
   files.forEach((f) => {
@@ -106,30 +142,32 @@ function updateRoutes(root) {
  * @param {string} [opts.provider] - provedor de IA fixo (ex: "anthropic"); senão o do tenant
  * @param {string} [opts.model] - modelo; senão o padrão da credencial
  * @param {(stage: string, message: string) => void} [opts.onLog] - callback de progresso
- * @returns {Promise<{pageName: string, filePath: string, routesFile: string}>}
+ * @returns {Promise<{pageName: string, filePath: string, routesFile: string, route: string}>}
  */
 export async function generatePage({ root, apiUrl, accessToken, prompt, name, provider, model, onLog = () => {} }) {
   if (!prompt || !prompt.trim()) {
     throw new Error("prompt não pode ser vazio.");
   }
 
-  const pagesDir = path.join(root, "src", "pages");
+  const pagesRel = pagesRelDir(root);
+  const pagesDir = path.join(root, pagesRel);
   const pageName = name || toPascalCase(prompt);
   const filePath = path.join(pagesDir, `${pageName}.tsx`);
 
   if (fs.existsSync(filePath)) {
-    throw new Error(`Já existe uma página em src/pages/${pageName}.tsx. Escolha outro nome.`);
+    throw new Error(`Já existe uma página em ${pagesRel}/${pageName}.tsx. Escolha outro nome.`);
   }
 
   fs.mkdirSync(pagesDir, { recursive: true });
   onLog("plan", `Gerando "${pageName}" a partir de: "${prompt}"`);
 
-  let code = await callHarness({ apiUrl, accessToken, prompt, provider, model });
+  const systemPrompt = projectSystemPrompt(root);
+  let code = await callHarness({ apiUrl, accessToken, prompt, provider, model, systemPrompt });
   let attempt = 1;
 
   while (attempt <= MAX_ATTEMPTS) {
     fs.writeFileSync(filePath, code, "utf-8");
-    onLog("write", `Escrito src/pages/${pageName}.tsx (tentativa ${attempt}/${MAX_ATTEMPTS})`);
+    onLog("write", `Escrito ${pagesRel}/${pageName}.tsx (tentativa ${attempt}/${MAX_ATTEMPTS})`);
 
     onLog("validate", "Rodando typecheck...");
     const typecheck = runCheck(root, "npm", ["run", "typecheck"]);
@@ -155,19 +193,29 @@ export async function generatePage({ root, apiUrl, accessToken, prompt, name, pr
       validationError: typecheck.output,
       provider,
       model,
+      systemPrompt,
     });
     attempt += 1;
   }
 
-  onLog("validate", "Rodando lint...");
-  const lint = runCheck(root, "npm", ["run", "lint"]);
-  if (!lint.ok) {
-    onLog("validate", `⚠️ Lint com avisos/erros (não bloqueante):\n${lint.output}`);
+  if (hasScript(root, "lint")) {
+    onLog("validate", "Rodando lint...");
+    const lint = runCheck(root, "npm", ["run", "lint"]);
+    if (!lint.ok) {
+      onLog("validate", `⚠️ Lint com avisos/erros (não bloqueante):\n${lint.output}`);
+    }
   }
 
   const routesFile = updateRoutes(root);
   onLog("routes", `${routesFile} atualizado.`);
   onLog("done", `✅ "${pageName}" pronto.`);
 
-  return { pageName, filePath, routesFile };
+  // Caminho relativo à raiz do projeto (o Studio abre esse arquivo na árvore)
+  // e a rota que o preview abre (#/<nome>, mesma regra de updateRoutes).
+  return {
+    pageName,
+    filePath: path.relative(root, filePath).split(path.sep).join("/"),
+    routesFile,
+    route: `/${pageName.toLowerCase()}`,
+  };
 }

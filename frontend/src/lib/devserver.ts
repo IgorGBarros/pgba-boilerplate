@@ -47,7 +47,8 @@ async function safeFetch(input: string, init?: RequestInit): Promise<Response | 
 export interface GenerateLogEvent {
   stage: "plan" | "write" | "validate" | "routes" | "done" | "complete" | "error";
   message: string;
-  result?: { pageName: string; filePath: string; routesFile: string };
+  /** filePath relativo à raiz do projeto; route = "#/<nome>" que o preview abre. */
+  result?: { pageName: string; filePath: string; routesFile: string; route?: string };
 }
 
 export function connectGenerateStream(
@@ -70,6 +71,8 @@ export async function triggerGeneratePage(params: {
   name?: string;
   accessToken?: string;
   workspace?: string;
+  /** Pasta local de um projeto importado (tem precedência sobre workspace). */
+  localPath?: string;
   /** IA do agente que gera (ex: AI Frontend → Claude); vazio = a do tenant. */
   provider?: string;
   model?: string;
@@ -385,4 +388,66 @@ export async function gitCommit(params: {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `Dev-server respondeu ${res.status}`);
   }
+}
+
+// --- Claude Code local (tarefas do setor Desenvolvimento) -------------------
+// O devserver roda NA máquina do desenvolvedor: é ele quem abre o terminal
+// com o Claude Code ou roda `claude -p` e fecha a Task no backend.
+
+export interface ClaudeCodeStatus {
+  available: boolean;
+  version?: string;
+  error?: string;
+}
+
+export async function getClaudeCodeStatus(): Promise<ClaudeCodeStatus> {
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/claude-code/status`);
+  if (!res) return { available: false, error: "Dev-server não está respondendo. Rode 'npm run dev:admin'." };
+  return (await res.json().catch(() => ({ available: false, error: "Resposta inválida do dev-server." }))) as ClaudeCodeStatus;
+}
+
+export interface ClaudeCodeEvent {
+  stage: "plan" | "log" | "tool" | "done" | "error" | "complete";
+  message: string;
+  result?: { files?: string[]; success?: boolean };
+}
+
+/** Log do Claude Code (mesmo canal SSE por jobId da geração de páginas). */
+export function connectClaudeCodeStream(jobId: string, onEvent: (event: ClaudeCodeEvent) => void): EventSource {
+  const source = new EventSource(`${DEV_SERVER_URL}/api/generate-stream?jobId=${jobId}`);
+  source.onmessage = (e) => onEvent(JSON.parse(e.data) as ClaudeCodeEvent);
+  source.onerror = () => { lastReachable = false; };
+  return source;
+}
+
+async function postClaudeCode(path: string, body: Record<string, unknown>) {
+  const res = await safeFetch(`${DEV_SERVER_URL}/api/claude-code/${path}`, {
+    method: "POST",
+    headers: devserverHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ ...body, accessToken: localStorage.getItem("pgba_access_token") ?? undefined }),
+  });
+  if (!res) throw new Error("Dev-server não está respondendo. Rode 'npm run dev:admin' (não só 'npm run dev').");
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Dev-server respondeu ${res.status}`);
+  return data;
+}
+
+/**
+ * Inicia o Claude Code para uma Task já marcada com start-external/.
+ * `terminal` abre uma janela interativa; `headless` roda em segundo plano
+ * e fecha a Task sozinho. Sem workspace/localPath, trabalha no repositório
+ * do próprio boilerplate.
+ */
+export function runClaudeCode(params: {
+  taskId: number; jobId: string; prompt: string; mode: "terminal" | "headless";
+  workspace?: string; localPath?: string;
+}): Promise<{ accepted: boolean; cwd: string }> {
+  return postClaudeCode("run", params);
+}
+
+/** Conclui (ou marca falha) uma Task feita no terminal; na headless, interrompe. */
+export function finishClaudeCode(params: {
+  taskId: number; success: boolean; note?: string; workspace?: string; localPath?: string;
+}): Promise<{ ok: boolean; stopped: boolean; files?: string[] }> {
+  return postClaudeCode("finish", params);
 }

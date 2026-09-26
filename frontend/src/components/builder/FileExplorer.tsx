@@ -206,6 +206,12 @@ export default function FileExplorer({ files = [], activeFile, onSelectFile, onR
     }
   }
 
+  // Novo arquivo/pasta pelo topo do Explorer: dentro de src/ quando existe
+  // (a árvore de um projeto agora mostra a raiz inteira, com config e dotfiles)
+  const defaultFolder = files.some((f) => f.path === "src" || f.path.startsWith("src/"))
+    ? "src"
+    : files[0]?.path?.split("/")[0] ?? "src";
+
   async function handleCreate(type: "file" | "folder", folderPath = "src") {
     setCreateMode({ folderPath, type });
     setNewName("");
@@ -231,14 +237,14 @@ export default function FileExplorer({ files = [], activeFile, onSelectFile, onR
         <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Explorer</span>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => handleCreate("file", files[0]?.path?.split("/")[0] ?? "src")}
+            onClick={() => handleCreate("file", defaultFolder)}
             className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-white/5 hover:text-green-400"
             title="Novo arquivo"
           >
             <FilePlus className="h-3.5 w-3.5" />
           </button>
           <button
-            onClick={() => handleCreate("folder", files[0]?.path?.split("/")[0] ?? "src")}
+            onClick={() => handleCreate("folder", defaultFolder)}
             className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-white/5 hover:text-blue-400"
             title="Nova pasta"
           >

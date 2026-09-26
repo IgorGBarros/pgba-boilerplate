@@ -19,6 +19,7 @@ from agency.views import (
     KnowledgeUsageSummaryView,
     AIStatusView,
     TimelineView,
+    DailySummaryView,
 )
 
 router = DefaultRouter()
@@ -45,4 +46,9 @@ urlpatterns = [
     ),
     path("ai-status/", AIStatusView.as_view(), name="agency-ai-status"),
     path("timeline/", TimelineView.as_view(), name="agency-timeline"),
+    path("daily-summary/", DailySummaryView.as_view(), name="agency-daily-summary"),
+    path(
+        "daily-summary/save/", DailySummaryView.as_view(), {"action": "save"},
+        name="agency-daily-summary-save",
+    ),
 ]

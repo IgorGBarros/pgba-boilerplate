@@ -20,6 +20,14 @@ npm install
 npm run dev
 ```
 
+## Páginas (`src/pages/`)
+
+Cada arquivo em `src/pages/` vira uma página, listada em
+`src/generated-config/routes.ts` e aberta por `#/<nome>` (ex: `#/contato`).
+O "Gerar" do Studio PGBA escreve aqui, roda `npm run typecheck`, corrige
+se falhar e atualiza as rotas; as regras que ele segue ficam em
+`.pgba/generate-prompt.md`.
+
 ## Deploy
 
 1. **Supabase**: crie um projeto em supabase.com, copie a URL e a

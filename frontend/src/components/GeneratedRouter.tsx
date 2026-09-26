@@ -1,5 +1,5 @@
 // frontend/src/components/GeneratedRouter.tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { routes } from "@/generated-config/routes";
 
 /**
@@ -8,15 +8,25 @@ import { routes } from "@/generated-config/routes";
  * para visualizar o que foi gerado sem adicionar uma dependência de
  * roteamento ao scaffold base.
  */
+// A página ativa fica no hash (#/contato): o preview do Studio abre direto
+// na página recém-gerada, e recarregar o iframe não perde onde estava.
+const fromHash = () => window.location.hash.replace(/^#/, "") || null;
+
 export default function GeneratedRouter() {
-  const [active, setActive] = useState<string | null>(null);
+  const [active, setActiveState] = useState<string | null>(fromHash);
+  useEffect(() => {
+    const onHash = () => setActiveState(fromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  const setActive = (path: string) => { window.location.hash = path; };
   const current = routes.find((r) => r.path === active);
   const Current = current?.component;
 
   if (routes.length === 0) {
     return (
       <p className="p-6 text-sm text-slate-500">
-        Nenhuma página gerada ainda. Rode{" "}
+        Nenhuma página gerada ainda. Descreva uma página na aba “Gerar” ou rode{" "}
         <code className="rounded bg-surface-raised px-1.5 py-0.5">
           npm run generate -- "descrição da página"
         </code>

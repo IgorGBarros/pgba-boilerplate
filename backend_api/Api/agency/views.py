@@ -390,6 +390,7 @@ class TaskViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
         try:
             updated = report_task_result(
                 request.tenant_id, task.id, data["success"], data["result"], data.get("current_files"),
+                usage=data.get("usage"),
             )
         except TaskStateError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
@@ -552,6 +553,68 @@ class AIStatusView(TenantContextMixin, APIView):
 
 
 TIMELINE_MAX_WINDOW = timedelta(days=7)
+
+
+def _window(request):
+    """(since, until) do corpo ou da query (ISO 8601) — padrão: 0h de hoje até agora; máx 7 dias."""
+    def param(name):
+        return request.data.get(name) or request.query_params.get(name)
+
+    now = timezone.now()
+    midnight = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
+    until = _parse_when(param("until")) or now
+    since = _parse_when(param("since")) or midnight
+    if since >= until:
+        raise ValueError("`since` precisa ser antes de `until`.")
+    if until - since > TIMELINE_MAX_WINDOW:
+        raise ValueError("Janela máxima: 7 dias.")
+    return since, until
+
+
+class DailySummaryView(TenantContextMixin, APIView):
+    """
+    POST /api/v1/agency/daily-summary/ {"since"?, "until"?} — o CEO resume o
+    período (padrão: hoje) só com fatos registrados, citando cada um [E#].
+    POST /api/v1/agency/daily-summary/save/ {"markdown", "facts"?, "day"?} —
+    guarda como nota do Cérebro (fonte "Resumos do dia (CEO)").
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, action=None):
+        from agency.summary import daily_summary, save_summary_to_brain
+        from harness.providers import ProviderConfigError
+
+        if not getattr(request, "tenant_id", None):
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+
+        if action == "save":
+            markdown = str(request.data.get("markdown") or "").strip()
+            if not markdown:
+                return Response({"detail": "Informe o `markdown` do resumo."}, status=400)
+            if len(markdown) > 20_000:
+                return Response(
+                    {"detail": "Resumo grande demais (máx 20 mil caracteres)."}, status=400,
+                )
+            try:
+                day = _parse_when(request.data.get("day")) or timezone.now()
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=400)
+            facts = request.data.get("facts")
+            facts = facts if isinstance(facts, list) else None
+            saved = save_summary_to_brain(
+                request.tenant_id, timezone.localtime(day), markdown, facts,
+            )
+            return Response(saved, status=201)
+
+        try:
+            since, until = _window(request)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        try:
+            return Response(daily_summary(request.tenant_id, since, until))
+        except ProviderConfigError as exc:
+            return Response({"detail": f"A IA do CEO não respondeu: {exc}"}, status=502)
 
 
 class TimelineView(TenantContextMixin, APIView):

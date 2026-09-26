@@ -29,12 +29,14 @@ from __future__ import annotations
 import json
 import logging
 import time
+from contextvars import ContextVar
+from decimal import Decimal
 
 from django.conf import settings
 
 from harness.guardrails import extract_json, validate_schema, require_grounded_context, GroundingError, NoAnswer
 from harness.injection_guard import sanitize_user_input, wrap_rag_context
-from harness.providers import chat_completion, get_active_provider, ProviderConfigError
+from harness.providers import chat_completion, get_active_provider, ProviderConfigError, track_usage
 from orchestration import registry, router
 from orchestration.models import QueryLog
 
@@ -79,7 +81,22 @@ PERGUNTA: {question}
     return data.get("function"), data.get("params") or {}
 
 
-def answer_question(
+# Uso real (tokens informados pelo provedor) das chamadas desta pergunta —
+# lido por _finish pra gravar no QueryLog.
+_query_usage: ContextVar[list | None] = ContextVar("orchestration_query_usage", default=None)
+
+
+def answer_question(*args, **kwargs) -> dict:
+    """Ver `_answer_question`. Mede o uso real de IA da pergunta (harness.track_usage)."""
+    with track_usage() as usage:
+        token = _query_usage.set(usage)
+        try:
+            return _answer_question(*args, **kwargs)
+        finally:
+            _query_usage.reset(token)
+
+
+def _answer_question(
     tenant_id, question: str, user=None, use_rag_context: bool = True,
     rag_source_ids: list[int] | None = None,
     policy_check=None,
@@ -256,23 +273,30 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-_PRICE_PER_1K = {
-    "ollama": "0.000000",
-    "openai": "0.002000",
-    "anthropic": "0.003000",
-    "groq": "0.000200",
-    "openrouter": "0.001000",
-}
-
-
 def _finish(log: QueryLog, start: float, prompt_text: str = "", answer_text: str = "", provider: str = "ollama") -> None:
+    """
+    Fecha o QueryLog. Tokens e custo vêm do que o PROVEDOR informou em cada
+    chamada desta pergunta (harness.track_usage) e do preço do modelo
+    (harness.pricing); só sem chamada registrada cai na estimativa por texto.
+    """
+    from harness.pricing import estimate_cost
+
     log.latency_ms = int((time.monotonic() - start) * 1000)
-    if not log.tokens_prompt and prompt_text:
-        log.tokens_prompt = _estimate_tokens(prompt_text)
-    if not log.tokens_completion and answer_text:
-        log.tokens_completion = _estimate_tokens(answer_text)
-    total_tokens = log.tokens_prompt + log.tokens_completion
-    from decimal import Decimal
-    price = Decimal(_PRICE_PER_1K.get(provider, "0.001000"))
-    log.cost_estimated_usd = (Decimal(total_tokens) / Decimal(1000)) * price
+    usage = _query_usage.get() or []
+    if usage:
+        log.tokens_prompt = sum(u.tokens_in for u in usage)
+        log.tokens_completion = sum(u.tokens_out for u in usage)
+        log.model_name = usage[-1].model
+        log.cost_estimated_usd = sum(
+            (estimate_cost(u.provider, u.model, u.tokens_in, u.tokens_out) for u in usage),
+            start=Decimal(0),
+        )
+    else:
+        if not log.tokens_prompt and prompt_text:
+            log.tokens_prompt = _estimate_tokens(prompt_text)
+        if not log.tokens_completion and answer_text:
+            log.tokens_completion = _estimate_tokens(answer_text)
+        log.cost_estimated_usd = estimate_cost(
+            provider, log.model_name or "", log.tokens_prompt, log.tokens_completion,
+        )
     log.save()

@@ -1,13 +1,24 @@
 // frontend/src/components/builder/AIProvidersPanel.tsx
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Trash2, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { Plus, Trash2, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, PlugZap } from "lucide-react";
 import {
   listAIProviders,
   createAIProvider,
   deleteAIProvider,
+  getAIProviderStatus,
+  getAIStatus,
+  testAIProvider,
   type AIProvider,
   type AIProviderCredential,
+  type AIProviderStatus,
+  type AIProviderTestResult,
 } from "@/lib/api";
+
+const SOURCE_LABEL: Record<string, string> = {
+  tenant: "chave deste tenant",
+  global: "chave global do projeto",
+  env: "variável de ambiente (.env)",
+};
 
 const PROVIDER_META: Record<
   AIProvider,
@@ -17,7 +28,7 @@ const PROVIDER_META: Record<
     label: "Anthropic (Claude)",
     needsKey: true,
     placeholder: "sk-ant-api03-...",
-    models: ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"],
+    models: ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5", "claude-sonnet-4-6"],
   },
   openai: {
     label: "OpenAI",
@@ -53,7 +64,7 @@ const EMPTY_FORM = {
   label: "",
 };
 
-export default function AIProvidersPanel() {
+export default function AIProvidersPanel({ focusProvider }: { focusProvider?: AIProvider } = {}) {
   const [creds, setCreds] = useState<AIProviderCredential[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -63,17 +74,51 @@ export default function AIProvidersPanel() {
   const [showKey, setShowKey] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  // Estado de cada provedor (pronto/faltando, de onde vem a chave) + quem usa
+  const [status, setStatus] = useState<AIProviderStatus[]>([]);
+  const [activeProvider, setActiveProvider] = useState<string>("");
+  const [usedBy, setUsedBy] = useState<Record<string, string[]>>({});
+  const [testing, setTesting] = useState<AIProvider | null>(null);
+  const [tests, setTests] = useState<Partial<Record<AIProvider, AIProviderTestResult>>>({});
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setCreds(await listAIProviders());
+      const st = await getAIProviderStatus().catch(() => null);
+      if (st) { setStatus(st.providers); setActiveProvider(st.active_provider); }
+      // Quais setores usam cada provedor (agency) — só informativo; falha não quebra o painel
+      const ai = await getAIStatus().catch(() => null);
+      if (ai) {
+        const m: Record<string, string[]> = {};
+        for (const sct of ai.sectors) (m[sct.provider] ??= []).push(sct.sector_name);
+        setUsedBy(m);
+      }
     } catch {
       setError("Erro ao carregar credenciais.");
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // Veio do aviso "IA sem credencial" da planta: já abre o formulário do provedor
+  useEffect(() => {
+    if (!focusProvider) return;
+    setForm({ ...EMPTY_FORM, provider: focusProvider });
+    setShowForm(true);
+  }, [focusProvider]);
+
+  async function handleTest(provider: AIProvider) {
+    setTesting(provider);
+    try {
+      const result = await testAIProvider(provider);
+      setTests((t) => ({ ...t, [provider]: result }));
+    } catch (e) {
+      setTests((t) => ({ ...t, [provider]: { ok: false, error: e instanceof Error ? e.message : "Falha no teste." } }));
+    } finally {
+      setTesting(null);
+    }
+  }
 
   useEffect(() => {
     load();
@@ -165,6 +210,62 @@ export default function AIProvidersPanel() {
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-400">
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
           {success}
+        </div>
+      )}
+
+      {/* Estado de cada provedor */}
+      {status.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Estado dos provedores</p>
+          {status.map((st) => {
+            const test = tests[st.provider];
+            const sectors = usedBy[st.provider] ?? [];
+            return (
+              <div key={st.provider} className="rounded-lg border border-white/10 bg-surface px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${st.ready ? "bg-emerald-400" : "bg-slate-600"}`} />
+                  <span className="text-xs font-medium text-slate-200">{PROVIDER_META[st.provider]?.label ?? st.provider}</span>
+                  {activeProvider === st.provider && (
+                    <span className="rounded bg-brand-500/15 px-1.5 text-[9px] text-brand-300" title="Provedor usado por quem não tem IA fixa">padrão do tenant</span>
+                  )}
+                  <span className="ml-auto truncate text-[10px] text-slate-500">
+                    {st.ready ? `${st.default_model} · ${SOURCE_LABEL[st.source ?? ""] ?? ""}` : "faltando"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleTest(st.provider)}
+                    disabled={!st.ready || testing !== null}
+                    title="Faz uma chamada curta de verdade (custa poucos tokens)"
+                    className="flex items-center gap-1 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-slate-100 disabled:opacity-30"
+                  >
+                    {testing === st.provider ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlugZap className="h-3 w-3" />}
+                    Testar
+                  </button>
+                  {!st.ready && (
+                    <button
+                      type="button"
+                      onClick={() => { setForm({ ...EMPTY_FORM, provider: st.provider }); setShowForm(true); }}
+                      className="rounded-md bg-brand-500/15 px-1.5 py-0.5 text-[10px] text-brand-300 hover:bg-brand-500/25"
+                    >
+                      Configurar
+                    </button>
+                  )}
+                </div>
+                {sectors.length > 0 && (
+                  <p className={`mt-0.5 text-[10px] ${st.ready ? "text-slate-500" : "text-amber-400"}`}>
+                    Usado por: {sectors.join(", ")}{!st.ready && " — as chamadas desses setores falham até configurar"}
+                  </p>
+                )}
+                {test && (
+                  <p className={`mt-0.5 text-[10px] ${test.ok ? "text-emerald-400" : "text-red-400"}`}>
+                    {test.ok
+                      ? `✓ respondeu "${test.reply}" em ${test.latency_ms} ms (${test.model}, ${test.tokens_in}+${test.tokens_out} tokens)`
+                      : `✕ ${test.error}`}
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -328,7 +429,8 @@ export default function AIProvidersPanel() {
 
       <p className="text-[11px] leading-relaxed text-slate-600">
         A chave é armazenada criptografada no banco (Fernet). O provedor ativo com maior prioridade
-        (OpenRouter → Groq → OpenAI → Anthropic → Ollama) é usado automaticamente.
+        (OpenRouter → Groq → OpenAI → Anthropic → Ollama) é o padrão do tenant — setores com IA fixa
+        (ex: Desenvolvimento → Claude) usam só a deles, sem cair no padrão se a chave faltar.
       </p>
     </div>
   );

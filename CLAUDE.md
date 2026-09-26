@@ -517,10 +517,11 @@ desfaz a aprovação já registrada — é uma decisão humana, não deveria ser
 revertida por um problema de infraestrutura.
 
 **`execute_task()`** é quem de fato roda a tarefa (faltava quando o resto
-do ciclo foi escrito) — mesma resolução de provider/model que
-`harness.views.GenerateCodeView` usa (`CHAT_PROVIDER`/`OLLAMA_CHAT_MODEL`
-nas settings, nunca uma segunda forma de escolher modelo). Só roda a
-partir de `CREATED`/`ADAPTED`; resposta que não parseia como JSON cai
+do ciclo foi escrito) — com a IA do agente (`resolve_agent_llm`: agente →
+setor → tenant, ver "Modelo de IA por setor"). Só roda a
+partir de `CREATED`/`ADAPTED`; se o CEO pausar/adaptar/decidir a Task
+**enquanto o modelo ainda responde**, o resultado que chega depois é
+descartado (a intervenção humana vale; o custo da chamada é registrado); resposta que não parseia como JSON cai
 como texto puro com `needs_review=True` em vez de derrubar a tarefa
 inteira; falha do provedor (Ollama fora do ar etc.) marca `REJECTED` e
 sempre libera o agente (`work_status` volta a `idle`) — nunca fica
@@ -546,6 +547,54 @@ roda fora pode chamar `POST tasks/{id}/start-external/`
 `runs_externally=True`, o agente aparece trabalhando, e a resposta traz
 `ai_provider`/`ai_model` do agente — `report-result/` aceita fechar essa
 Task enquanto ela não tiver resultado.
+
+### Custo de IA com tokens reais (`harness.providers.track_usage` + `harness.pricing`)
+
+Toda chamada de chat devolve os tokens que o **provedor informou** (não mais
+"caracteres ÷ 4"). Quem precisa saber quanto custaram as chamadas feitas
+por baixo abre `with track_usage() as usage:` (aninhável:
+`orchestration` mede a dele pro `QueryLog`, `agency` mede a mesma pro
+custo do agente). Preço por **modelo** em `harness/pricing.py` (Anthropic
+com a tabela oficial; demais aproximados, ajustáveis em `AI_MODEL_PRICES`
+no `.env`, sem editar código). `agency.services.record_interaction` é o
+único lugar que registra custo de agente (`AgentInteraction.tokens_estimated`
+diz se foi estimado). Modelos Claude atuais (Fable/Mythos, Opus/Sonnet 5+,
+Opus 4.7/4.8) **recusam `temperature`** com 400 — `_chat_anthropic` não
+manda pra eles.
+
+### Tarefas do Desenvolvimento no Claude Code local (`devserver/lib/claudeCode.mjs`)
+
+O backend (às vezes num container) não abre terminal nem edita o
+repositório de ninguém — o **devserver** roda na máquina do dev e faz isso.
+No Escritório 3D, a sala do Desenvolvimento tem, em cada tarefa, o botão do
+Claude Code (`office3d/ClaudeCodePanel.tsx`):
+
+- **Abrir no terminal**: janela com o Claude Code **interativo** já com o
+  pedido da Task (Windows: PowerShell; macOS: Terminal; Linux: o primeiro
+  terminal disponível ou `CLAUDE_CODE_TERMINAL`). Ao terminar, "Concluí"
+  fecha a Task com os arquivos alterados (`git status`).
+- **Rodar aqui**: `claude -p --output-format stream-json` em segundo plano,
+  log ao vivo na tela, fecha a Task sozinho (`report-result/` com resumo,
+  arquivos e o custo que o próprio Claude Code informa — `usage` entra no
+  orçamento do setor).
+- Opcional: "abrir automaticamente quando chegar tarefa nova" (por
+  navegador, enquanto o Escritório estiver aberto).
+
+Fluxo: `start-external/` (Task em andamento, agente trabalhando) →
+`POST devserver /api/claude-code/run` → `report-result/`. O pedido nunca
+entra na linha de comando (stdin ou arquivo temporário) — texto da Task
+não vira comando. Endpoints protegidos por `DEVSERVER_SECRET`. Sem
+`workspace`, trabalha no repositório do boilerplate; o prompt pede pra
+validar e **não** fazer push (a Task passa por aprovação no Studio).
+
+### Resumo do dia pelo CEO (`agency/summary.py`)
+
+`POST /api/v1/agency/daily-summary/`: fatos montados em Python a partir da
+linha do tempo e dos custos, numerados `[E#]`; o agente CEO (com a IA dele)
+só redige e cita cada fato. Sem fatos, não chama o modelo; citação a fato
+inexistente é removida e devolvida em `invalid_citations`.
+`daily-summary/save/` guarda como nota numa `KnowledgeSource` própria
+("Resumos do dia (CEO)", tipo manual — nunca no vault) e indexa pelo Celery.
 
 ### Setor "Desenvolvimento" e hierarquia de comunicação humano→agentes
 
@@ -578,6 +627,19 @@ a geração usa a IA do setor Desenvolvimento (Claude) e **falha explícita
 sem a chave da Anthropic**, como o resto do setor. Sem `AI Frontend`
 cadastrado, gera como antes, sem Task (nunca inventa agente).
 
+Com um projeto selecionado, o "Gerar" escreve **dentro dele** (antes ia
+sempre pro app principal) e o preview é o servidor do próprio projeto
+(`startWorkspace`, porta 4000+), abrindo na página gerada (`#/<nome>`).
+Projeto novo e repositório do GitHub nascem do **mesmo** template
+(`frontend/project-templates/simple_commercial/` — o devserver copia pra
+`frontend/workspace/<nome>/`, o backend empurra pro GitHub; antes eram dois
+templates diferentes e a árvore não batia). O template traz Tailwind com
+os tokens do Studio, `src/pages/` + rotas geradas e
+`.pgba/generate-prompt.md` — as regras de geração do projeto (ele não tem
+`@/lib/api`; o prompt padrão do harness gerava código que nunca passava
+no typecheck ali). No app principal, páginas geradas ficam em
+`src/pages/generated/` (antes a lista incluía o próprio Studio).
+
 ### Tempo real (Django Channels) — substitui polling, não convive com ele
 
 Toda mudança de `Task`/`Agent.work_status` é publicada via WebSocket
@@ -587,15 +649,15 @@ Existe porque `CompanyOverview`/`CompanyOffice3D` faziam polling a cada
 barato em request.
 
 ```
-ws://<host>/ws/agency/?token=<JWT access token>
+ws://<host>/ws/agency/?ticket=<ticket de uso único>
 ```
 
-O token vai na URL, não num header `Authorization` — API nativa de
-WebSocket do navegador não permite header customizado na conexão. É
-validado manualmente em `agency/ws_auth.py`, com a MESMA lib
-(`rest_framework_simplejwt`) que autentica o resto da API REST; nunca um
-segundo mecanismo de autenticação. Conexão sem token (ou com token
-inválido/expirado) fecha com código `4001`.
+O navegador pede um ticket (`POST /api/v1/agency/ws-ticket/`, UUID de uso
+único com validade de 15s) e abre o WebSocket com ele na URL — API nativa
+de WebSocket não permite header customizado, e o JWT na URL apareceria em
+log de proxy. Validado em `agency/ws_auth.py` (ainda aceita `?token=<JWT>`
+como fallback legado de dev); conexão sem credencial válida fecha com
+código `4001`.
 
 Um grupo Channels por tenant (`tenant_{uuid}`) — todo evento do tenant
 chega pra qualquer cliente conectado. Mensagens: `{"kind": "task", ...}`,

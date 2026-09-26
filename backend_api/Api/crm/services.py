@@ -262,10 +262,9 @@ def qualify_lead(lead_id: int, user_message: str, tenant_id) -> dict:
             messages=[{"role": "system", "content": system_prompt}] + history,
             temperature=0.4,
         )
-        from decimal import Decimal
-        _PRICE_PER_1K = {"ollama": "0", "openai": "0.002", "anthropic": "0.003", "groq": "0.0002", "openrouter": "0.001"}
-        price = Decimal(_PRICE_PER_1K.get(provider, "0.001"))
-        cost_usd = float((Decimal(tokens_in + tokens_out) / Decimal(1000)) * price)
+        from harness.pricing import estimate_cost  # preço por modelo, único no projeto
+
+        cost_usd = float(estimate_cost(provider, model or "", tokens_in, tokens_out))
     except Exception as exc:
         logger.error("CRM qualify_lead: provedor falhou (%s).", exc)
         response_text = "Desculpe, houve um problema técnico. Tente novamente em instantes."

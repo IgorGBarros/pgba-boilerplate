@@ -36,6 +36,7 @@ import {
 import { PROVIDERS, PROVIDER_LABEL, formatUsd, providerName, sumByProvider } from "./office3d/providers";
 import { ProviderCosts } from "./office3d/ProviderCosts";
 import { RoomTaskBoard } from "./office3d/RoomTaskBoard";
+import { getClaudeAutoOpen, isClaudeCodeSector, setClaudeAutoOpen } from "./office3d/claudeCode";
 import { SendMessageForm } from "./office3d/SendMessageForm";
 import {
   getOrchestrators,
@@ -144,6 +145,8 @@ export function OfficeTopBar({
   aiProblems = 0,
   replaying = false,
   onToggleReplay,
+  onOpenSummary,
+  onOpenAIConfig,
 }: {
   agents: OfficeAgent[];
   connected: boolean;
@@ -166,6 +169,10 @@ export function OfficeTopBar({
   aiProblems?: number;
   replaying?: boolean;
   onToggleReplay?: () => void;
+  /** Resumo do dia escrito pelo CEO (só com fatos registrados). */
+  onOpenSummary?: () => void;
+  /** Abre a configuração de chaves (a partir do aviso "IA sem credencial"). */
+  onOpenAIConfig?: () => void;
 }) {
   const active = agents.filter((a) => a.status === "working" || a.status === "thinking").length;
   const inMeeting = agents.filter((a) => a.status === "meeting").length;
@@ -237,12 +244,14 @@ export function OfficeTopBar({
       {/* Ações */}
       <div className="ml-auto flex items-center gap-1.5">
         {aiProblems > 0 && (
-          <span
-            title="Setor(es) com IA fixa sem credencial ou modelo — as chamadas deles falham até configurar (configure_ai_provider). Passe o mouse na etiqueta do setor."
-            className="flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700"
+          <button
+            type="button"
+            onClick={onOpenAIConfig}
+            title="Setor(es) com IA fixa sem credencial ou modelo — as chamadas deles falham até configurar. Clique para configurar a chave."
+            className="flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 transition hover:bg-red-100"
           >
             ⚠ IA sem credencial · {aiProblems}
-          </span>
+          </button>
         )}
         {budgetAlerts > 0 && (
           <button
@@ -293,6 +302,17 @@ export function OfficeTopBar({
           <Gauge className="size-3.5" />
           Console
         </button>
+        {onOpenSummary && (
+          <button
+            type="button"
+            onClick={onOpenSummary}
+            className="flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1 text-[11px] font-medium text-stone-700 transition hover:bg-stone-50"
+            title="O CEO resume o dia a partir do que foi registrado, citando cada fato"
+          >
+            <Crown className="size-3.5 text-amber-500" />
+            Resumo do dia
+          </button>
+        )}
         {onToggleReplay && (
           <button
             type="button"
@@ -401,6 +421,27 @@ function AgentAvatarDot({ agent, size = 28 }: { agent: OfficeAgent; size?: numbe
   );
 }
 
+/** "Abrir o Claude Code sozinho quando chegar tarefa nova no Desenvolvimento" (por navegador). */
+function ClaudeAutoOpenToggle() {
+  const [on, setOn] = useState(getClaudeAutoOpen);
+  return (
+    <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-lg px-1 text-[11px] text-stone-600">
+      <input
+        type="checkbox"
+        checked={on}
+        onChange={(e) => { setClaudeAutoOpen(e.target.checked); setOn(e.target.checked); }}
+        className="mt-0.5 accent-violet-700"
+      />
+      <span>
+        Abrir o Claude Code num terminal automaticamente quando chegar tarefa nova para este setor.
+        <span className="block text-[10px] text-stone-400">
+          Vale enquanto o Escritório estiver aberto neste navegador, com o devserver rodando (npm run dev:admin).
+        </span>
+      </span>
+    </label>
+  );
+}
+
 function BudgetBar({ percent, status }: { percent: number; status: SectorMetric["status"] }) {
   const color = status === "over" ? "#ef4444" : status === "warn" ? "#f59e0b" : "#10b981";
   return (
@@ -431,6 +472,7 @@ export function RoomModal({
   onTaskUpdated,
   metric,
   aiStatus,
+  onConfigureAI,
 }: {
   /** Setor real (null na sala CEO / reunião). */
   sector: Sector | null;
@@ -448,6 +490,8 @@ export function RoomModal({
   metric?: SectorMetric | null;
   /** Status da IA do setor (ai-status) — sem credencial = aviso. */
   aiStatus?: AIStatus["sectors"][number] | null;
+  /** Abre a configuração de chave do provedor que falta. */
+  onConfigureAI?: (provider: string) => void;
 }) {
   // id -2 = sala CEO: quem não tem setor (CEO / Orquestrador-Geral)
   const roomAgents = agents.filter((a) => (sectorId === -2 ? a.sectorId == null : a.sectorId === sectorId));
@@ -498,6 +542,15 @@ export function RoomModal({
           <b>⚠ A IA deste setor ({providerName(aiStatus.provider)}) não está pronta.</b> As chamadas dos agentes daqui
           falham até configurar — sem cair em outro provedor.
           <span className="mt-0.5 block font-mono text-[10px] text-red-700/80">{aiStatus.detail}</span>
+          {onConfigureAI && (
+            <button
+              type="button"
+              onClick={() => onConfigureAI(aiStatus.provider)}
+              className="mt-1.5 rounded-full bg-red-700 px-3 py-1 text-[11px] font-semibold text-white hover:bg-red-800"
+            >
+              Configurar chave de {providerName(aiStatus.provider)}
+            </button>
+          )}
         </div>
       )}
       <div className="space-y-1">
@@ -529,7 +582,13 @@ export function RoomModal({
           <p className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
             <ListTodo className="size-3" /> Tarefas
           </p>
-          <RoomTaskBoard tasks={roomTasks} agents={roomAgents} onTaskUpdated={onTaskUpdated} />
+          <RoomTaskBoard
+            tasks={roomTasks}
+            agents={roomAgents}
+            onTaskUpdated={onTaskUpdated}
+            claudeCode={isClaudeCodeSector(sectorName)}
+          />
+          {isClaudeCodeSector(sectorName) && <ClaudeAutoOpenToggle />}
         </div>
       )}
 

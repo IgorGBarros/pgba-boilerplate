@@ -11,6 +11,9 @@ configuração de chave sejam centralizadas neste único módulo.
 from __future__ import annotations
 
 import logging
+import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 import httpx
@@ -119,6 +122,23 @@ def get_credential(tenant_id, provider: str) -> ResolvedCredential:
     return ResolvedCredential(provider=provider, api_key=env_key, base_url=env_base)
 
 
+def credential_source(tenant_id, provider: str) -> str | None:
+    """
+    De onde viria a credencial: "tenant", "global", "env" ou None (nenhuma) —
+    mesma ordem de get_credential.
+    """
+    from harness.models import AIProviderCredential
+
+    qs = AIProviderCredential.objects.filter(provider=provider, is_active=True)
+    if tenant_id and qs.filter(tenant_id=tenant_id).exists():
+        return "tenant"
+    if qs.filter(tenant_id__isnull=True).exists():
+        return "global"
+    if provider == "ollama" or getattr(settings, f"{provider.upper()}_API_KEY", ""):
+        return "env"
+    return None
+
+
 def provider_readiness(tenant_id, provider: str, model: str | None = None) -> str | None:
     """
     Diz se `chat_completion(tenant_id, provider, model, ...)` teria o que
@@ -143,6 +163,56 @@ def provider_readiness(tenant_id, provider: str, model: str | None = None) -> st
     return None
 
 
+@dataclass
+class ChatUsage:
+    """Uma chamada de chat: quem respondeu e os tokens que o PROVEDOR informou."""
+
+    provider: str
+    model: str
+    tokens_in: int
+    tokens_out: int
+
+
+# Coletores de uso por contexto (thread/async-safe): quem precisa saber
+# quanto custaram as chamadas feitas por baixo (ex: agency, que chama
+# orchestration.answer_question — 1 a 2 chamadas de chat lá dentro) abre um
+# `with track_usage() as usage:` e lê a lista no fim. Aninháveis: cada
+# chamada entra em TODOS os coletores abertos (orchestration mede a dele pro
+# QueryLog, agency mede a mesma pro custo do agente). Sem coletor, nada é
+# guardado. Evita mudar a assinatura de toda função intermediária.
+_usage_collectors: ContextVar[tuple[list[ChatUsage], ...]] = ContextVar(
+    "harness_usage_collectors", default=(),
+)
+
+
+@contextmanager
+def track_usage():
+    mine: list[ChatUsage] = []
+    token = _usage_collectors.set(_usage_collectors.get() + (mine,))
+    try:
+        yield mine
+    finally:
+        _usage_collectors.reset(token)
+
+
+def resolve_model(tenant_id, provider: str, model: str | None) -> str:
+    """Modelo efetivo: o pedido, senão o `default_model` da credencial, senão o do .env."""
+    cred = get_credential(tenant_id, provider)
+    return _resolve_model_for(cred, provider, model)
+
+
+def _resolve_model_for(cred: ResolvedCredential, provider: str, model: str | None) -> str:
+    env_model = getattr(settings, f"{provider.upper()}_CHAT_MODEL", "")
+    resolved = model or cred.default_model or env_model
+    if not resolved:
+        raise ProviderConfigError(
+            f"Nenhum modelo configurado para '{provider}' — defina em "
+            f"`configure_ai_provider --provider {provider} --model ...` "
+            f"(recomendado) ou em {provider.upper()}_CHAT_MODEL no .env."
+        )
+    return resolved
+
+
 def chat_completion(
     tenant_id, provider: str, model: str | None, messages: list[dict],
     temperature: float = 0.3, json_mode: bool = False, timeout: float | None = None,
@@ -165,27 +235,15 @@ def chat_completion(
     — 45s fixo era curto demais pra gerar uma página inteira num modelo
     de alguns GB rodando em CPU sem GPU; hardware varia demais entre
     quem usa isso pra fixar um número só que sirva pra todo mundo.
+
+    Os tokens informados pelo provedor vão pro coletor de `track_usage()`
+    quando houver um aberto.
     """
-    cred = get_credential(tenant_id, provider)
-
-    resolved_model = model or cred.default_model or getattr(settings, f"{provider.upper()}_CHAT_MODEL", "")
-    if not resolved_model:
-        raise ProviderConfigError(
-            f"Nenhum modelo configurado para '{provider}' — defina em "
-            f"`configure_ai_provider --provider {provider} --model ...` "
-            f"(recomendado) ou em {provider.upper()}_CHAT_MODEL no .env."
-        )
-
-    resolved_timeout = timeout if timeout is not None else getattr(settings, "CHAT_TIMEOUT_SECONDS", 120.0)
-
-    if provider == "ollama":
-        return _chat_ollama(cred, resolved_model, messages, temperature, json_mode, resolved_timeout)
-    if provider in OPENAI_COMPATIBLE:
-        return _chat_openai_compatible(cred, resolved_model, messages, temperature, json_mode, resolved_timeout)
-    if provider == "anthropic":
-        return _chat_anthropic(cred, resolved_model, messages, temperature, resolved_timeout)
-
-    raise ProviderConfigError(f"Provedor '{provider}' não suportado.")
+    text, _, _ = chat_completion_with_usage(
+        tenant_id, provider, model, messages,
+        temperature=temperature, json_mode=json_mode, timeout=timeout,
+    )
+    return text
 
 
 def chat_completion_with_usage(
@@ -193,27 +251,31 @@ def chat_completion_with_usage(
     temperature: float = 0.3, json_mode: bool = False, timeout: float | None = None,
 ) -> tuple[str, int, int]:
     """
-    Como chat_completion mas retorna (texto, tokens_in, tokens_out).
-    Útil para registrar consumo de tokens por chamada.
+    Como chat_completion mas retorna (texto, tokens_in, tokens_out) — os
+    tokens que o provedor informou (estimativa só se ele não informar).
     """
     cred = get_credential(tenant_id, provider)
-    resolved_model = model or cred.default_model or getattr(settings, f"{provider.upper()}_CHAT_MODEL", "")
-    if not resolved_model:
-        raise ProviderConfigError(
-            f"Nenhum modelo configurado para '{provider}' — defina em "
-            f"`configure_ai_provider --provider {provider} --model ...` "
-            f"(recomendado) ou em {provider.upper()}_CHAT_MODEL no .env."
-        )
+    resolved_model = _resolve_model_for(cred, provider, model)
     resolved_timeout = timeout if timeout is not None else getattr(settings, "CHAT_TIMEOUT_SECONDS", 120.0)
 
     if provider == "ollama":
-        return _chat_ollama_with_usage(cred, resolved_model, messages, temperature, json_mode, resolved_timeout)
-    if provider in OPENAI_COMPATIBLE:
-        return _chat_openai_compatible_with_usage(cred, resolved_model, messages, temperature, json_mode, resolved_timeout)
-    if provider == "anthropic":
-        return _chat_anthropic_with_usage(cred, resolved_model, messages, temperature, resolved_timeout)
+        text, tin, tout = _chat_ollama(
+            cred, resolved_model, messages, temperature, json_mode, resolved_timeout,
+        )
+    elif provider in OPENAI_COMPATIBLE:
+        text, tin, tout = _chat_openai_compatible(
+            cred, resolved_model, messages, temperature, json_mode, resolved_timeout,
+        )
+    elif provider == "anthropic":
+        text, tin, tout = _chat_anthropic(
+            cred, resolved_model, messages, temperature, resolved_timeout,
+        )
+    else:
+        raise ProviderConfigError(f"Provedor '{provider}' não suportado.")
 
-    raise ProviderConfigError(f"Provedor '{provider}' não suportado.")
+    for collector in _usage_collectors.get():
+        collector.append(ChatUsage(provider, resolved_model, tin, tout))
+    return text, tin, tout
 
 
 def _estimate_tokens(text: str) -> int:
@@ -235,7 +297,11 @@ def _chat_ollama(cred, model, messages, temperature, json_mode, timeout):
             timeout=timeout,
         )
         resp.raise_for_status()
-        return resp.json().get("message", {}).get("content", "").strip()
+        data = resp.json()
+        text = data.get("message", {}).get("content", "").strip()
+        tokens_in = data.get("prompt_eval_count") or _estimate_tokens(str(messages))
+        tokens_out = data.get("eval_count") or _estimate_tokens(text)
+        return text, tokens_in, tokens_out
     except httpx.HTTPStatusError as exc:
         # O Ollama devolve o motivo real no corpo (ex: "model 'llama3' not
         # found, try pulling it first") — sem isso, só aparecia o texto
@@ -279,40 +345,10 @@ def _chat_openai_compatible(cred, model, messages, temperature, json_mode, timeo
             logger.error("Erro %s chat (%s): %s", cred.provider, resp.status_code, detail)
             resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"].strip()
-    except httpx.HTTPStatusError as exc:
-        raise ProviderConfigError(str(exc)) from exc
-    except (httpx.HTTPError, KeyError, IndexError) as exc:
-        logger.error("Erro %s chat: %s", cred.provider, exc)
-        raise ProviderConfigError(str(exc)) from exc
-
-
-def _chat_openai_compatible_with_usage(cred, model, messages, temperature, json_mode, timeout):
-    """Como _chat_openai_compatible mas retorna (texto, tokens_in, tokens_out)."""
-    if not cred.api_key:
-        raise ProviderConfigError(f"Credencial sem api_key para '{cred.provider}'.")
-    try:
-        body = {"model": model, "messages": messages, "temperature": temperature}
-        if json_mode:
-            body["response_format"] = {"type": "json_object"}
-        resp = httpx.post(
-            f"{cred.base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {cred.api_key}"},
-            json=body,
-            timeout=timeout,
-        )
-        if not resp.is_success:
-            try:
-                detail = resp.json()
-            except Exception:
-                detail = resp.text
-            logger.error("Erro %s chat (%s): %s", cred.provider, resp.status_code, detail)
-            resp.raise_for_status()
-        data = resp.json()
         text = data["choices"][0]["message"]["content"].strip()
-        usage = data.get("usage", {})
-        tokens_in = usage.get("prompt_tokens", _estimate_tokens(str(messages)))
-        tokens_out = usage.get("completion_tokens", _estimate_tokens(text))
+        usage = data.get("usage") or {}
+        tokens_in = usage.get("prompt_tokens") or _estimate_tokens(str(messages))
+        tokens_out = usage.get("completion_tokens") or _estimate_tokens(text)
         return text, tokens_in, tokens_out
     except httpx.HTTPStatusError as exc:
         raise ProviderConfigError(str(exc)) from exc
@@ -321,80 +357,13 @@ def _chat_openai_compatible_with_usage(cred, model, messages, temperature, json_
         raise ProviderConfigError(str(exc)) from exc
 
 
-def _chat_anthropic_with_usage(cred, model, messages, temperature, timeout):
-    """Como _chat_anthropic mas retorna (texto, tokens_in, tokens_out)."""
-    if not cred.api_key:
-        raise ProviderConfigError("Credencial sem api_key para 'anthropic'.")
-    system = "\n".join(m["content"] for m in messages if m["role"] == "system")
-    user_messages = [m for m in messages if m["role"] != "system"]
-    body: dict = {
-        "model": model,
-        "messages": user_messages,
-        "max_tokens": 4096,
-        "temperature": temperature,
-    }
-    if system:
-        body["system"] = system
-    try:
-        resp = httpx.post(
-            f"{cred.base_url}/messages",
-            headers={
-                "x-api-key": cred.api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json=body,
-            timeout=None,
-        )
-        if not resp.is_success:
-            try:
-                detail = resp.json()
-            except Exception:
-                detail = resp.text
-            logger.error("Erro Anthropic chat (%s): %s", resp.status_code, detail)
-            resp.raise_for_status()
-        data = resp.json()
-        blocks = data.get("content", [])
-        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
-        usage = data.get("usage", {})
-        tokens_in = usage.get("input_tokens", _estimate_tokens(str(messages)))
-        tokens_out = usage.get("output_tokens", _estimate_tokens(text))
-        return text, tokens_in, tokens_out
-    except httpx.HTTPStatusError as exc:
-        raise ProviderConfigError(str(exc)) from exc
-    except (httpx.HTTPError, KeyError, IndexError) as exc:
-        logger.error("Erro Anthropic chat: %s", exc)
-        raise ProviderConfigError(str(exc)) from exc
-
-
-def _chat_ollama_with_usage(cred, model, messages, temperature, json_mode, timeout):
-    """Como _chat_ollama mas retorna (texto, tokens_in, tokens_out)."""
-    try:
-        resp = httpx.post(
-            f"{cred.base_url}/api/chat",
-            json={
-                "model": model,
-                "messages": messages,
-                "stream": False,
-                "format": "json" if json_mode else None,
-                "options": {"temperature": temperature},
-            },
-            timeout=timeout,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        text = data.get("message", {}).get("content", "").strip()
-        tokens_in = data.get("prompt_eval_count", _estimate_tokens(str(messages)))
-        tokens_out = data.get("eval_count", _estimate_tokens(text))
-        return text, tokens_in, tokens_out
-    except httpx.HTTPStatusError as exc:
-        try:
-            detail = exc.response.json().get("error", exc.response.text)
-        except Exception:
-            detail = exc.response.text or str(exc)
-        raise ProviderConfigError(detail) from exc
-    except httpx.HTTPError as exc:
-        raise ProviderConfigError(str(exc)) from exc
+# Modelos Claude que RECUSAM parâmetros de amostragem (temperature/top_p/
+# top_k) com 400: famílias Fable/Mythos, Opus/Sonnet 5+ e Opus 4.7/4.8.
+# Mandar temperature pra eles derrubava toda chamada do setor fixado em
+# Claude. Modelos anteriores (Sonnet/Opus 4.6, Haiku 4.5...) ainda aceitam.
+_ANTHROPIC_NO_SAMPLING = re.compile(
+    r"^claude-(fable|mythos)|^claude-(opus|sonnet)-([5-9]|\d{2})|^claude-opus-4-[78]"
+)
 
 
 def _chat_anthropic(cred, model, messages, temperature, timeout):
@@ -406,8 +375,9 @@ def _chat_anthropic(cred, model, messages, temperature, timeout):
         "model": model,
         "messages": user_messages,
         "max_tokens": 4096,
-        "temperature": temperature,
     }
+    if not _ANTHROPIC_NO_SAMPLING.match(model):
+        body["temperature"] = temperature
     if system:
         body["system"] = system
     try:
@@ -428,8 +398,19 @@ def _chat_anthropic(cred, model, messages, temperature, timeout):
                 detail = resp.text
             logger.error("Erro Anthropic chat (%s): %s", resp.status_code, detail)
             resp.raise_for_status()
-        blocks = resp.json().get("content", [])
-        return "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+        data = resp.json()
+        if data.get("stop_reason") == "refusal":
+            raise ProviderConfigError("O modelo recusou o pedido (stop_reason=refusal).")
+        blocks = data.get("content", [])
+        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+        usage = data.get("usage") or {}
+        tokens_in = (
+            (usage.get("input_tokens") or 0)
+            + (usage.get("cache_read_input_tokens") or 0)
+            + (usage.get("cache_creation_input_tokens") or 0)
+        ) or _estimate_tokens(str(messages))
+        tokens_out = usage.get("output_tokens") or _estimate_tokens(text)
+        return text, tokens_in, tokens_out
     except httpx.HTTPStatusError as exc:
         raise ProviderConfigError(str(exc)) from exc
     except (httpx.HTTPError, KeyError, IndexError) as exc:

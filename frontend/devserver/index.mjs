@@ -20,9 +20,14 @@ import {
   stopWorkspace,
   workspacePath,
 } from "./lib/workspace.mjs";
+import { claudeCodeStatus, finishClaudeCode, isClaudeCodeRunning, startClaudeCode } from "./lib/claudeCode.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
+// Raiz do repositório do boilerplate (frontend/..) — onde o Claude Code
+// trabalha quando a tarefa do Desenvolvimento não é sobre um projeto separado.
+const REPO_ROOT = path.resolve(ROOT, "..");
+const API_URL = process.env.VITE_API_URL || "http://localhost:8000";
 const PORT = 5174;
 const ALLOWED_ORIGIN = "http://localhost:5173";
 
@@ -43,7 +48,10 @@ function checkSecret(req) {
 
 const EXPLORER_ROOTS = ["src/pages", "src/components", "src/lib"];
 
-function listFilesRecursive(rootDir, relBase = "") {
+// Pastas que nunca entram na árvore (geradas/instaladas, não são "o projeto")
+const TREE_SKIP = new Set(["node_modules", ".git", "dist", ".vite"]);
+
+function listFilesRecursive(rootDir, relBase = "", { dotfiles = false } = {}) {
   const results = [];
   let entries;
   try {
@@ -52,16 +60,24 @@ function listFilesRecursive(rootDir, relBase = "") {
     return results;
   }
   for (const entry of entries) {
-    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+    if (TREE_SKIP.has(entry.name) || (!dotfiles && entry.name.startsWith("."))) continue;
     const relPath = relBase ? `${relBase}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       results.push({ name: entry.name, type: "folder", path: relPath });
-      results.push(...listFilesRecursive(rootDir, relPath));
+      results.push(...listFilesRecursive(rootDir, relPath, { dotfiles }));
     } else {
       results.push({ name: entry.name, type: "file", path: relPath });
     }
   }
   return results;
+}
+
+/** Pasta de trabalho de um pedido: localPath (absoluto ou ~) > workspace > app principal. */
+function resolveBase({ workspace, localPath } = {}) {
+  if (localPath) {
+    return localPath.startsWith("~") ? path.join(process.env.HOME || "/root", localPath.slice(1)) : localPath;
+  }
+  return workspace ? workspacePath(workspace) : ROOT;
 }
 
 const jobClients = new Map();
@@ -76,7 +92,9 @@ function sendEvent(jobId, event) {
 
 function withCors(res) {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  // X-Devserver-Secret precisa estar aqui: sem isso o preflight do navegador
+  // barrava toda chamada protegida (terminal, Claude Code) quando o secret existe.
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Devserver-Secret");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
 }
 
@@ -130,17 +148,17 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 400, { error: "JSON inválido" });
     }
 
-    const { prompt, name, jobId, accessToken, workspace, provider, model } = payload;
+    const { prompt, name, jobId, accessToken, workspace, localPath, provider, model } = payload;
     if (!prompt || !jobId) {
       return sendJson(res, 400, { error: "prompt e jobId são obrigatórios" });
     }
 
-    // Sem `workspace`: gera no app principal (comportamento de sempre).
-    // Com `workspace`: gera DENTRO do projeto secundário — mesma função,
-    // só muda a raiz onde o arquivo é escrito e onde o typecheck roda.
-    const targetRoot = workspace ? workspacePath(workspace) : ROOT;
-    if (workspace && !fs.existsSync(targetRoot)) {
-      return sendJson(res, 404, { error: `Projeto local '${workspace}' não encontrado.` });
+    // Sem projeto: gera no app principal (comportamento de sempre).
+    // Com `workspace`/`localPath`: gera DENTRO do projeto selecionado — mesma
+    // função, só muda a raiz onde o arquivo é escrito e onde o typecheck roda.
+    const targetRoot = resolveBase({ workspace, localPath });
+    if ((workspace || localPath) && !fs.existsSync(targetRoot)) {
+      return sendJson(res, 404, { error: `Pasta do projeto não encontrada: ${targetRoot}` });
     }
 
     sendJson(res, 202, { accepted: true, jobId });
@@ -158,6 +176,52 @@ const server = http.createServer(async (req, res) => {
       .then((result) => sendEvent(jobId, { stage: "complete", message: "ok", result }))
       .catch((err) => sendEvent(jobId, { stage: "error", message: err.message }));
     return;
+  }
+
+  // --- Claude Code local (tarefas do setor Desenvolvimento) ---
+
+  if (req.method === "GET" && url.pathname === "/api/claude-code/status") {
+    return sendJson(res, 200, await claudeCodeStatus());
+  }
+
+  if (req.method === "POST" && (url.pathname === "/api/claude-code/run" || url.pathname === "/api/claude-code/finish")) {
+    // Roda um agente de código na máquina: mesmo nível de proteção do terminal
+    if (!checkSecret(req)) return sendJson(res, 401, { error: "Não autorizado — header X-Devserver-Secret inválido ou ausente." });
+    let payload;
+    try { payload = JSON.parse(await readBody(req)); } catch { return sendJson(res, 400, { error: "JSON inválido" }); }
+    const { taskId, workspace, localPath, accessToken } = payload;
+    if (!Number.isInteger(taskId)) return sendJson(res, 400, { error: "taskId (número) é obrigatório" });
+    const cwd = workspace || localPath ? resolveBase({ workspace, localPath }) : REPO_ROOT;
+    const token = accessToken || process.env.PGBA_ACCESS_TOKEN;
+
+    if (url.pathname.endsWith("/finish")) {
+      try {
+        const out = await finishClaudeCode({
+          taskId, success: Boolean(payload.success), note: payload.note, cwd, apiUrl: API_URL, accessToken: token,
+        });
+        return sendJson(res, 200, { ok: true, ...out });
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message });
+      }
+    }
+
+    const { jobId, prompt, mode } = payload;
+    if (!jobId || !prompt) return sendJson(res, 400, { error: "jobId e prompt são obrigatórios" });
+    if (mode !== "terminal" && mode !== "headless") return sendJson(res, 400, { error: "mode deve ser terminal ou headless" });
+    try {
+      const out = await startClaudeCode({
+        taskId, prompt, cwd, mode, apiUrl: API_URL, accessToken: token,
+        emit: (event) => sendEvent(jobId, event),
+      });
+      return sendJson(res, 202, { accepted: true, ...out });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message });
+    }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/claude-code/running") {
+    const taskId = Number(url.searchParams.get("taskId"));
+    return sendJson(res, 200, { running: isClaudeCodeRunning(taskId) });
   }
 
   // --- Árvore de arquivos / conteúdo (principal) ---
@@ -191,8 +255,13 @@ const server = http.createServer(async (req, res) => {
         // Projeto com estrutura desconhecida — lista raiz completa (sem node_modules/.)
         files = listFilesRecursive(base);
       }
+    } else if (workspace) {
+      // Projeto criado pelo Studio: a árvore é o projeto INTEIRO, exatamente
+      // como foi criado do template (config, .env.example, src/...) — antes
+      // só aparecia src/pages e src/components, e parecia outro projeto.
+      files = listFilesRecursive(base, "", { dotfiles: true });
     } else {
-      const roots = workspace ? ["src/pages", "src/components"] : EXPLORER_ROOTS;
+      const roots = EXPLORER_ROOTS;
       files = roots.flatMap((root) => {
         if (!fs.existsSync(path.join(base, root))) return [];
         const parts = root.split("/");

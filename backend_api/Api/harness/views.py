@@ -244,3 +244,80 @@ class AIProviderCredentialDetailView(TenantContextMixin, APIView):
             cred.api_key = d["api_key"]
         cred.save()
         return Response(AIProviderCredentialSerializer(cred).data)
+
+
+class AIProviderStatusView(TenantContextMixin, APIView):
+    """
+    GET /api/v1/harness/providers/status/ — para cada provedor: se está pronto
+    (credencial + modelo, `provider_readiness`, sem chamar o provedor), de
+    onde vem a chave (tenant/global/env) e o modelo padrão.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from harness.models import AIProviderCredential
+        from harness.providers import (
+            credential_source, get_active_provider, provider_readiness, resolve_model,
+        )
+
+        if not getattr(request, "tenant_id", None):
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+        rows = []
+        for provider in AIProviderCredential.Provider.values:
+            problem = provider_readiness(request.tenant_id, provider)
+            try:
+                model = resolve_model(request.tenant_id, provider, None) if problem is None else ""
+            except ProviderConfigError:
+                model = ""
+            rows.append({
+                "provider": provider,
+                "ready": problem is None,
+                "detail": problem or "",
+                "source": credential_source(request.tenant_id, provider),
+                "default_model": model,
+            })
+        active = get_active_provider(request.tenant_id)
+        return Response({"active_provider": active, "providers": rows})
+
+
+class AIProviderTestView(TenantContextMixin, APIView):
+    """
+    POST /api/v1/harness/providers/test/ {"provider": "...", "model"?: "..."} —
+    faz UMA chamada curta de verdade ("responda só: ok") pra confirmar que a
+    chave e o modelo funcionam. Custa alguns tokens; devolve latência, modelo
+    e tokens, ou o erro do provedor.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        import time
+
+        from harness.models import AIProviderCredential
+        from harness.providers import chat_completion_with_usage, resolve_model
+
+        if not getattr(request, "tenant_id", None):
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+        provider = request.data.get("provider")
+        if provider not in AIProviderCredential.Provider.values:
+            return Response({"detail": "Provedor desconhecido."}, status=400)
+        model = (request.data.get("model") or "").strip() or None
+        start = time.monotonic()
+        try:
+            resolved = resolve_model(request.tenant_id, provider, model)
+            reply, tokens_in, tokens_out = chat_completion_with_usage(
+                request.tenant_id, provider, resolved,
+                messages=[{"role": "user", "content": "Teste de conexão. Responda apenas: ok"}],
+                temperature=0, timeout=30,
+            )
+        except ProviderConfigError as exc:
+            return Response({"ok": False, "error": str(exc)})
+        return Response({
+            "ok": True,
+            "model": resolved,
+            "reply": reply[:80],
+            "latency_ms": int((time.monotonic() - start) * 1000),
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+        })
