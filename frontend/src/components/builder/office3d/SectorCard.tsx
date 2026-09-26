@@ -1,9 +1,10 @@
-// office3d/SectorCard.tsx — cartão flutuante de KPI por setor.
+// office3d/SectorCard.tsx — etiqueta de KPI por setor (detalhe no hover).
 //
 // Tamanho fixo em pixel (Html sem distanceFactor): continua legível em
-// qualquer zoom da câmera isométrica. Todo número vem de dado real —
+// qualquer zoom da câmera isométrica — por isso precisa ser pequena. Todo número vem de dado real —
 // agentes do setor (work_status) e Tasks (agency.Task.status); nenhum KPI
 // "de enfeite" inventado pra preencher o cartão.
+import { useState } from "react";
 import { Html } from "@react-three/drei";
 
 export interface SectorStats {
@@ -31,48 +32,57 @@ export function SectorCard({
   brain: string | null | undefined;
   onClick?: () => void;
 }) {
+  // Etiqueta de UMA linha por padrão: com muitos setores, o cartão completo
+  // (versão anterior, ~150×110px fixos) cobria o escritório inteiro. O
+  // detalhe (cérebro + tasks) só aparece ao passar o mouse.
+  const [open, setOpen] = useState(false);
   const hot = stats.working > 0;
   return (
     <Html position={position} center zIndexRange={[10, 7]} style={{ userSelect: "none" }}>
-      <button
-        type="button"
-        onClick={onClick}
-        title={brain ? `Cérebro do setor: ${brain}` : "Setor sem knowledge_source — RAG escopado devolve vazio"}
-        className="w-[150px] rounded-xl border bg-white/95 px-2.5 py-2 text-left shadow-[0_6px_20px_-8px_rgba(30,30,50,0.35)] backdrop-blur transition-transform hover:-translate-y-0.5"
-        style={{
-          borderColor: hot ? color : "#e7e5e4",
-          boxShadow: hot ? `0 0 0 3px ${color}22, 0 8px 24px -10px ${color}88` : undefined,
-        }}
+      <div
+        className="relative"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
       >
-        <div className="flex items-center gap-1.5">
-          <span className={`h-2 w-2 shrink-0 rounded-full ${hot ? "animate-pulse" : ""}`} style={{ background: color }} />
-          <span className="truncate text-[9.5px] font-semibold uppercase tracking-[0.14em] text-stone-700">{name}</span>
-        </div>
-        <div className="mt-0.5 flex items-baseline gap-1.5">
-          <span className="font-serif text-[22px] leading-none text-stone-900">{stats.agents}</span>
-          <span className="text-[8.5px] font-medium uppercase tracking-[0.16em] text-stone-500">
-            {stats.agents === 1 ? "agente" : "agentes"}
-          </span>
-          {hot && (
-            <span className="ml-auto rounded-full bg-emerald-50 px-1.5 text-[8.5px] font-semibold text-emerald-700">
-              {stats.working} ativo{stats.working > 1 ? "s" : ""}
-            </span>
-          )}
-          {!hot && stats.paused > 0 && (
-            <span className="ml-auto rounded-full bg-amber-50 px-1.5 text-[8.5px] font-semibold text-amber-700">
-              {stats.paused} pausado{stats.paused > 1 ? "s" : ""}
-            </span>
-          )}
-        </div>
-        <div className={`mt-1 truncate text-[8.5px] ${brain ? "text-emerald-700" : "text-stone-400"}`}>
-          ◈ {brain ?? "sem cérebro configurado"}
-        </div>
-        <div className="mt-1 flex justify-between border-t border-stone-200 pt-1 text-[8.5px] uppercase tracking-wider text-stone-500">
-          <span>Fazendo <b className="font-mono text-[10px] text-stone-900">{stats.doing}</b></span>
-          <span>Próx <b className="font-mono text-[10px] text-stone-900">{stats.next}</b></span>
-          <span>Feito <b className="font-mono text-[10px] text-stone-900">{stats.done}</b></span>
-        </div>
-      </button>
+        <button
+          type="button"
+          onClick={onClick}
+          className="flex max-w-[150px] items-center gap-1 whitespace-nowrap rounded-full border bg-white/90 px-1.5 py-[1px] text-[9px] font-semibold uppercase leading-4 tracking-wider text-stone-700 shadow-sm"
+          style={{ borderColor: hot ? color : "rgba(214,211,209,0.9)" }}
+        >
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${hot ? "animate-pulse" : ""}`} style={{ background: color }} />
+          <span className="truncate">{name}</span>
+          <span className="font-mono font-normal text-stone-500">{stats.agents}</span>
+          {hot && <span className="font-mono text-emerald-600">●{stats.working}</span>}
+          {!hot && stats.paused > 0 && <span className="font-mono text-amber-600">Ⅱ{stats.paused}</span>}
+        </button>
+        {open && (
+          <div className="absolute bottom-full left-1/2 z-10 mb-1 w-[170px] -translate-x-1/2 rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-left text-[10px] text-stone-600 shadow-lg">
+            <div className="flex justify-between">
+              <span>Agentes</span>
+              <b className="font-mono text-stone-900">{stats.agents}</b>
+            </div>
+            <div className="flex justify-between">
+              <span>Trabalhando agora</span>
+              <b className="font-mono text-stone-900">{stats.working}</b>
+            </div>
+            {stats.paused > 0 && (
+              <div className="flex justify-between">
+                <span>Pausados</span>
+                <b className="font-mono text-amber-600">{stats.paused}</b>
+              </div>
+            )}
+            <div className={`mt-1 truncate ${brain ? "text-emerald-700" : "text-stone-400"}`}>
+              ◈ {brain ?? "sem cérebro configurado"}
+            </div>
+            <div className="mt-1 flex justify-between border-t border-stone-100 pt-1 text-[9px] uppercase tracking-wider text-stone-500">
+              <span>Fazendo <b className="font-mono text-stone-900">{stats.doing}</b></span>
+              <span>Próx <b className="font-mono text-stone-900">{stats.next}</b></span>
+              <span>Feito <b className="font-mono text-stone-900">{stats.done}</b></span>
+            </div>
+          </div>
+        )}
+      </div>
     </Html>
   );
 }

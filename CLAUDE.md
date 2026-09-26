@@ -301,10 +301,19 @@ CEO/Orquestrador-Geral ficam na sala CEO, e há uma Sala de Reunião fixa.
   setores com `knowledge_source`; fio tracejado cinza pra setor sem
   `knowledge_source` (o RAG dele devolve vazio, a planta não finge conexão).
   Pulsos correm pelo fio só enquanto algum agente do setor está `working`.
-- **Cartões de KPI por setor** (`office3d/SectorCard.tsx`): agentes,
-  ativos/pausados, cérebro do setor e Tasks fazendo/próximas/feitas — tudo
-  de dado real (`listAgents`, `listTasks` + eventos `task`/`agent` do
-  WebSocket). Clicar abre o `RoomModal`.
+- **Etiquetas de KPI por setor** (`office3d/SectorCard.tsx`): uma linha só
+  em cima da parede do fundo (nome, nº de agentes, ativos/pausados); o
+  detalhe (cérebro do setor, Tasks fazendo/próximas/feitas) aparece no
+  hover. Tudo de dado real (`listAgents`, `listTasks` + eventos
+  `task`/`agent` do WebSocket). Clicar abre o `RoomModal`. Já foi um cartão
+  grande fixo em pixel — com 12+ setores cobria o escritório inteiro.
+- **Barra de vista no topo da cena** (Isométrica/Planta/Frontal, Cartões,
+  Fios, zoom −/+/⌂): no Studio o container tem `calc(100vh - 152px)` e o
+  rodapé do canvas podia ficar fora da tela — por isso não fica embaixo.
+  O `IsoCamera` reserva essa faixa ao enquadrar; o `OrbitControls` não
+  recebe `target` por prop (seria reaplicado a cada re-render).
+- **Colunas de salas adaptáveis** (`roomColumns`): até 5 colunas conforme
+  a quantidade de setores, pra planta não virar uma torre estreita.
 - **Tudo local**: sem HDR de CDN (`Environment` com `Lightformer`) e sem
   fonte baixada em runtime (rótulos 3D rasterizados em canvas,
   `office3d/textures.ts#labelTexture`) — sem rede, a cena ainda renderiza.
