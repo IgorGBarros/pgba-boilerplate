@@ -102,3 +102,19 @@ def export_personal_data(user_id: str, fields: list[str]) -> dict:
         }
     except CustomUser.DoesNotExist:
         return {"error": "Usuário não encontrado"}
+
+# Texto livre vindo de fonte externa (Slack, e-mail, planilha, API) — antes de
+# virar ingestion.Document, que alimenta a busca semântica e pode aparecer
+# numa resposta de IA (CLAUDE.md §1.2). CNPJ fica: é dado de empresa.
+_RE_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_RE_CPF = re.compile(r"(?<!\d)\d{3}\.?\d{3}\.?\d{3}-?\d{2}(?!\d)")
+_RE_PHONE = re.compile(r"(?<![\w/])(?:\+?55[\s-]?)?\(?\d{2}\)?[\s-]?9?\d{4}[\s-]?\d{4}(?!\d)")
+
+
+def redact_pii(text: str) -> str:
+    """Mascara e-mail, CPF e telefone num texto livre (mantém o resto intacto)."""
+    if not text:
+        return text
+    text = _RE_EMAIL.sub(lambda m: mask_email(m.group(0)), text)
+    text = _RE_CPF.sub(lambda m: mask_cpf(m.group(0)), text)
+    return _RE_PHONE.sub(lambda m: mask_phone(m.group(0)), text)

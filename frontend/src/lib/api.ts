@@ -211,10 +211,20 @@ export interface Sector {
   monthly_budget_usd: string;
   knowledge_source: number | null;
   knowledge_source_name: string | null;
+  /** Fontes adicionais além do cérebro principal (ex: HubSpot + Slack no Comercial). */
+  extra_knowledge_sources: number[];
+  extra_knowledge_source_names: string[];
+  /** Todas as fontes que os agentes do setor consultam (principal + adicionais). */
+  knowledge_source_ids: number[];
   agents_count: number;
   /** Provedor de IA fixo do setor ("anthropic", "groq"...). Vazio = provedor ativo do tenant. */
   default_provider: string;
   default_model: string;
+}
+
+/** Fontes que o setor consulta: principal + adicionais (o backend já manda somadas). */
+export function sectorSourceIds(s: Pick<Sector, "knowledge_source" | "knowledge_source_ids">): number[] {
+  return s.knowledge_source_ids ?? (s.knowledge_source != null ? [s.knowledge_source] : []);
 }
 
 export async function listSectors(): Promise<Sector[]> {
@@ -354,9 +364,23 @@ export interface KnowledgeSource {
   id: number;
   name: string;
   source_type: string;
+  /** Segredos (token, senha) voltam mascarados ("••••1234") — mandar de volta mantém o salvo. */
   config: Record<string, unknown>;
+  /** Quais segredos estão salvos (cifrados no servidor). */
+  secrets_set: string[];
+  /** documents = copia pra busca dos agentes; structured = consultado na hora. */
+  mode: "documents" | "structured";
+  public_id: string;
+  /** Só pra webhook: onde o sistema externo faz POST. */
+  webhook_url: string;
+  /** Sincronização automática a cada N minutos (null = manual). */
+  sync_interval_minutes: number | null;
+  last_sync_status: "" | "running" | "ok" | "error";
+  last_sync_message: string;
+  document_count: number;
   is_active: boolean;
   last_synced_at: string | null;
+  created_at: string;
 }
 
 export async function listKnowledgeSources(): Promise<KnowledgeSource[]> {
@@ -367,6 +391,7 @@ export async function createKnowledgeSource(data: {
   name: string;
   source_type: string;
   config?: Record<string, unknown>;
+  sync_interval_minutes?: number | null;
 }): Promise<KnowledgeSource> {
   return request<KnowledgeSource>("/api/v1/ingestion/sources/", {
     method: "POST",
@@ -376,7 +401,12 @@ export async function createKnowledgeSource(data: {
 
 export async function updateKnowledgeSource(
   id: number,
-  data: Partial<{ name: string; config: Record<string, unknown>; is_active: boolean }>,
+  data: Partial<{
+    name: string;
+    config: Record<string, unknown>;
+    is_active: boolean;
+    sync_interval_minutes: number | null;
+  }>,
 ): Promise<KnowledgeSource> {
   return request<KnowledgeSource>(`/api/v1/ingestion/sources/${id}/`, {
     method: "PATCH",
@@ -397,8 +427,92 @@ export async function testKnowledgeSourceConnection(
   );
 }
 
-export async function syncKnowledgeSource(id: number): Promise<void> {
-  await request<unknown>(`/api/v1/ingestion/sources/${id}/sync/`, { method: "POST" });
+export async function syncKnowledgeSource(id: number): Promise<{ detail: string; queued: boolean }> {
+  return request(`/api/v1/ingestion/sources/${id}/sync/`, { method: "POST" });
+}
+
+/** Testa uma configuração antes de salvar (com `id`, segredo mascarado = o salvo). */
+export async function testKnowledgeSourceConfig(data: {
+  source_type: string;
+  config: Record<string, unknown>;
+  id?: number;
+}): Promise<{ ok: boolean; message: string }> {
+  try {
+    return await request("/api/v1/ingestion/sources/test-config/", { method: "POST", body: JSON.stringify(data) });
+  } catch (err) {
+    // 400 traz {ok:false, message} — é resultado do teste, não erro de tela
+    if (err instanceof ApiError && typeof err.body?.message === "string") {
+      return { ok: false, message: err.body.message };
+    }
+    throw err;
+  }
+}
+
+export interface SourceSyncRun {
+  id: number;
+  trigger: "manual" | "schedule" | "webhook";
+  status: "running" | "ok" | "error";
+  started_at: string;
+  finished_at: string | null;
+  created: number;
+  updated: number;
+  unchanged: number;
+  removed: number;
+  message: string;
+}
+
+export interface ConnectorQuery {
+  nome: string;
+  descricao: string;
+  consulta?: string;
+  parametros: string[];
+  objeto?: string;
+  propriedades?: string;
+  filtro_propriedade?: string;
+}
+
+export interface SourceOverview {
+  documents: { active: number; by_status: Record<string, number>; removed: number };
+  recent_documents: { id: number; title: string; status: string; updated_at: string; excerpt: string; error: string }[];
+  runs: SourceSyncRun[];
+  queries: ConnectorQuery[];
+}
+
+export async function getSourceOverview(id: number): Promise<SourceOverview> {
+  return request<SourceOverview>(`/api/v1/ingestion/sources/${id}/overview/`);
+}
+
+export interface QueryTable {
+  colunas: string[];
+  linhas: unknown[][];
+  total_linhas: number;
+  truncado: boolean;
+}
+
+export async function runSourceQuery(id: number, nome: string, params: Record<string, string>): Promise<QueryTable> {
+  return request<QueryTable>(`/api/v1/ingestion/sources/${id}/run-query/`, {
+    method: "POST",
+    body: JSON.stringify({ nome, params }),
+  });
+}
+
+export interface SourceAccess {
+  source: number;
+  /** CEO / Orquestrador-Geral: veem todas as fontes. */
+  full_access: string[];
+  sectors: { id: number; name: string; agents: number; access: "principal" | "adicional" | null }[];
+}
+
+export async function getSourceAccess(sourceId: number): Promise<SourceAccess> {
+  return request<SourceAccess>(`/api/v1/agency/source-access/?source=${sourceId}`);
+}
+
+/** Define em quais setores a fonte entra como ADICIONAL (o cérebro principal não muda). */
+export async function setSourceAccess(sourceId: number, sectors: number[]): Promise<SourceAccess> {
+  return request<SourceAccess>("/api/v1/agency/source-access/", {
+    method: "POST",
+    body: JSON.stringify({ source: sourceId, sectors }),
+  });
 }
 
 export async function updateSector(

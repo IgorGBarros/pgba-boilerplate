@@ -18,6 +18,7 @@ from agency.views import (
     KnowledgeUsageView,
     KnowledgeUsageSummaryView,
     AIStatusView,
+    SourceAccessView,
     TimelineView,
     DailySummaryView,
 )
@@ -45,6 +46,7 @@ urlpatterns = [
         name="agency-knowledge-usage-summary",
     ),
     path("ai-status/", AIStatusView.as_view(), name="agency-ai-status"),
+    path("source-access/", SourceAccessView.as_view(), name="agency-source-access"),
     path("timeline/", TimelineView.as_view(), name="agency-timeline"),
     path("daily-summary/", DailySummaryView.as_view(), name="agency-daily-summary"),
     path(

@@ -1,33 +1,39 @@
 # backend_api/Api/ingestion/views.py
+import hashlib
+import hmac
+import json
 from types import SimpleNamespace
+
+from django.db.models import Count, Q
 
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 
-from core.mixins import TenantContextMixin
-from ingestion.models import KnowledgeSource, Document
+from core.mixins import SoftDeleteViewMixin, TenantContextMixin
+from ingestion.connectors import ConnectorError, get_connector, get_connector_class
+from ingestion.models import Document, KnowledgeSource, SourceSyncRun
 from ingestion.serializers import (
     KnowledgeSourceSerializer,
     DocumentSerializer,
     DocumentUploadSerializer,
     DocumentFileUploadSerializer,
     RAGQuerySerializer,
+    SourceSyncRunSerializer,
 )
+from ingestion.sync import receive_webhook, sync_source
 from ingestion.services import (
     semantic_search,
     build_context_prompt,
     generate_answer,
     EmbeddingError,
 )
-from ingestion.tasks import (
-    process_document_task,
-    sync_obsidian_source_task,
-)
+from ingestion.tasks import process_document_task, sync_source_task
 
 
 class TenantScopedMixin:
@@ -43,75 +49,185 @@ class TenantScopedMixin:
         serializer.save(tenant_id=self.request.tenant_id)
 
 
-class KnowledgeSourceViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
-    queryset = KnowledgeSource.objects.all()
+class KnowledgeSourceViewSet(
+    TenantContextMixin, SoftDeleteViewMixin, TenantScopedMixin, viewsets.ModelViewSet
+):
+    """
+    Conectores. DELETE é exclusão lógica (a fonte e os documentos saem da busca
+    dos agentes, o histórico fica). Ações: test-connection (chamada real),
+    test-config (antes de salvar), sync, overview (painel) e run-query
+    (prévia de uma consulta de banco/CRM).
+    """
+
+    queryset = KnowledgeSource.objects.annotate(
+        active_documents=Count("documents", filter=Q(documents__is_active=True))
+    )
     serializer_class = KnowledgeSourceSerializer
     permission_classes = [IsAuthenticated]
 
     @action(detail=True, methods=["post"])
     def sync(self, request, pk=None):
-        """Dispara (assíncrono) a sincronização de uma fonte Obsidian/URL/API."""
+        """Enfileira a sincronização (Celery); sem broker, roda aqui mesmo."""
         source = self.get_object()
-        if source.source_type != KnowledgeSource.SourceType.OBSIDIAN:
+        if source.source_type in (
+            KnowledgeSource.SourceType.UPLOAD, KnowledgeSource.SourceType.MANUAL
+        ):
             return Response(
-                {"detail": "Sync automático hoje só é suportado para source_type=obsidian."},
-                status=status.HTTP_400_BAD_REQUEST,
+                {"detail": "Esta fonte recebe arquivos por upload, não sincroniza."}, status=400
             )
-        sync_obsidian_source_task.delay(source.id)
-        return Response({"detail": "Sincronização enfileirada."}, status=202)
+        cls = get_connector_class(source.source_type)
+        if cls is not None and cls.mode == "structured":
+            return Response(
+                {"detail": "Conector de consulta: nada a copiar — os agentes consultam na hora."},
+                status=400,
+            )
+        try:
+            sync_source_task.delay(source.id, SourceSyncRun.Trigger.MANUAL)
+            return Response({"detail": "Sincronização enfileirada.", "queued": True}, status=202)
+        except Exception:
+            run = sync_source(source, trigger=SourceSyncRun.Trigger.MANUAL)
+            return Response(
+                {"detail": run.message, "queued": False, "run": SourceSyncRunSerializer(run).data}
+            )
+
+    def _test(self, source):
+        if source.source_type == KnowledgeSource.SourceType.OBSIDIAN:
+            path = (source.config or {}).get("vault_path") or ""
+            from pathlib import Path
+
+            if not path or not Path(path).is_dir():
+                return Response(
+                    {"ok": False, "message": "Pasta do vault não encontrada no servidor."},
+                    status=400,
+                )
+            notes = sum(1 for _ in Path(path).rglob("*.md"))
+            return Response({"ok": True, "message": f"Vault encontrado: {notes} nota(s)."})
+        try:
+            message = get_connector(source).test()
+        except ConnectorError as exc:
+            return Response({"ok": False, "message": str(exc)}, status=400)
+        except Exception as exc:  # erro inesperado do conector nunca vira 500 mudo
+            return Response({"ok": False, "message": f"Falha inesperada: {exc}"}, status=400)
+        return Response({"ok": True, "message": message})
 
     @action(detail=True, methods=["post"], url_path="test-connection")
     def test_connection(self, request, pk=None):
-        """Valida a configuração da fonte sem executar um sync completo."""
-        source = self.get_object()
-        cfg = source.config or {}
+        """Testa a conexão salva com uma chamada real e barata na fonte."""
+        return self._test(self.get_object())
 
-        REQUIRED_FIELDS = {
-            "rest_api": ["url"],
-            "url": ["url"],
-            "sql": ["host", "database", "user"],
-            "google_sheets": ["spreadsheet_id"],
-            "slack": ["bot_token"],
-            "webhook": [],
-            "email": ["host", "user"],
-            "notion": ["integration_token", "database_id"],
-            "hubspot": ["api_key"],
-            "salesforce": ["client_id", "client_secret", "instance_url"],
-            "obsidian": ["vault_path"],
-        }
+    @action(detail=False, methods=["post"], url_path="test-config")
+    def test_config(self, request):
+        """Testa uma configuração antes de salvar (segredos mascarados = os salvos)."""
+        from ingestion.connectors.secrets import split_config
 
-        required = REQUIRED_FIELDS.get(source.source_type, [])
-        missing = [f for f in required if not cfg.get(f)]
-        if missing:
+        source_type = request.data.get("source_type", "")
+        config = request.data.get("config") or {}
+        if source_type not in KnowledgeSource.SourceType.values or not isinstance(config, dict):
             return Response(
-                {"ok": False, "message": f"Campos obrigatórios ausentes: {', '.join(missing)}"},
-                status=status.HTTP_400_BAD_REQUEST,
+                {"ok": False, "message": "Tipo ou configuração inválidos."}, status=400
             )
+        current = {}
+        if request.data.get("id"):
+            saved = self.get_queryset().filter(pk=request.data["id"]).first()
+            if saved is not None:
+                current = saved.full_config()
+        public, secrets = split_config(source_type, config, current)
+        transient = KnowledgeSource(
+            tenant_id=request.tenant_id, name="teste", source_type=source_type, config=public
+        )
+        transient._plain_secrets = secrets
+        return self._test(transient)
 
-        # Para tipos com URL, tenta um HEAD request simples
-        if source.source_type in ("rest_api", "url") and cfg.get("url"):
-            try:
-                import urllib.request
-                req = urllib.request.Request(cfg["url"], method="HEAD")
-                headers = cfg.get("headers", {})
-                auth_type = cfg.get("auth_type", "none")
-                if auth_type == "bearer" and cfg.get("api_key"):
-                    req.add_header("Authorization", f"Bearer {cfg['api_key']}")
-                elif auth_type == "api_key" and cfg.get("api_key"):
-                    header_name = cfg.get("api_key_header", "X-API-Key")
-                    req.add_header(header_name, cfg["api_key"])
-                for k, v in headers.items():
-                    req.add_header(k, v)
-                with urllib.request.urlopen(req, timeout=5):
-                    pass
-                return Response({"ok": True, "message": "Conexão estabelecida com sucesso."})
-            except Exception as exc:
-                return Response(
-                    {"ok": False, "message": f"Falha na conexão: {exc}"},
-                    status=status.HTTP_502_BAD_GATEWAY,
-                )
+    @action(detail=True, methods=["get"])
+    def overview(self, request, pk=None):
+        """Painel "Dados do conector": o que veio, quando, erros e prévia."""
+        source = self.get_object()
+        docs = Document.objects.filter(source=source)
+        by_status = dict(docs.filter(is_active=True).values_list("status").annotate(n=Count("id")))
+        recent = docs.filter(is_active=True).order_by("-updated_at")[:8]
+        runs = source.sync_runs.all()[:15]
+        cls = get_connector_class(source.source_type)
+        structured = cls is not None and cls.mode == "structured"
+        consultas = ((source.config or {}).get("consultas") or []) if structured else []
+        return Response({
+            "documents": {
+                "active": sum(by_status.values()),
+                "by_status": by_status,
+                "removed": docs.filter(is_active=False).count(),
+            },
+            "recent_documents": [
+                {
+                    "id": d.id,
+                    "title": d.title,
+                    "status": d.status,
+                    "updated_at": d.updated_at,
+                    "excerpt": (d.metadata or {}).get("excerpt") or (d.content or "")[:280],
+                    "error": d.error_message,
+                }
+                for d in recent
+            ],
+            "runs": SourceSyncRunSerializer(runs, many=True).data,
+            "queries": consultas,
+        })
 
-        return Response({"ok": True, "message": "Configuração salva. Conexão será verificada no primeiro sync."})
+    @action(detail=True, methods=["post"], url_path="run-query")
+    def run_query(self, request, pk=None):
+        """Roda uma consulta cadastrada (prévia pra quem configura). Mesma trava da IA."""
+        source = self.get_object()
+        cls = get_connector_class(source.source_type)
+        if cls is None or cls.mode != "structured":
+            return Response({"detail": "Só conectores de banco/CRM têm consultas."}, status=400)
+        params = request.data.get("params") or {}
+        if not isinstance(params, dict):
+            return Response({"detail": "params deve ser um objeto."}, status=400)
+        try:
+            return Response(cls(source).run(str(request.data.get("nome", "")), params))
+        except ConnectorError as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+
+class WebhookReceiveView(APIView):
+    """
+    POST /api/v1/ingestion/webhooks/<public_id>/ — sistemas externos mandam
+    dados pra um conector do tipo webhook. Sem login (é máquina falando),
+    então a prova é o segredo do conector: header `X-Webhook-Signature:
+    sha256=<HMAC-SHA256 do corpo>` (preferido) ou `X-Webhook-Secret: <segredo>`.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "webhook"
+    MAX_BODY = 1024 * 1024
+
+    def post(self, request, public_id):
+        source = KnowledgeSource.objects.filter(
+            public_id=public_id, source_type=KnowledgeSource.SourceType.WEBHOOK, is_active=True
+        ).first()
+        if source is None:
+            return Response({"detail": "Não encontrado."}, status=404)
+        body = request.body
+        if len(body) > self.MAX_BODY:
+            return Response({"detail": "Corpo grande demais (1 MB)."}, status=413)
+        secret = (source.full_config().get("secret") or "").encode()
+        signature = request.headers.get("X-Webhook-Signature", "")
+        plain = request.headers.get("X-Webhook-Secret", "")
+        expected = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
+        valid = bool(secret) and (
+            (signature and hmac.compare_digest(signature, expected))
+            or (plain and hmac.compare_digest(plain.encode(), secret))
+        )
+        if not valid:
+            return Response({"detail": "Assinatura inválida."}, status=401)
+        try:
+            payload = json.loads(body.decode() or "{}")
+        except (ValueError, UnicodeDecodeError):
+            payload = body.decode(errors="replace")
+        try:
+            document = receive_webhook(source, payload)
+        except ConnectorError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response({"ok": True, "document_id": document.id}, status=202)
 
 
 class DocumentViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ReadOnlyModelViewSet):

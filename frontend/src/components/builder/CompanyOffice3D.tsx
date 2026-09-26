@@ -16,6 +16,7 @@ import {
   listAgents, listPendingApprovals, listSectorMessages, listSectors, listTasks, patchAgentAutonomy,
   type AIProvider, type AIStatus, type Agent, type PendingApproval, type Sector, type SectorMessage, type SectorMetric,
   type Task, type Timeline, ApiError,
+  sectorSourceIds,
 } from "@/lib/api";
 import { ReplayBar } from "./office3d/ReplayBar";
 import { DailySummaryModal } from "./office3d/DailySummaryModal";
@@ -2190,12 +2191,12 @@ export default function CompanyOffice3D() {
     };
     // Sala CEO = acesso ao cérebro principal inteiro (sem filtro de fonte)
     push(-2, CEO_ROOM_INDEX, "CEO", true);
-    sectors.forEach((s, i) => push(s.id, i + 1, s.name, s.knowledge_source != null));
+    sectors.forEach((s, i) => push(s.id, i + 1, s.name, sectorSourceIds(s).length > 0));
     return links;
   }, [sectors, statsBySector, cols]);
 
   const sourcesCount = useMemo(
-    () => new Set(sectors.map((s) => s.knowledge_source).filter((k) => k != null)).size,
+    () => new Set(sectors.flatMap((s) => sectorSourceIds(s))).size,
     [sectors],
   );
 

@@ -49,6 +49,13 @@ class Sector(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         related_name="agency_sectors",
         help_text="Base de conhecimento própria deste setor (o 'cérebro secundário').",
     )
+    # Outras fontes que o setor também consulta (ex: Comercial = HubSpot + Slack).
+    # O `knowledge_source` acima continua sendo o cérebro principal do setor;
+    # o escopo de acesso dos agentes é a união dos dois (services._rag_scope_for).
+    extra_knowledge_sources = models.ManyToManyField(
+        "ingestion.KnowledgeSource", blank=True, related_name="agency_sectors_extra",
+        help_text="Fontes adicionais que os agentes deste setor podem consultar.",
+    )
     # Modelo de IA do setor. Vazio = usa o provedor ativo do tenant (harness).
     # Preenchido = TODOS os agentes do setor usam este provedor, sem cair em
     # outro se a credencial faltar (falha explícita — ver

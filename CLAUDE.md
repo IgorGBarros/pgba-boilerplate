@@ -66,8 +66,8 @@ KnowledgeSource → Document → DocumentChunk (embedding pgvector)
 
 Esse padrão (fonte → unidade de conteúdo → pedaço vetorizado) é o mesmo
 para Obsidian, upload manual, uma URL ou uma API externa. Novo tipo de
-fonte = novo valor em `KnowledgeSource.SourceType` + uma função de sync
-em `ingestion/services.py`, nunca um novo conjunto de tabelas paralelo.
+fonte = novo valor em `KnowledgeSource.SourceType` + uma classe em
+`ingestion/connectors/` (ver §5b), nunca um novo conjunto de tabelas paralelo.
 
 Camadas de um novo app de domínio:
 
@@ -141,6 +141,59 @@ banco de dados direto. Regras:
   do vault (ex: só `#publico`, nunca notas pessoais);
 - o vault continua sendo a fonte de verdade — o boilerplate nunca escreve
   de volta no vault, só lê.
+
+## 5b. Conectores externos (`ingestion/connectors/`)
+
+Data Lake → Conectores. Cada `KnowledgeSource.source_type` tem uma classe
+em `ingestion/connectors/`, em um de dois modos:
+
+| Modo | Conectores | O que acontece |
+|---|---|---|
+| `documents` | REST API, URL, Google Sheets, Notion, Slack, E-mail (IMAP), Webhook (+ Obsidian/upload, que já existiam) | `fetch()` traz o conteúdo → `ingestion.sync.sync_source` grava `Document` (upsert por `external_id`, hash evita reindexar) → indexação no Celery → busca semântica dos agentes |
+| `structured` | Banco SQL (PostgreSQL/MySQL/SQLite), HubSpot, Salesforce | nada é copiado; os agentes consultam **na hora**, só pelas consultas nomeadas que um humano cadastrou no conector |
+
+Regras (não afrouxar):
+
+- **Segredo nunca em texto puro nem na resposta da API**: `KnowledgeSource.secret_config`
+  (Fernet, `ENCRYPTION_KEY`); `config` só tem o que não é segredo. A API
+  devolve `••••1234` + `secrets_set`; mandar o mascarado de volta mantém o
+  salvo (`connectors/secrets.py`). Sem `ENCRYPTION_KEY`, salvar segredo dá 400.
+- **Toda saída de rede passa por `connectors/safe_http.py`** (anti-SSRF): só
+  http/https, host tem que resolver pra IP público (IP literal conferido
+  direto), redirect conferido a cada salto, teto de 10 MB. Banco e IMAP usam
+  `check_host`. Rede interna só por lista: `CONNECTORS_ALLOWED_PRIVATE_HOSTS`.
+  SQLite só dentro de `CONNECTORS_SQLITE_ROOT`.
+- **LGPD**: todo texto vindo de fonte externa passa por
+  `core.utils.lgpd.redact_pii` (e-mail, CPF, telefone) antes de virar
+  `Document`; célula de texto de consulta estruturada também.
+- **Consulta estruturada = §1.6**: o LLM escolhe QUAL consulta e os VALORES;
+  SQL com parâmetro ligado, SOQL com literal escapado e tipado; só `SELECT`,
+  uma instrução, transação read-only, teto de linhas. `registry.register_catalog_provider`
+  (catálogo dinâmico por tenant) transforma cada consulta em função
+  `fonte<id>_<nome>`, filtrada pelo mesmo escopo da busca semântica
+  (`rag_source_ids`) — o `orchestration` não sabe o que é conector nem setor.
+- **Sync**: `POST sources/{id}/sync/` (Celery; sem broker roda na hora),
+  `sync_interval_minutes` + beat (`CELERY_BEAT_SCHEDULE`, a cada 5 min
+  `sync_due_sources_task`). Snapshot completo (REST, URL, Sheets, Notion)
+  tira da busca o que sumiu da fonte (exclusão lógica); Slack/e-mail são
+  incrementais. Cada execução vira `SourceSyncRun`; erro fica em
+  `last_sync_status`/`last_sync_message`, nunca em silêncio.
+- **Webhook**: `POST /api/v1/ingestion/webhooks/<public_id>/`, sem login,
+  prova por `X-Webhook-Signature: sha256=<HMAC do corpo>` (ou
+  `X-Webhook-Secret`), 1 MB, throttle `webhook`.
+- **Teste de conexão é chamada real** (`test-connection/`, e `test-config/`
+  antes de salvar) — nunca "configuração salva" fingindo que testou.
+- **Busca semântica ignora documento excluído e fonte desativada**
+  (`semantic_search` filtra `document__is_active` e `document__source__is_active`).
+  Excluir conector é lógico.
+
+**Setor com várias fontes**: `Sector.knowledge_source` (cérebro principal) +
+`Sector.extra_knowledge_sources` (M2M). `agency.services.sector_source_ids`
+é a união; `_rag_scope_for` usa ela pra RAG E pras consultas estruturadas.
+**Painel do conector** (`connectors.tsx` → `SourcePanel`): Resumo, Registros
+(ou Consultas, com "Testar consulta"), Execuções e **Quem acessa**
+(`GET/POST /api/v1/agency/source-access/` — fica em `agency` porque
+`ingestion` não sabe o que é setor; o POST só mexe nas fontes adicionais).
 
 ## 6. Orquestração de IA sobre dado estruturado (`orchestration`)
 

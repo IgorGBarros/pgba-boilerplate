@@ -47,9 +47,11 @@ class OrchestrationError(Exception):
     pass
 
 
-def _select_function(tenant_id, question: str, provider: str, model: str) -> tuple[str | None, dict]:
+def _select_function(
+    tenant_id, question: str, provider: str, model: str, source_ids=None,
+) -> tuple[str | None, dict]:
     """Pede ao LLM para escolher uma função do catálogo, em JSON validado."""
-    catalog = registry.catalog_for_prompt()
+    catalog = registry.catalog_for_prompt(tenant_id, source_ids)
     prompt = f"""Você escolhe qual função usar para responder a pergunta abaixo.
 Responda SOMENTE em JSON no formato:
 {{"function": "<nome_da_funcao_ou_null>", "params": {{}}}}
@@ -145,7 +147,11 @@ def _answer_question(
     )
 
     try:
-        function_name, params = _select_function(tenant_id, question, provider, model)
+        # `rag_source_ids` também limita as funções dinâmicas (consultas de
+        # conectores): o agente só consulta as fontes que ele pode ver.
+        function_name, params = _select_function(
+            tenant_id, question, provider, model, rag_source_ids
+        )
     except OrchestrationError as exc:
         log.status = QueryLog.Status.LLM_ERROR
         log.error_message = str(exc)
@@ -157,7 +163,7 @@ def _answer_question(
 
     function_result: dict = {}
     if function_name:
-        fn = registry.get_function(function_name)
+        fn = registry.get_function(function_name, tenant_id, rag_source_ids)
         if fn and policy_check:
             allowed, reason = policy_check(function_name, fn.risk)
             if not allowed:
@@ -172,7 +178,7 @@ def _answer_question(
                     "pending_function_params": params,
                 }
         try:
-            function_result = registry.execute(function_name, tenant_id, params)
+            function_result = registry.execute(function_name, tenant_id, params, rag_source_ids)
             log.function_called = function_name
             log.function_params = params
             log.function_result = function_result
