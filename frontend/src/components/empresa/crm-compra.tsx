@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { listPedidosCompra, avancarStatusPedido, type PedidoCompra } from "@/lib/api";
 
 const STATUS_CONFIG: Record<PedidoCompra["status"], { label: string; color: string; icon: React.ReactNode }> = {
-  criado:       { label: "Criado",       color: "bg-slate-500/10 text-slate-600 dark:text-slate-400",     icon: <ShoppingCart className="size-3.5" /> },
+  criado:       { label: "Criado",       color: "bg-secondary text-muted-foreground dark:text-muted-foreground",     icon: <ShoppingCart className="size-3.5" /> },
   enviado:      { label: "Enviado",      color: "bg-blue-500/10 text-blue-600 dark:text-blue-400",        icon: <Package className="size-3.5" /> },
   confirmado:   { label: "Confirmado",   color: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",  icon: <CheckCircle2 className="size-3.5" /> },
   em_transito:  { label: "Em Trânsito",  color: "bg-amber-500/10 text-amber-700 dark:text-amber-400",    icon: <Truck className="size-3.5" /> },

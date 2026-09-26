@@ -1,52 +1,81 @@
-import { useState } from "react";
-import {
-  Boxes,
-  Building2,
-  ClipboardList,
-  ScrollText,
-  ShieldCheck,
-} from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+// frontend/src/pages/Studio.tsx — conteúdo de cada área do header (App.tsx).
+//
+// A navegação mora no header (uma barra só). Aqui só:
+// - Empresa: Organograma · Tarefas · Aprovações · Atividade (antes eram abas
+//   soltas no topo do Estúdio — com as tarefas dentro dos agentes, pertencem
+//   à empresa);
+// - Escritório 3D, Conhecimento (chat + biblioteca), Projetos e Gerar.
+import { lazy, Suspense, useEffect, useState } from "react";
+import { ClipboardList, Network, ScrollText, ShieldCheck } from "lucide-react";
+import { Toaster } from "sonner";
 import { Overview } from "@/components/empresa/overview";
 import { Tasks } from "@/components/empresa/tasks";
 import { Approvals } from "@/components/empresa/approvals";
 import { Knowledge } from "@/components/empresa/knowledge";
 import { Logs } from "@/components/empresa/logs";
-import { NewTaskDialog } from "@/components/empresa/dialogs";
+import { Projects } from "@/components/empresa/projects";
+import { ImportProjectDialog, NewProjectDialog, NewTaskDialog } from "@/components/empresa/dialogs";
 import GeneratePanel from "@/components/builder/GeneratePanel";
-import { Toaster } from "sonner";
+import SettingsModal from "@/components/builder/SettingsModal";
+import { DEFAULT_SETTINGS, type AppSettings } from "@/types/settings";
+import { listPendingApprovals } from "@/lib/api";
+import { useRealtime } from "@/lib/useRealtime";
+import { useTheme } from "@/lib/ThemeContext";
+import type { EmpresaTab, Section } from "@/lib/navigation";
 
-// "gerar" não aparece na barra — só abre via openGerar(projectId)
-const tabs = [
-  { id: "empresa",      label: "Empresa",      icon: Building2    },
-  { id: "tarefas",      label: "Tarefas",      icon: ClipboardList },
-  { id: "aprovacoes",   label: "Aprovações",   icon: ShieldCheck  },
-  { id: "conhecimento", label: "Conhecimento", icon: Boxes        },
-  { id: "logs",         label: "Logs",         icon: ScrollText   },
+const CompanyOffice3D = lazy(() => import("@/components/builder/CompanyOffice3D"));
+
+const EMPRESA_TABS: { id: EmpresaTab; label: string; icon: React.ElementType }[] = [
+  { id: "org", label: "Organograma", icon: Network },
+  { id: "tasks", label: "Tarefas", icon: ClipboardList },
+  { id: "approvals", label: "Aprovações", icon: ShieldCheck },
+  { id: "activity", label: "Atividade", icon: ScrollText },
 ];
 
-const STUDIO_TAB_KEY = "studio_active_tab";
-const VALID_TABS = new Set(["gerar", "empresa", "tarefas", "aprovacoes", "conhecimento", "logs"]);
+const EMPRESA_TAB_KEY = "pgba_empresa_tab";
 
-function readStoredTab(): string {
+function readEmpresaTab(): EmpresaTab {
   try {
-    const stored = sessionStorage.getItem(STUDIO_TAB_KEY);
-    return stored && VALID_TABS.has(stored) ? stored : "empresa";
+    const t = sessionStorage.getItem(EMPRESA_TAB_KEY) as EmpresaTab | null;
+    return t && EMPRESA_TABS.some((x) => x.id === t) ? t : "org";
   } catch {
-    return "empresa";
+    return "org";
   }
 }
 
-export default function Studio() {
-  const [activeTab, setActiveTab] = useState(readStoredTab);
+export default function Studio({
+  section,
+  onNavigate,
+  settingsOpen,
+  onSettingsOpenChange,
+}: {
+  section: Section;
+  onNavigate: (s: Section) => void;
+  settingsOpen: boolean;
+  onSettingsOpenChange: (open: boolean) => void;
+}) {
+  const { theme } = useTheme();
+  const [empresaTab, setEmpresaTabState] = useState<EmpresaTab>(readEmpresaTab);
   const [newTask, setNewTask] = useState(false);
   const [taskSector, setTaskSector] = useState<string | undefined>(undefined);
   const [gerarProjectId, setGerarProjectId] = useState<number | undefined>(undefined);
+  const [newProject, setNewProject] = useState(false);
+  const [importProject, setImportProject] = useState(false);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [pendingApprovals, setPendingApprovals] = useState<number | null>(null);
 
-  function changeTab(tab: string) {
-    try { sessionStorage.setItem(STUDIO_TAB_KEY, tab); } catch { /* private window */ }
-    setActiveTab(tab);
-  }
+  const setEmpresaTab = (tab: EmpresaTab) => {
+    try { sessionStorage.setItem(EMPRESA_TAB_KEY, tab); } catch { /* aba privada */ }
+    setEmpresaTabState(tab);
+  };
+
+  // Contador de aprovações pendentes na aba (atualiza com o WebSocket)
+  const { lastPendingApprovalEvent } = useRealtime();
+  useEffect(() => {
+    listPendingApprovals("pending")
+      .then((list) => setPendingApprovals(list.length))
+      .catch(() => setPendingApprovals(null));
+  }, [lastPendingApprovalEvent]);
 
   const openTask = (sector?: string) => {
     setTaskSector(sector);
@@ -55,53 +84,93 @@ export default function Studio() {
 
   const openGerar = (projectId?: number) => {
     if (projectId !== undefined) setGerarProjectId(projectId);
-    changeTab("gerar");
+    onNavigate("gerar");
   };
 
   return (
     <>
-      <Toaster richColors position="top-right" />
-      <div className="min-h-screen bg-background">
-        <Tabs value={activeTab} onValueChange={changeTab} className="w-full">
-          <div className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
-            <div className="px-4 py-2">
-              <TabsList className="flex-wrap">
-                {tabs.map((tab) => (
-                  <TabsTrigger key={tab.id} value={tab.id} className="gap-2">
-                    <tab.icon className="size-4" />
-                    {tab.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </div>
+      <Toaster richColors position="top-right" theme={theme} />
+
+      {section === "empresa" && (
+        <div className="mx-auto w-full max-w-[1400px] px-4 pb-10 md:px-6">
+          <div className="sticky top-14 z-20 -mx-4 mb-5 flex items-center gap-1 overflow-x-auto border-b border-border bg-background/90 px-4 py-2 backdrop-blur md:-mx-6 md:px-6">
+            {EMPRESA_TABS.map((tab) => {
+              const active = empresaTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setEmpresaTab(tab.id)}
+                  className={`relative flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors ${
+                    active ? "bg-surface text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <tab.icon className="size-4" />
+                  {tab.label}
+                  {tab.id === "approvals" && pendingApprovals ? (
+                    <span className="ml-0.5 rounded-full bg-orange-500 px-1.5 text-[10px] font-semibold leading-4 text-white">
+                      {pendingApprovals}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
+          {empresaTab === "org" && <Overview onNewTask={openTask} />}
+          {empresaTab === "tasks" && <Tasks onNewTask={openTask} />}
+          {empresaTab === "approvals" && <Approvals />}
+          {empresaTab === "activity" && <Logs />}
+        </div>
+      )}
 
-          {/* Gerar ocupa toda a altura disponível — sem o padding p-4/p-6 das outras abas */}
-          <TabsContent value="gerar" className="mt-0">
-            <GeneratePanel initialProjectId={gerarProjectId} />
-          </TabsContent>
+      {section === "office" && (
+        <div style={{ height: "calc(100vh - 56px)" }}>
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center">
+                <p className="text-sm text-muted-foreground">Carregando escritório 3D…</p>
+              </div>
+            }
+          >
+            <CompanyOffice3D />
+          </Suspense>
+        </div>
+      )}
 
-          <div className="p-4 md:p-6">
-            <TabsContent value="empresa">
-              <Overview onNewTask={openTask} onOpenGerar={openGerar} />
-            </TabsContent>
-            <TabsContent value="tarefas">
-              <Tasks onNewTask={openTask} />
-            </TabsContent>
-            <TabsContent value="aprovacoes">
-              <Approvals />
-            </TabsContent>
-            <TabsContent value="conhecimento">
-              <Knowledge />
-            </TabsContent>
-            <TabsContent value="logs">
-              <Logs />
-            </TabsContent>
+      {section === "knowledge" && (
+        <div className="px-4 py-4 md:px-6">
+          <Knowledge />
+        </div>
+      )}
+
+      {section === "projects" && (
+        <div className="mx-auto w-full max-w-[1400px] space-y-4 px-4 py-5 md:px-6">
+          <div className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Desenvolvimento</span> é o setor responsável por trabalhar
+            nos projetos novos e existentes da plataforma.
           </div>
-        </Tabs>
+          <Projects
+            onNewProject={() => setNewProject(true)}
+            onImportProject={() => setImportProject(true)}
+            onNewTask={openTask}
+            onOpenGerar={openGerar}
+          />
+        </div>
+      )}
 
-        <NewTaskDialog open={newTask} onOpenChange={setNewTask} sector={taskSector} />
-      </div>
+      {/* Gerar ocupa toda a altura disponível — aberto a partir de Projetos */}
+      {section === "gerar" && <GeneratePanel initialProjectId={gerarProjectId} />}
+
+      <NewTaskDialog open={newTask} onOpenChange={setNewTask} sector={taskSector} />
+      <NewProjectDialog open={newProject} onOpenChange={setNewProject} />
+      <ImportProjectDialog open={importProject} onOpenChange={setImportProject} />
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => onSettingsOpenChange(false)}
+        settings={settings}
+        onUpdate={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
+        onReset={() => setSettings(DEFAULT_SETTINGS)}
+      />
     </>
   );
 }

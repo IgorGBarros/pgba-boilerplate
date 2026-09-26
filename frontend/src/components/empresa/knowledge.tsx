@@ -48,7 +48,7 @@ function docIcon(filename: string) {
 function docStatusColor(status: string): string {
   if (status === "indexed") return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300";
   if (status === "error") return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300";
-  return "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400";
+  return "bg-secondary text-muted-foreground";
 }
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -378,7 +378,7 @@ export function Knowledge() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] overflow-hidden rounded-xl border border-border bg-background shadow-sm">
+    <div className="flex h-[calc(100vh-88px)] overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
       {/* Sidebar */}
       <div
         className={`transition-all duration-200 ${

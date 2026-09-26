@@ -281,7 +281,7 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
   }
 
   return (
-    <div ref={rootRef} className="flex h-[calc(100dvh-112px)] w-full overflow-hidden">
+    <div ref={rootRef} className="flex h-[calc(100dvh-56px)] w-full overflow-hidden">
       <HistorySidebar
         isCollapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}

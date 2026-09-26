@@ -15,7 +15,7 @@ const CHANNEL_COLORS: Record<string, string> = {
   telegram: "bg-blue-500",
   landing_page: "bg-violet-500",
   meta_ads: "bg-blue-600",
-  manual: "bg-slate-400",
+  manual: "bg-muted-foreground",
 };
 
 function fmtTokens(n: number) {
@@ -155,7 +155,7 @@ export function CRMTokenUsage() {
                 {by_channel.map(ch => {
                   const pct = Math.round((ch.total_tokens / maxTokens) * 100);
                   const label = CHANNEL_LABELS[ch.channel] ?? ch.channel;
-                  const color = CHANNEL_COLORS[ch.channel] ?? "bg-slate-400";
+                  const color = CHANNEL_COLORS[ch.channel] ?? "bg-muted-foreground";
                   return (
                     <div key={ch.channel} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
@@ -205,7 +205,7 @@ export function CRMTokenUsage() {
                           {lead.lead__empresa && <span className="text-muted-foreground"> · {lead.lead__empresa}</span>}
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${CHANNEL_COLORS[lead.lead__origem] ?? "bg-slate-400"} text-white`}>
+                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${CHANNEL_COLORS[lead.lead__origem] ?? "bg-muted-foreground"} text-foreground`}>
                             {CHANNEL_LABELS[lead.lead__origem] ?? lead.lead__origem}
                           </span>
                         </td>

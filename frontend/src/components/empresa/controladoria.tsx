@@ -383,11 +383,11 @@ export function ControladoriaView({ onBack }: { onBack: () => void }) {
       {/* ── Page Header ─────────────────────────────────────────────────────── */}
       <div className="rounded-xl bg-gradient-to-r from-amber-600/20 via-orange-600/10 to-transparent border border-amber-500/20 px-5 py-4">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="shrink-0 grid size-8 place-items-center rounded-md text-amber-300 hover:text-amber-100 hover:bg-amber-500/20 transition-colors">
+          <button onClick={onBack} className="shrink-0 grid size-8 place-items-center rounded-md text-amber-700 dark:text-amber-300 hover:text-amber-100 hover:bg-amber-500/20 transition-colors">
             <ArrowLeft className="size-4" />
           </button>
           <div className="flex items-center gap-3 min-w-0">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-500/20 text-amber-300">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300">
               <ShieldCheck className="size-5" />
             </span>
             <div>
