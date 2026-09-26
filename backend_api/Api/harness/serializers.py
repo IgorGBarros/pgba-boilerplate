@@ -3,6 +3,8 @@ import re
 
 from rest_framework import serializers
 
+from harness.models import AIProviderCredential
+
 # Remove bytes de controle C0 (0x00-0x1F, exceto \t \n \r) e o DEL (0x7F).
 # Existe por causa de um caso real: um modelo local pequeno (ex: llama3
 # genérico, não especializado em código) às vezes produz saída com
@@ -36,6 +38,13 @@ class GenerateCodeSerializer(serializers.Serializer):
     # (etapa de autocorreção do loop de feedback) sem duplicar o prompt.
     previous_code = serializers.CharField(required=False, allow_blank=True)
     validation_error = serializers.CharField(required=False, allow_blank=True)
+    # Opcionais: fixa o provedor/modelo desta geração (ex: o agente que vai
+    # gerar a página é do setor Desenvolvimento, que usa Claude). Sem eles,
+    # vale o provedor ativo do tenant, como sempre.
+    provider = serializers.ChoiceField(
+        choices=AIProviderCredential.Provider.values, required=False,
+    )
+    model = serializers.CharField(max_length=100, required=False, allow_blank=True)
 
     def validate_prompt(self, value):
         value = strip_control_chars(value).strip()

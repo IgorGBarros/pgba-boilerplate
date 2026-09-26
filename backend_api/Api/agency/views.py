@@ -5,6 +5,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from datetime import timedelta
+
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+
 from core.mixins import TenantContextMixin
 from agency.models import Sector, Agent, SectorMessage, Project, PendingApproval, PolicyRule, Task
 from agency.serializers import (
@@ -16,7 +21,8 @@ from agency.serializers import (
     ApproveTaskSerializer, RejectTaskSerializer,
 )
 from agency.tasks import (
-    create_task, interrupt_task, adapt_and_resume, approve_task, reject_task, report_task_result, TaskStateError,
+    create_task, interrupt_task, adapt_and_resume, approve_task, reject_task, report_task_result,
+    start_external_task, TaskStateError,
 )
 from agency.services import (
     ask_as_agent,
@@ -31,6 +37,10 @@ from agency.services import (
     get_agent_metrics,
     get_budget_status,
     knowledge_usage,
+    knowledge_usage_summary,
+    sector_ai_status,
+    company_timeline,
+    resolve_agent_llm,
 )
 
 
@@ -345,6 +355,24 @@ class TaskViewSet(TenantContextMixin, TenantScopedMixin, viewsets.ModelViewSet):
         # o WebSocket vai atualizar o frontend quando o worker mudar o status.
         return Response(TaskSerializer(task).data, status=status.HTTP_202_ACCEPTED)
 
+    @action(detail=True, methods=["post"], url_path="start-external")
+    def start_external(self, request, pk=None):
+        """
+        POST tasks/{id}/start-external/ — o trabalho vai rodar FORA do Django
+        (ex: geração de página no devserver). Marca IN_PROGRESS + agente
+        trabalhando e devolve qual IA o agente usa (`ai_provider`/`ai_model`,
+        mesma regra de `resolve_agent_llm`) pra quem vai gerar usar a mesma.
+        Fecha com `report-result/`.
+        """
+        task = self.get_object()
+        try:
+            updated = start_external_task(request.tenant_id, task.id)
+        except TaskStateError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        provider, model = resolve_agent_llm(updated.agent)
+        data = TaskSerializer(updated).data
+        return Response({**data, "ai_provider": provider, "ai_model": model or ""})
+
     @action(detail=True, methods=["post"], url_path="report-result")
     def report_result(self, request, pk=None):
         """
@@ -484,3 +512,80 @@ class KnowledgeUsageView(TenantContextMixin, APIView):
         if not document.isdigit():
             return Response({"detail": "Informe ?document=<id numérico>."}, status=400)
         return Response(knowledge_usage(request.tenant_id, int(document)))
+
+
+class KnowledgeUsageSummaryView(TenantContextMixin, APIView):
+    """
+    GET /api/v1/agency/knowledge-usage/summary/[?days=30] — quantas vezes
+    cada nota foi usada como contexto (todas de uma vez), pro mapa de calor
+    do Cérebro. `{"documents": {"<id>": {"count": n, "last_at": ...}}}`.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not getattr(request, "tenant_id", None):
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+        days = request.query_params.get("days", "")
+        since = None
+        if days:
+            if not days.isdigit() or int(days) < 1:
+                return Response({"detail": "?days deve ser um inteiro positivo."}, status=400)
+            since = timezone.now() - timedelta(days=int(days))
+        usage = knowledge_usage_summary(request.tenant_id, since=since)
+        return Response({"documents": {str(k): v for k, v in usage.items()}})
+
+
+class AIStatusView(TenantContextMixin, APIView):
+    """
+    GET /api/v1/agency/ai-status/ — qual IA cada setor usa e se está pronta
+    (credencial + modelo). Não chama provedor nenhum — ver
+    `agency.services.sector_ai_status`.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not getattr(request, "tenant_id", None):
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+        return Response(sector_ai_status(request.tenant_id))
+
+
+TIMELINE_MAX_WINDOW = timedelta(days=7)
+
+
+class TimelineView(TenantContextMixin, APIView):
+    """
+    GET /api/v1/agency/timeline/?since=<ISO>&until=<ISO> — eventos da empresa
+    em ordem (padrão: de 0h de hoje até agora; janela máxima de 7 dias).
+    Alimenta o replay do dia no Escritório 3D.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not getattr(request, "tenant_id", None):
+            return Response({"detail": "Acesso requer tenant válido"}, status=403)
+        now = timezone.now()
+        try:
+            until = _parse_when(request.query_params.get("until")) or now
+            midnight = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
+            since = _parse_when(request.query_params.get("since")) or midnight
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        if since >= until:
+            return Response({"detail": "`since` precisa ser antes de `until`."}, status=400)
+        if until - since > TIMELINE_MAX_WINDOW:
+            return Response({"detail": "Janela máxima da linha do tempo: 7 dias."}, status=400)
+        return Response(company_timeline(request.tenant_id, since, until))
+
+
+def _parse_when(raw: str | None):
+    if not raw:
+        return None
+    value = parse_datetime(raw)
+    if value is None:
+        raise ValueError(f"Data inválida: '{raw}' (use ISO 8601).")
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value)
+    return value

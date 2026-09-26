@@ -12,9 +12,13 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, Environment, Lightformer, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import {
+  getAIStatus, getSectorMetrics, getTimeline,
   listAgents, listPendingApprovals, listSectorMessages, listSectors, listTasks, patchAgentAutonomy,
-  type Agent, type PendingApproval, type Sector, type SectorMessage, type Task, ApiError,
+  type AIStatus, type Agent, type PendingApproval, type Sector, type SectorMessage, type SectorMetric,
+  type Task, type Timeline, ApiError,
 } from "@/lib/api";
+import { ReplayBar } from "./office3d/ReplayBar";
+import { REPLAY_SPEEDS, replayStateAt } from "./office3d/replay";
 import { BrainHub, type BrainLink } from "./office3d/BrainHub";
 import { BrainGraph } from "./office3d/BrainGraph";
 import { MessageModal } from "./office3d/MessageModal";
@@ -989,7 +993,7 @@ function AgentAvatar3D({
   onErrandDone: (key: string) => void;
   /** Aprovações humanas pendentes deste agente (PendingApproval). */
   pendingApprovals: number;
-  onOpenApprovals: (agentId: number) => void;
+  onOpenApprovals?: (agentId: number) => void;
   onSelect: (a: OfficeAgent) => void;
 }) {
   const groupRef    = useRef<THREE.Group>(null!);
@@ -1234,7 +1238,7 @@ function AgentAvatar3D({
         <Html center distanceFactor={LABEL_DF} zIndexRange={[13, 12]} position={[0, 1.95, 0]} style={{ userSelect: "none" }}>
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onOpenApprovals(agent.id); }}
+            onClick={(e) => { e.stopPropagation(); onOpenApprovals?.(agent.id); }}
             title="Ação bloqueada pela política de autonomia — clique para aprovar ou rejeitar"
             style={{
               display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", cursor: "pointer",
@@ -1692,6 +1696,17 @@ export default function CompanyOffice3D() {
   const [approvals,      setApprovals]      = useState<PendingApproval[]>([]);
   // null = fechado; "all" = todas; número = só as daquele agente
   const [approvalsFor,   setApprovalsFor]   = useState<number | "all" | null>(null);
+  // Qual IA cada setor usa e se tem credencial (ai-status) + custo do mês
+  const [aiStatus,       setAiStatus]       = useState<AIStatus | null>(null);
+  const [sectorMetrics,  setSectorMetrics]  = useState<SectorMetric[]>([]);
+  // Linha do tempo (replay do dia) — null = ao vivo
+  const [replayOn,       setReplayOn]       = useState(false);
+  const [timeline,       setTimeline]       = useState<Timeline | null>(null);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError,  setTimelineError]  = useState<string | null>(null);
+  const [replayT,        setReplayT]        = useState(0);
+  const [replayPlaying,  setReplayPlaying]  = useState(false);
+  const [replaySpeed,    setReplaySpeed]    = useState<number>(REPLAY_SPEEDS[1]);
 
   // Intervalo de polling derivado do slider (não estado separado)
   const speed = AUTONOMY_SPEEDS[autonomySlider] ?? 30_000;
@@ -1714,16 +1729,20 @@ export default function CompanyOffice3D() {
       try {
         const [s, a] = await Promise.all([listSectors(), listAgents()]);
         // Tasks só alimentam os KPIs dos cartões — falha aqui não derruba o escritório
-        const [t, m, pa] = await Promise.all([
+        const [t, m, pa, ai, sm] = await Promise.all([
           listTasks().catch(() => null),
           listSectorMessages().catch(() => null),
           listPendingApprovals("pending").catch(() => null),
+          getAIStatus().catch(() => null),
+          getSectorMetrics().catch(() => null),
         ]);
         if (!cancelled) {
           setSectors(s); setRawAgents(a); setError(null);
           if (t) setTasks(t);
           if (m) setMessages(m);
           if (pa) setApprovals(pa);
+          if (ai) setAiStatus(ai);
+          if (sm) setSectorMetrics(sm);
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof ApiError ? err.message : "Falha ao carregar.");
@@ -1750,11 +1769,77 @@ export default function CompanyOffice3D() {
     if (lastPendingApprovalEvent) upsertApproval(lastPendingApprovalEvent);
   }, [lastPendingApprovalEvent, upsertApproval]);
 
+  // ─── Linha do tempo (replay) ──────────────────────────────────────────────
+  // Em replay a planta mostra o estado calculado a partir dos eventos do dia
+  // (office3d/replay.ts); o ao vivo continua chegando por baixo e volta ao
+  // sair. Ações que mudam dado (mediar, aprovar) ficam desligadas no replay.
+  const loadTimeline = useCallback(async () => {
+    setTimelineLoading(true);
+    setTimelineError(null);
+    try {
+      const tl = await getTimeline();
+      setTimeline(tl);
+      setReplayT(new Date(tl.since).getTime());
+    } catch (e) {
+      setTimelineError(e instanceof ApiError ? e.message : "Falha ao carregar a linha do tempo.");
+    } finally {
+      setTimelineLoading(false);
+    }
+  }, []);
+
+  const replay = useMemo(
+    () => (replayOn && timeline ? replayStateAt(timeline.events, replayT) : null),
+    [replayOn, timeline, replayT],
+  );
+
+  useEffect(() => {
+    if (!replayOn || !replayPlaying || !timeline) return;
+    const end = new Date(timeline.until).getTime();
+    const TICK = 250;
+    const iv = setInterval(() => {
+      setReplayT((cur) => {
+        const next = cur + TICK * replaySpeed;
+        if (next >= end) { setReplayPlaying(false); return end; }
+        return next;
+      });
+    }, TICK);
+    return () => clearInterval(iv);
+  }, [replayOn, replayPlaying, replaySpeed, timeline]);
+
+  const viewMessages = replay ? replay.messages : messages;
+  const viewApprovals = replay ? replay.approvals : approvals;
+  const viewAgents = useMemo<Agent[]>(
+    () => (replay
+      ? rawAgents.map((a) => ({
+        ...a,
+        work_status: replay.working.has(a.id) ? "working" : replay.paused.has(a.id) ? "paused" : "idle",
+        current_task: replay.working.get(a.id) ?? "",
+      }))
+      : rawAgents),
+    [rawAgents, replay],
+  );
+
   const approvalsByAgent = useMemo(() => {
     const m = new Map<number, number>();
-    for (const p of approvals) m.set(p.agent, (m.get(p.agent) ?? 0) + 1);
+    for (const p of viewApprovals) m.set(p.agent, (m.get(p.agent) ?? 0) + 1);
     return m;
-  }, [approvals]);
+  }, [viewApprovals]);
+
+  // Setor → status da IA e custo do mês (etiquetas, janela da sala, barra)
+  const aiBySector = useMemo(
+    () => new Map((aiStatus?.sectors ?? []).map((x) => [x.sector_id, x])),
+    [aiStatus],
+  );
+  const metricBySector = useMemo(
+    () => new Map(sectorMetrics.map((m) => [m.sector_id, m])),
+    [sectorMetrics],
+  );
+  const aiProblems = (aiStatus?.sectors ?? []).filter((x) => !x.ready).length;
+  const budgetAlerts = sectorMetrics.filter((m) => m.status === "warn" || m.status === "over").length;
+
+  const upsertTask = useCallback((t: Task) => {
+    setTasks((prev) => (prev.some((x) => x.id === t.id) ? prev.map((x) => (x.id === t.id ? t : x)) : [t, ...prev]));
+  }, []);
 
   const addLog = useCallback((agent: OfficeAgent, action: string) => {
     setActivityLogs((prev) => [
@@ -1794,14 +1879,14 @@ export default function CompanyOffice3D() {
   // para "meeting" independentemente do que o backend retorna — sem isso o
   // AgentAvatar3D nunca recebe status=meeting e os agentes não se movem.
   const officeAgents = useMemo<OfficeAgent[]>(
-    () => rawAgents.map((a, i) => {
+    () => viewAgents.map((a, i) => {
       const agent = toOfficeAgent(a, sectors, i);
       if (meetingAgentIds.has(agent.id) && agent.status !== "meeting") {
         return { ...agent, status: "meeting" as const };
       }
       return agent;
     }),
-    [rawAgents, sectors, meetingAgentIds],
+    [viewAgents, sectors, meetingAgentIds],
   );
 
   const prevStatusRef = useRef<Map<number, string>>(new Map());
@@ -1924,7 +2009,7 @@ export default function CompanyOffice3D() {
   const pendingEnvelopes = useMemo<PendingEnvelope[]>(() => {
     // Fila por porta de origem, mais antiga primeiro (embaixo da pilha)
     const byRoom = new Map<number, SectorMessage[]>();
-    for (const m of messages) {
+    for (const m of viewMessages) {
       const from = roomIdxById.get(m.from_agent);
       if (m.status !== "pending" || from == null) continue;
       byRoom.set(from, [...(byRoom.get(from) ?? []), m]);
@@ -1941,7 +2026,7 @@ export default function CompanyOffice3D() {
       }));
     }
     return out;
-  }, [messages, roomIdxById, mailbox]);
+  }, [viewMessages, roomIdxById, mailbox]);
 
   // Detecta transições pending → answered/rejected e dispara o voo
   const seenStatusRef = useRef<Map<number, string> | null>(null);
@@ -1951,7 +2036,7 @@ export default function CompanyOffice3D() {
     const now = Date.now();
     const newFlights: Flight[] = [];
     const newErrands: Array<[number, Errand]> = [];
-    for (const m of messages) {
+    for (const m of viewMessages) {
       const prev = seen.get(m.id);
       seen.set(m.id, m.status);
       const justChanged = prev === "pending" && m.status !== "pending";
@@ -2020,7 +2105,7 @@ export default function CompanyOffice3D() {
   // officeAgents/navGrid só são lidos no momento da transição — o `seen`
   // garante que cada mensagem gera um recado/voo uma única vez
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, roomIdxById, sectorRoomIdx, mailbox]);
+  }, [viewMessages, roomIdxById, sectorRoomIdx, mailbox]);
 
   const handleErrandDone = useCallback((key: string) => {
     setErrands((prev) => {
@@ -2152,8 +2237,18 @@ export default function CompanyOffice3D() {
         onToggleActivity={() => setActivityOpen((v) => !v)}
         onTogglePanel={() => setPanelOpen((v) => !v)}
         onOpenConsole={() => setConsoleOpen(true)}
-        pendingApprovals={approvals.length}
-        onOpenApprovals={() => setApprovalsFor("all")}
+        pendingApprovals={viewApprovals.length}
+        onOpenApprovals={replay ? undefined : () => setApprovalsFor("all")}
+        budgetAlerts={budgetAlerts}
+        aiProblems={aiProblems}
+        replaying={replayOn}
+        onToggleReplay={() => {
+          // Troca de modo não anima o que "mudou" entre ao vivo e replay
+          seenStatusRef.current = null;
+          if (replayOn) { setReplayOn(false); setReplayPlaying(false); return; }
+          setReplayOn(true);
+          loadTimeline();
+        }}
       />
 
       <div className="relative flex min-h-0 flex-1">
@@ -2315,6 +2410,14 @@ export default function CompanyOffice3D() {
                   brain={sector.id === -2 ? "Cérebro principal" : sector.knowledge_source_name}
                   aiProvider={sector.default_provider}
                   aiModel={sector.default_model}
+                  aiProblem={(() => {
+                    const st = aiBySector.get(sector.id);
+                    return st && !st.ready ? { provider: st.provider, detail: st.detail } : null;
+                  })()}
+                  budget={(() => {
+                    const m = metricBySector.get(sector.id);
+                    return m ? { monthCost: m.month_cost_usd, budget: m.budget_usd, percent: m.usage_percent, status: m.status } : null;
+                  })()}
                   onClick={() => handleRoomClick(sector.id, sector.name)}
                 />
               );
@@ -2325,7 +2428,7 @@ export default function CompanyOffice3D() {
               pending={pendingEnvelopes}
               flights={flights}
               onFlightDone={handleFlightDone}
-              onOpenPending={setOpenMessageId}
+              onOpenPending={replay ? undefined : setOpenMessageId}
             />
 
             {/* Agentes */}
@@ -2343,7 +2446,7 @@ export default function CompanyOffice3D() {
                   errand={errands.get(agent.id)?.[0] ?? null}
                   onErrandDone={handleErrandDone}
                   pendingApprovals={approvalsByAgent.get(agent.id) ?? 0}
-                  onOpenApprovals={setApprovalsFor}
+                  onOpenApprovals={replay ? undefined : setApprovalsFor}
                   onSelect={handleAgentClick}
                 />
               );
@@ -2361,6 +2464,35 @@ export default function CompanyOffice3D() {
             />
             </AgentPosCtx.Provider>
           </Canvas>
+
+          {replayOn && (
+            <ReplayBar
+              timeline={timeline}
+              loading={timelineLoading}
+              error={timelineError}
+              t={replayT}
+              onSeek={(t) => {
+                // Pulo manual não anima tudo o que "aconteceu" no meio
+                seenStatusRef.current = null;
+                setReplayT(t);
+              }}
+              playing={replayPlaying}
+              onTogglePlay={() => {
+                if (!timeline) return;
+                if (!replayPlaying && replayT >= new Date(timeline.until).getTime()) {
+                  seenStatusRef.current = null;
+                  setReplayT(new Date(timeline.since).getTime());
+                }
+                setReplayPlaying((v) => !v);
+              }}
+              speed={replaySpeed}
+              onSpeed={setReplaySpeed}
+              recent={replay?.recent ?? []}
+              agentName={(id) => rawAgents.find((a) => a.id === id)?.name ?? `agente #${id}`}
+              onReload={() => { seenStatusRef.current = null; loadTimeline(); }}
+              onExit={() => { seenStatusRef.current = null; setReplayOn(false); setReplayPlaying(false); }}
+            />
+          )}
         </div>
 
         <AgentInfoPanel agents={officeAgents} open={panelOpen} onClose={() => setPanelOpen(false)} onAgentClick={handleAgentClick} />
@@ -2392,7 +2524,15 @@ export default function CompanyOffice3D() {
       {/* Cérebro aberto: grafo das notas indexadas (Obsidian etc.) */}
       <BrainGraph open={brainOpen} onClose={() => setBrainOpen(false)} sectors={sectors} />
 
-      <AgentModal agent={selectedAgent} open={agentModalOpen} onClose={() => setAgentModalOpen(false)} />
+      <AgentModal
+        agent={selectedAgent}
+        open={agentModalOpen}
+        onClose={() => setAgentModalOpen(false)}
+        sectors={sectors}
+        onMessageSent={replay ? undefined : (m) =>
+          // Envelope nasce já na porta (sem esperar poll/WebSocket)
+          setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [m, ...prev]))}
+      />
       <RoomModal
         sector={sectors.find((s) => s.id === selectedRoom?.id) ?? null}
         sectorId={selectedRoom?.id ?? null}
@@ -2401,7 +2541,15 @@ export default function CompanyOffice3D() {
         open={roomModalOpen}
         onClose={() => setRoomModalOpen(false)}
         onAgentClick={(a) => { setRoomModalOpen(false); handleAgentClick(a); }}
-        onSectorUpdated={(updated) => setSectors((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)))}
+        onSectorUpdated={(updated) => {
+          setSectors((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
+          // Trocou a IA do setor: o selo "sem credencial" precisa refletir já
+          getAIStatus().then(setAiStatus).catch(() => {});
+        }}
+        tasks={tasks}
+        onTaskUpdated={replay ? undefined : upsertTask}
+        metric={selectedRoom ? metricBySector.get(selectedRoom.id) ?? null : null}
+        aiStatus={selectedRoom ? aiBySector.get(selectedRoom.id) ?? null : null}
       />
       <MeetingModal
         open={meetingOpen}

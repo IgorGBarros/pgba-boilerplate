@@ -18,7 +18,7 @@ import os
 
 from decimal import Decimal
 
-from django.db.models import Sum, Count, Avg, Max
+from django.db.models import Sum, Count, Avg, Max, Q
 from django.utils import timezone
 
 from agency.models import Sector, Agent, AgentInteraction, SectorMessage, Project, PendingApproval
@@ -94,6 +94,96 @@ def resolve_agent_llm(agent: Agent) -> tuple[str, str | None]:
     return get_active_provider(agent.tenant_id), None
 
 
+def record_interaction(
+    agent: Agent, question: str, answer: str, provider: str, model: str | None = None,
+    source_document_ids: list[int] | None = None, task=None,
+) -> AgentInteraction:
+    """
+    Registra uma chamada de IA feita em nome de um agente, com tokens/custo
+    estimados e QUAL provedor respondeu. Único lugar que calcula custo —
+    `ask_as_agent` (pergunta avulsa) e `execute_task` (Task) passam por
+    aqui, então orçamento de setor e custo por provedor enxergam os dois.
+    """
+    tokens = _estimate_tokens(question) + _estimate_tokens(answer)
+    price_table = APPROX_PRICE_PER_1K_TOKENS.get(provider, Decimal("0.005"))
+    return AgentInteraction.objects.create(
+        tenant_id=agent.tenant_id,
+        agent=agent,
+        question=question,
+        answer=answer,
+        tokens_used=tokens,
+        estimated_cost_usd=(Decimal(tokens) / Decimal(1000)) * price_table,
+        source_document_ids=sorted(set(source_document_ids or [])),
+        provider=provider or "",
+        model=model or "",
+        task=task,
+    )
+
+
+def sector_ai_status(tenant_id) -> dict:
+    """
+    Qual IA cada setor usa e se ela está PRONTA (credencial + modelo), sem
+    chamar provedor nenhum — `harness.providers.provider_readiness`.
+
+    Existe porque um provedor fixado no setor não tem fallback (ver
+    `resolve_agent_llm`): sem a chave da Anthropic, o Desenvolvimento só
+    descobria o problema ao rodar uma tarefa. Agentes com provedor próprio
+    (exceção individual) aparecem em `agents`.
+    """
+    from harness.providers import get_active_provider, provider_readiness
+
+    cache: dict[tuple[str, str], str | None] = {}
+
+    def ready(provider: str, model: str | None) -> str | None:
+        key = (provider, model or "")
+        if key not in cache:
+            cache[key] = provider_readiness(tenant_id, provider, model)
+        return cache[key]
+
+    tenant_provider = get_active_provider(tenant_id)
+    tenant_problem = ready(tenant_provider, None)
+
+    sectors = []
+    for sector in Sector.objects.filter(tenant_id=tenant_id, is_active=True).order_by("name"):
+        if sector.default_provider:
+            provider, model, source = sector.default_provider, sector.default_model, "sector"
+            problem = ready(provider, model or None)
+        else:
+            provider, model, source, problem = tenant_provider, "", "tenant", tenant_problem
+        sectors.append({
+            "sector_id": sector.id,
+            "sector_name": sector.name,
+            "provider": provider,
+            "model": model,
+            "source": source,
+            "ready": problem is None,
+            "detail": problem or "",
+        })
+
+    agents = []
+    overrides = Agent.objects.filter(tenant_id=tenant_id, is_active=True).exclude(default_provider="")
+    for agent in overrides:
+        problem = ready(agent.default_provider, agent.default_model or None)
+        agents.append({
+            "agent_id": agent.id,
+            "agent_name": agent.name,
+            "provider": agent.default_provider,
+            "model": agent.default_model,
+            "ready": problem is None,
+            "detail": problem or "",
+        })
+
+    return {
+        "tenant": {
+            "provider": tenant_provider,
+            "ready": tenant_problem is None,
+            "detail": tenant_problem or "",
+        },
+        "sectors": sectors,
+        "agents": agents,
+    }
+
+
 def knowledge_usage(tenant_id, document_id: int) -> list[dict]:
     """
     Quais agentes usaram um `ingestion.Document` como contexto de resposta
@@ -118,6 +208,142 @@ def knowledge_usage(tenant_id, document_id: int) -> list[dict]:
         }
         for r in rows
     ]
+
+
+def knowledge_usage_summary(tenant_id, since=None) -> dict[int, dict]:
+    """
+    Quantas vezes cada `ingestion.Document` foi usado como contexto de
+    resposta (todas as notas de uma vez) — o "mapa de calor" do Cérebro.
+    `{document_id: {"count": n, "last_at": datetime}}`; nota ausente = nunca
+    usada desde que `source_document_ids` existe.
+
+    Agrega no banco (jsonb_array_elements) em vez de trazer todas as
+    interações pro Python. SQL fixo e parametrizado — nada vem do usuário
+    além do tenant (sempre do código) e da data.
+    """
+    from django.db import connection
+
+    table = AgentInteraction._meta.db_table
+    sql = (
+        f"SELECT (doc.value)::bigint AS document_id, COUNT(*), MAX(i.created_at) "
+        f"FROM {table} i "
+        f"CROSS JOIN LATERAL jsonb_array_elements_text(i.source_document_ids) AS doc "
+        f"WHERE i.tenant_id = %s AND jsonb_typeof(i.source_document_ids) = 'array'"
+    )
+    params: list = [str(tenant_id)]
+    if since is not None:
+        sql += " AND i.created_at >= %s"
+        params.append(since)
+    sql += " GROUP BY 1"
+    with connection.cursor() as cursor:
+        cursor.execute(sql, params)
+        return {int(doc_id): {"count": n, "last_at": last} for doc_id, n, last in cursor.fetchall()}
+
+
+TIMELINE_MAX_EVENTS = 3000
+
+
+def company_timeline(tenant_id, since, until) -> dict:
+    """
+    Tudo o que aconteceu na empresa entre `since` e `until`, em ordem, pra
+    reproduzir o dia no Escritório 3D: interações de IA (quem trabalhou),
+    mudanças de status de Task (histórico de auditoria — `Task.history`),
+    mensagens entre setores (criada/respondida/rejeitada) e aprovações
+    (criada/decidida). Só LÊ o que já é registrado — nada é inventado pra
+    preencher o replay.
+    """
+    from agency.models import Task
+
+    events: list[dict] = []
+
+    for i in (
+        AgentInteraction.objects
+        .filter(tenant_id=tenant_id, created_at__gte=since, created_at__lte=until)
+        .select_related("agent")
+        .order_by("created_at")[:TIMELINE_MAX_EVENTS]
+    ):
+        events.append({
+            "kind": "interaction", "at": i.created_at,
+            "agent_id": i.agent_id, "agent_name": i.agent.name, "text": i.question[:160],
+            "provider": i.provider, "cost_usd": float(i.estimated_cost_usd),
+            "task_id": i.task_id,
+        })
+
+    # Histórico de Task: um evento por MUDANÇA de status, e um quando ela
+    # termina (progress chega a 1.0 — tarefa concluída continua IN_PROGRESS
+    # esperando decisão humana, então sem isso o agente pareceria trabalhando
+    # até alguém aprovar). O histórico grava toda alteração; o resto é ignorado.
+    history = (
+        Task.history.filter(tenant_id=tenant_id, history_date__lte=until)
+        .filter(id__in=Task.history.filter(
+            tenant_id=tenant_id, history_date__gte=since, history_date__lte=until,
+        ).values("id"))
+        .order_by("id", "history_date")
+        .values("id", "status", "progress", "agent_id", "brief", "history_date")
+    )
+    last_state: dict[int, tuple[str, bool]] = {}
+    for h in history.iterator():
+        finished = (h["progress"] or 0) >= 1.0
+        previous = last_state.get(h["id"])
+        last_state[h["id"]] = (h["status"], finished)
+        if h["history_date"] < since:
+            continue
+        base = {
+            "at": h["history_date"], "task_id": h["id"], "agent_id": h["agent_id"],
+            "text": (h["brief"] or "")[:160],
+        }
+        if previous is None or h["status"] != previous[0]:
+            events.append({
+                **base, "kind": "task_status", "status": h["status"],
+                "previous_status": previous[0] if previous else None, "finished": finished,
+            })
+        elif finished and not previous[1]:
+            events.append({**base, "kind": "task_finished"})
+
+    messages = SectorMessage.objects.filter(tenant_id=tenant_id).filter(
+        Q(created_at__range=(since, until))
+        | Q(answered_at__range=(since, until))
+        | Q(rejected_at__range=(since, until))
+    ).select_related("from_agent", "to_sector", "relayed_by")
+    for m in messages:
+        base = {
+            "message_id": m.id, "agent_id": m.from_agent_id, "agent_name": m.from_agent.name,
+            "from_sector_id": m.from_agent.sector_id, "to_sector_id": m.to_sector_id,
+            "to_sector_name": m.to_sector.name, "text": m.content[:160],
+            "created_at": m.created_at,
+        }
+        if since <= m.created_at <= until:
+            events.append({**base, "kind": "message_created", "at": m.created_at})
+        if m.answered_at and since <= m.answered_at <= until:
+            events.append({
+                **base, "kind": "message_answered", "at": m.answered_at,
+                "relayed_by_id": m.relayed_by_id,
+                "relayed_by_name": m.relayed_by.name if m.relayed_by else None,
+            })
+        if m.rejected_at and since <= m.rejected_at <= until:
+            events.append({**base, "kind": "message_rejected", "at": m.rejected_at})
+
+    approvals = PendingApproval.objects.filter(tenant_id=tenant_id).filter(
+        Q(created_at__range=(since, until)) | Q(decided_at__range=(since, until))
+    ).select_related("agent")
+    for p in approvals:
+        base = {
+            "approval_id": p.id, "agent_id": p.agent_id, "agent_name": p.agent.name,
+            "text": p.function_name, "risk": p.risk,
+        }
+        if since <= p.created_at <= until:
+            events.append({**base, "kind": "approval_created", "at": p.created_at})
+        if p.decided_at and since <= p.decided_at <= until:
+            events.append(
+                {**base, "kind": "approval_decided", "at": p.decided_at, "status": p.status}
+            )
+
+    events.sort(key=lambda e: e["at"])
+    truncated = len(events) > TIMELINE_MAX_EVENTS
+    return {
+        "since": since, "until": until,
+        "events": events[:TIMELINE_MAX_EVENTS], "truncated": truncated,
+    }
 
 
 def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = True) -> dict:
@@ -162,22 +388,13 @@ def ask_as_agent(tenant_id, agent_id, question: str, use_rag_context: bool = Tru
         )
         broadcast_pending_approval_update(pending)
 
-    tokens = _estimate_tokens(question) + _estimate_tokens(result.get("answer", ""))
-    price_table = APPROX_PRICE_PER_1K_TOKENS.get(provider, Decimal("0.005"))
-    cost = (Decimal(tokens) / Decimal(1000)) * price_table
-
-    AgentInteraction.objects.create(
-        tenant_id=tenant_id,
-        agent=agent,
-        question=question,
-        answer=result.get("answer", ""),
-        tokens_used=tokens,
-        estimated_cost_usd=cost,
-        source_document_ids=sorted({
+    record_interaction(
+        agent, question, result.get("answer", ""), provider, model,
+        source_document_ids=[
             s["document_id"]
             for s in result.get("sources") or []
             if s.get("document_id") is not None
-        }),
+        ],
     )
 
     agent.work_status = Agent.WorkStatus.IDLE
@@ -264,7 +481,8 @@ def relay_message(tenant_id, relaying_agent_id, message_id: int, answering_agent
     if not relaying_agent.can_relay:
         message.status = SectorMessage.Status.REJECTED
         message.rejection_reason = "Agente não tem permissão de mediação (é operacional)."
-        message.save(update_fields=["status", "rejection_reason"])
+        message.rejected_at = timezone.now()
+        message.save(update_fields=["status", "rejection_reason", "rejected_at"])
         broadcast_sector_message_update(message)
         raise AccessDeniedError(
             "Este agente é operacional e não pode mediar comunicação entre setores — "
@@ -279,7 +497,8 @@ def relay_message(tenant_id, relaying_agent_id, message_id: int, answering_agent
             message.rejection_reason = (
                 f"Orquestrador de {relaying_agent.sector} não medeia mensagens entre outros setores."
             )
-            message.save(update_fields=["status", "rejection_reason"])
+            message.rejected_at = timezone.now()
+            message.save(update_fields=["status", "rejection_reason", "rejected_at"])
             broadcast_sector_message_update(message)
             raise AccessDeniedError(message.rejection_reason)
 
@@ -314,11 +533,41 @@ def relay_message(tenant_id, relaying_agent_id, message_id: int, answering_agent
 # Métricas ("cérebro principal" — visão sem restrição, para CEO/orquestrador-geral)
 # ---------------------------------------------------------------------------
 
+def _month_start():
+    """Início do mês corrente no fuso do projeto — o orçamento é MENSAL."""
+    return timezone.localtime().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def _cost_by_provider(qs) -> list[dict]:
+    """Custo/tokens/chamadas agrupados por provedor ('' = anterior ao campo)."""
+    rows = (
+        qs.values("provider")
+        .annotate(cost=Sum("estimated_cost_usd"), tokens=Sum("tokens_used"), calls=Count("id"))
+        .order_by("-cost")
+    )
+    return [
+        {
+            "provider": r["provider"],
+            "cost_usd": float(r["cost"] or 0),
+            "tokens": r["tokens"] or 0,
+            "calls": r["calls"],
+        }
+        for r in rows
+    ]
+
+
 def get_overview(tenant_id) -> dict:
-    agg = AgentInteraction.objects.filter(tenant_id=tenant_id).aggregate(
+    qs = AgentInteraction.objects.filter(tenant_id=tenant_id)
+    agg = qs.aggregate(
         total_cost=Sum("estimated_cost_usd"), total_tokens=Sum("tokens_used"), total_calls=Count("id")
     )
+    month_start = _month_start()
+    month_qs = qs.filter(created_at__gte=month_start)
+    month_cost = month_qs.aggregate(c=Sum("estimated_cost_usd"))["c"]
     return {
+        "month_start": month_start,
+        "month_cost_usd": float(month_cost or 0),
+        "month_by_provider": _cost_by_provider(month_qs),
         "total_cost_usd": float(agg["total_cost"] or 0),
         "total_tokens": agg["total_tokens"] or 0,
         "total_calls": agg["total_calls"] or 0,
@@ -334,14 +583,32 @@ def get_sector_metrics(tenant_id) -> list[dict]:
     sectors = list(Sector.objects.filter(tenant_id=tenant_id, is_active=True))
     sector_ids = [s.id for s in sectors]
 
-    # 2 queries para todos os setores ao invés de 2*N queries num loop
+    # Poucas queries para todos os setores ao invés de N queries num loop
+    interactions = AgentInteraction.objects.filter(
+        tenant_id=tenant_id, agent__sector_id__in=sector_ids,
+    )
     agg_by_sector: dict = {
         row["agent__sector_id"]: row
-        for row in AgentInteraction.objects
-        .filter(tenant_id=tenant_id, agent__sector_id__in=sector_ids)
+        for row in interactions
         .values("agent__sector_id")
         .annotate(cost=Sum("estimated_cost_usd"), tokens=Sum("tokens_used"), calls=Count("id"))
     }
+    # Orçamento é MENSAL (`monthly_budget_usd`): compara com o gasto do mês
+    # corrente. Antes comparava com o gasto de todos os tempos — um setor
+    # estourava o "orçamento do mês" pra sempre depois do primeiro mês cheio.
+    month_start = _month_start()
+    month_by_sector: dict = {}
+    for row in (
+        interactions.filter(created_at__gte=month_start)
+        .values("agent__sector_id", "provider")
+        .annotate(cost=Sum("estimated_cost_usd"), tokens=Sum("tokens_used"), calls=Count("id"))
+    ):
+        month_by_sector.setdefault(row["agent__sector_id"], []).append({
+            "provider": row["provider"],
+            "cost_usd": float(row["cost"] or 0),
+            "tokens": row["tokens"] or 0,
+            "calls": row["calls"],
+        })
     agents_count_by_sector: dict = {
         row["sector_id"]: row["n"]
         for row in Agent.objects
@@ -353,16 +620,20 @@ def get_sector_metrics(tenant_id) -> list[dict]:
     metrics = []
     for sector in sectors:
         agg = agg_by_sector.get(sector.id, {})
-        spent = float(agg.get("cost") or 0)
+        by_provider = sorted(month_by_sector.get(sector.id, []), key=lambda r: -r["cost_usd"])
+        month_spent = sum(r["cost_usd"] for r in by_provider)
         budget = float(sector.monthly_budget_usd)
-        usage_percent = round((spent / budget) * 100, 1) if budget > 0 else None
+        usage_percent = round((month_spent / budget) * 100, 1) if budget > 0 else None
         metrics.append({
             "sector_id": sector.id,
             "sector_name": sector.name,
             "agents_count": agents_count_by_sector.get(sector.id, 0),
             "has_own_knowledge_base": sector.knowledge_source_id is not None,
             "tokens": agg.get("tokens") or 0,
-            "cost_usd": spent,
+            "cost_usd": float(agg.get("cost") or 0),
+            "month_cost_usd": month_spent,
+            "month_by_provider": by_provider,
+            "ai_provider": sector.default_provider,
             "budget_usd": budget,
             "usage_percent": usage_percent,
             "status": _budget_status(usage_percent),
@@ -414,6 +685,26 @@ def _budget_status(usage_percent: float | None) -> str:
 # Criação de projeto comercial (setor de Desenvolvimento)
 # ---------------------------------------------------------------------------
 
+def _project_templates_root():
+    """
+    Onde estão os templates: `PROJECT_TEMPLATES_PATH` (se definido) →
+    volume do Docker (`/app/project-templates`) → a pasta do próprio
+    repositório (`frontend/project-templates`, rodando fora do Docker,
+    ex: pytest local). Variável explícita sempre vence; sem ela, o primeiro
+    caminho que existe.
+    """
+    import pathlib
+
+    explicit = os.environ.get("PROJECT_TEMPLATES_PATH")
+    if explicit:
+        return pathlib.Path(explicit)
+    docker = pathlib.Path("/app/project-templates")
+    if docker.is_dir():
+        return docker
+    # agency/services.py → backend_api/Api/agency → raiz do repositório
+    return pathlib.Path(__file__).resolve().parents[3] / "frontend" / "project-templates"
+
+
 def _load_simple_commercial_template(project_name: str) -> dict[str, str]:
     """
     Lê o template de `frontend/project-templates/simple_commercial/` —
@@ -429,17 +720,14 @@ def _load_simple_commercial_template(project_name: str) -> dict[str, str]:
     json` é excluído (será regenerado no primeiro `npm install` de quem
     for trabalhar no projeto).
     """
-    import pathlib
-
-    templates_root = pathlib.Path(os.environ.get("PROJECT_TEMPLATES_PATH", "/app/project-templates"))
-    template_dir = templates_root / "simple_commercial"
+    template_dir = _project_templates_root() / "simple_commercial"
 
     if not template_dir.is_dir():
         raise FileNotFoundError(
             f"Template não encontrado em '{template_dir}'. Dentro do Docker isso é o volume "
-            f"montado (ver docker-compose.yml, serviço 'backend') e deveria sempre existir. "
-            f"Rodando fora do Docker (ex: pytest local), defina PROJECT_TEMPLATES_PATH "
-            f"apontando para a pasta 'frontend/project-templates' do repositório."
+            f"montado (ver docker-compose.yml, serviço 'backend'); fora do Docker, a pasta "
+            f"'frontend/project-templates' do repositório. Defina PROJECT_TEMPLATES_PATH se "
+            f"o template estiver em outro lugar."
         )
 
     files: dict[str, str] = {}

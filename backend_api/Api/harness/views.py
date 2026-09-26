@@ -93,7 +93,9 @@ class GenerateCodeView(TenantContextMixin, APIView):
       "prompt": "um card de boas-vindas com botão verde",
       "language": "tsx",
       "previous_code": "...",          # opcional, etapa de autocorreção
-      "validation_error": "TS2322..."  # opcional, etapa de autocorreção
+      "validation_error": "TS2322...", # opcional, etapa de autocorreção
+      "provider": "anthropic",         # opcional: fixa o provedor (padrão: o do tenant)
+      "model": "..."                   # opcional
     }
 
     Resposta: {"code": "...", "language": "tsx"}
@@ -123,11 +125,13 @@ class GenerateCodeView(TenantContextMixin, APIView):
                 "completo corrigido, não só o trecho alterado."
             )
 
-        provider = _resolve_chat_provider(request.tenant_id)
+        provider = data.get("provider") or _resolve_chat_provider(request.tenant_id)
+        model = data.get("model") or None
 
         try:
             raw = chat_completion(
-                request.tenant_id, provider, None,  # model=None -> resolve por get_credential().default_model
+                # model=None -> resolve por get_credential().default_model
+                request.tenant_id, provider, model,
                 messages=[
                     {"role": "system", "content": data.get("system_prompt") or DEFAULT_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},

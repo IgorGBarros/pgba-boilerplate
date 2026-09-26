@@ -100,7 +100,8 @@ de cada nota — nunca o conteúdo inteiro.
   "nodes": [
     {"id": 12, "title": "icp", "path": "30-Clientes/icp.md", "folder": "30-Clientes",
      "source": 1, "tags": ["publico"], "status": "indexed",
-     "updated_at": "2026-09-01T12:00:00+00:00", "excerpt": "Cliente ideal: ..."}
+     "updated_at": "2026-09-01T12:00:00+00:00", "excerpt": "Cliente ideal: ...",
+     "broken_links": ["nota-que-nao-existe"]}
   ],
   "edges": [[12, 15]],
   "unresolved": 3,
@@ -159,9 +160,15 @@ automação do projeto que precise de código/texto gerado por LLM:
   "prompt": "um card de boas-vindas com botão verde",
   "language": "tsx",
   "previous_code": "... (opcional, etapa de autocorreção)",
-  "validation_error": "TS2304: ... (opcional, etapa de autocorreção)"
+  "validation_error": "TS2304: ... (opcional, etapa de autocorreção)",
+  "provider": "anthropic",
+  "model": "claude-sonnet-5"
 }
 ```
+
+`provider`/`model` são opcionais: fixam a IA desta geração (a tela
+"Gerar" manda a do agente `AI Frontend`, via `tasks/{id}/start-external/`).
+Sem eles vale o provedor ativo do tenant. Provedor desconhecido → `400`.
 
 Resposta:
 ```json
@@ -203,13 +210,19 @@ Prefixo: `/api/v1/agency/`
 | `GET` | `tasks/{id}/` | Detalhe de uma tarefa, incluindo os `snapshots` (histórico de interrupções) |
 | `POST` | `tasks/{id}/interrupt/` | `{"instructions": "..."}` — pausa a tarefa, salva snapshot do estado atual |
 | `POST` | `tasks/{id}/adapt/` | `{"new_brief": "..."}` — só em tarefa pausada; monta novo prompt citando o snapshot |
-| `POST` | `tasks/{id}/execute/` | Dispara a execução via o modelo configurado no harness (`CHAT_PROVIDER`/`OLLAMA_CHAT_MODEL`) — só a partir de `created`/`adapted` |
+| `POST` | `tasks/{id}/execute/` | Dispara a execução com a IA do agente (`resolve_agent_llm`: agente → setor → tenant) — só a partir de `created`/`adapted`. O custo entra em `AgentInteraction` com `task` preenchido |
+| `POST` | `tasks/{id}/start-external/` | O trabalho vai rodar fora do Django (ex: geração de página): `in_progress` + agente trabalhando; resposta traz `ai_provider`/`ai_model` do agente |
+| `POST` | `tasks/{id}/report-result/` | `{"success", "result", "current_files"}` — fecha uma Task feita fora do Django |
 | `POST` | `tasks/{id}/approve/` | `{"files": {"path": "conteúdo"}, "trigger_git": true}` — se a tarefa tiver `project`, cria branch+PR real no GitHub |
 | `POST` | `tasks/{id}/reject/` | `{"reason": "..."}` (opcional) |
 | `GET` | `metrics/overview/` | Custo/tokens/chamadas totais do tenant + mensagens pendentes |
 | `GET` | `metrics/sectors/` | Métricas agregadas por setor (com % de uso do orçamento e se tem cérebro próprio) |
 | `GET` | `metrics/agents/` | Métricas por agente (filtra por `?sector=<id>`) |
 | `GET` | `metrics/budgets/` | Só os setores com orçamento mensal definido |
+| `GET` | `ai-status/` | Qual IA cada setor usa e se está pronta (credencial + modelo), sem chamar o provedor |
+| `GET` | `timeline/` | Eventos do dia em ordem (`?since=`/`?until=` ISO 8601, janela máx. 7 dias) — replay do Escritório 3D |
+| `GET` | `knowledge-usage/?document={id}` | Quem usou uma nota como contexto |
+| `GET` | `knowledge-usage/summary/` | Uso de todas as notas (`?days=N` opcional) — mapa de calor do Cérebro |
 | `GET` | `projects/` | Lista projetos comerciais criados (ver `POST projects/create/`) |
 | `GET` | `projects/{id}/` | Detalhe de um projeto (status, link do repositório) |
 | `POST` | `projects/create/` | Cria um projeto comercial simples: repositório GitHub + template `simple-commercial` |
@@ -286,13 +299,40 @@ nome do repositório).
     "sector_id": 1, "sector_name": "Backend", "agents_count": 3,
     "has_own_knowledge_base": true,
     "tokens": 15420, "cost_usd": 0.154, "budget_usd": 50.0,
+    "month_cost_usd": 0.15, "ai_provider": "anthropic",
+    "month_by_provider": [{"provider": "anthropic", "cost_usd": 0.15, "tokens": 15000, "calls": 12}],
     "usage_percent": 0.3, "status": "ok"
   }
 ]
 ```
 
-`status` é `ok` (\<80%), `warn` (80–99%), `over` (≥100%) ou
-`sem_orcamento` (setor sem `monthly_budget_usd` definido).
+`usage_percent`/`status` comparam o gasto **do mês corrente**
+(`month_cost_usd`) com `budget_usd` (orçamento mensal); `cost_usd`/`tokens`
+continuam sendo o total de sempre. `status` é `ok` (\<80%), `warn`
+(80–99%), `over` (≥100%) ou `sem_orcamento`. Em `month_by_provider`,
+`provider=""` = interação anterior ao registro de provedor.
+
+### `GET ai-status/`
+
+```json
+{
+  "tenant": {"provider": "groq", "ready": true, "detail": ""},
+  "sectors": [{"sector_id": 7, "sector_name": "Desenvolvimento", "provider": "anthropic",
+               "model": "", "source": "sector", "ready": false,
+               "detail": "Nenhuma credencial configurada para 'anthropic' ..."}],
+  "agents": []
+}
+```
+
+`agents` = só agentes com provedor próprio (exceção individual).
+
+### `GET timeline/`
+
+`{"since", "until", "events": [...], "truncated"}` — `kind` de cada
+evento: `interaction`, `task_status` (com `status`, `previous_status`,
+`finished`), `task_finished`, `message_created`/`message_answered`/
+`message_rejected`, `approval_created`/`approval_decided`. Padrão: de 0h
+de hoje até agora. No máximo 3000 eventos.
 
 ### `GET knowledge-usage/?document={id}`
 

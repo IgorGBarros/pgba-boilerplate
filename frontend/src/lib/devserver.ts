@@ -70,6 +70,9 @@ export async function triggerGeneratePage(params: {
   name?: string;
   accessToken?: string;
   workspace?: string;
+  /** IA do agente que gera (ex: AI Frontend → Claude); vazio = a do tenant. */
+  provider?: string;
+  model?: string;
 }): Promise<void> {
   const res = await safeFetch(`${DEV_SERVER_URL}/api/generate-page`, {
     method: "POST",

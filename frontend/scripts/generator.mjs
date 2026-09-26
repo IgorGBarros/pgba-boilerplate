@@ -22,7 +22,7 @@ export function toPascalCase(text) {
   );
 }
 
-async function callHarness({ apiUrl, accessToken, prompt, previousCode, validationError }) {
+async function callHarness({ apiUrl, accessToken, prompt, previousCode, validationError, provider, model }) {
   if (!accessToken) {
     throw new Error(
       "PGBA_ACCESS_TOKEN não configurado. Gere um token JWT (POST /api/v1/users/token/) " +
@@ -41,6 +41,10 @@ async function callHarness({ apiUrl, accessToken, prompt, previousCode, validati
       language: "tsx",
       ...(previousCode ? { previous_code: previousCode } : {}),
       ...(validationError ? { validation_error: validationError } : {}),
+      // IA do agente que está gerando (ex: AI Frontend → setor
+      // Desenvolvimento → Claude). Sem isso, vale o provedor do tenant.
+      ...(provider ? { provider } : {}),
+      ...(model ? { model } : {}),
     }),
   });
 
@@ -99,10 +103,12 @@ function updateRoutes(root) {
  * @param {string} opts.accessToken - PGBA_ACCESS_TOKEN
  * @param {string} opts.prompt - descrição da página
  * @param {string} [opts.name] - nome explícito (PascalCase); senão derivado do prompt
+ * @param {string} [opts.provider] - provedor de IA fixo (ex: "anthropic"); senão o do tenant
+ * @param {string} [opts.model] - modelo; senão o padrão da credencial
  * @param {(stage: string, message: string) => void} [opts.onLog] - callback de progresso
  * @returns {Promise<{pageName: string, filePath: string, routesFile: string}>}
  */
-export async function generatePage({ root, apiUrl, accessToken, prompt, name, onLog = () => {} }) {
+export async function generatePage({ root, apiUrl, accessToken, prompt, name, provider, model, onLog = () => {} }) {
   if (!prompt || !prompt.trim()) {
     throw new Error("prompt não pode ser vazio.");
   }
@@ -118,7 +124,7 @@ export async function generatePage({ root, apiUrl, accessToken, prompt, name, on
   fs.mkdirSync(pagesDir, { recursive: true });
   onLog("plan", `Gerando "${pageName}" a partir de: "${prompt}"`);
 
-  let code = await callHarness({ apiUrl, accessToken, prompt });
+  let code = await callHarness({ apiUrl, accessToken, prompt, provider, model });
   let attempt = 1;
 
   while (attempt <= MAX_ATTEMPTS) {
@@ -147,6 +153,8 @@ export async function generatePage({ root, apiUrl, accessToken, prompt, name, on
       prompt,
       previousCode: code,
       validationError: typecheck.output,
+      provider,
+      model,
     });
     attempt += 1;
   }

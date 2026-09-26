@@ -330,6 +330,39 @@ CEO/Orquestrador-Geral ficam na sala CEO, e há uma Sala de Reunião fixa.
   usou em cada resposta; `GET /api/v1/agency/knowledge-usage/?document=<id>`
   agrega por agente. `index_document` grava `metadata.links`/`excerpt`,
   então o grafo não carrega o conteúdo das notas (só das antigas).
+- **Cérebro "Por uso"**: mapa de calor com quantas vezes cada nota foi
+  contexto de resposta (`GET /api/v1/agency/knowledge-usage/summary/`,
+  agregado no Postgres com `jsonb_array_elements`) e filtros "nunca
+  usadas" / "links quebrados" (`broken_links` por nó no `graph/` — o nome
+  do link já está escrito na própria nota). Só lê: nunca escreve no vault.
+- **IA sem credencial**: `GET /api/v1/agency/ai-status/`
+  (`agency.services.sector_ai_status` → `harness.providers.provider_readiness`,
+  que confere credencial + modelo pelas MESMAS regras de `chat_completion`,
+  sem chamar o provedor). Setor com IA fixa sem chave ganha ⚠ na etiqueta,
+  aviso na janela da sala e contador na barra — antes só se descobria ao
+  rodar uma tarefa.
+- **Custo por IA e orçamento mensal**: `AgentInteraction.provider/model/task`
+  (`agency.services.record_interaction`, único lugar que calcula custo —
+  `ask_as_agent` E `execute_task`, que antes não registrava custo nenhum).
+  `metrics/sectors/` traz `month_cost_usd` e `month_by_provider`; o
+  `usage_percent` agora compara com o gasto do MÊS (antes era o gasto de
+  sempre contra um orçamento mensal). Etiqueta mostra `$NN%` a partir de
+  80%, barra superior avisa, Console separa o mês por IA.
+- **Quadro de tarefas na sala** (`office3d/RoomTaskBoard.tsx`): Fazendo /
+  Revisar / Próximas / Feitas, com executar, pausar com instrução,
+  retomar com novo pedido, aprovar e rejeitar — os mesmos endpoints de
+  `tasks/`, cada botão só no status que o backend aceita. Aprovar aqui não
+  manda arquivos, então não abre PR (isso continua no quadro do Studio).
+- **Pedido para outro setor pela janela do agente**
+  (`office3d/SendMessageForm.tsx` → `sector-messages/request/`): o
+  envelope nasce pendente na porta de origem; alguém com permissão media.
+- **Linha do tempo (replay do dia)**: `GET /api/v1/agency/timeline/`
+  (interações, mudanças de status de Task via `Task.history`, fim de Task
+  quando `progress` chega a 1.0, mensagens com `answered_at`/`rejected_at`,
+  aprovações) → `office3d/replay.ts` calcula o estado da planta num
+  instante; `ReplayBar` com play/velocidade. Ao vivo continua chegando por
+  baixo; mediar/aprovar ficam desligados no replay. Limite honesto: pergunta
+  avulsa não tem duração registrada, conta como trabalho só por 90s antes.
 - **Desempenho**: móveis e bonecos com geometria fundida
   (`office3d/merge.ts`, cor por vértice — 1 draw call por peça),
   `ContactShadows` renderizada só quando a planta muda, `dpr` limitado e
@@ -507,7 +540,12 @@ registra um resultado que já aconteceu:
 `POST /api/v1/agency/tasks/{id}/report-result/` com
 `{"success": bool, "result": {...}, "current_files": [...]}` — mesmas
 regras de estado de `execute_task` (só a partir de `CREATED`/`ADAPTED`,
-libera o agente ao final, publica em tempo real).
+libera o agente ao final, publica em tempo real). Antes de começar, quem
+roda fora pode chamar `POST tasks/{id}/start-external/`
+(`start_external_task`): a Task vai pra `IN_PROGRESS` com
+`runs_externally=True`, o agente aparece trabalhando, e a resposta traz
+`ai_provider`/`ai_model` do agente — `report-result/` aceita fechar essa
+Task enquanto ela não tiver resultado.
 
 ### Setor "Desenvolvimento" e hierarquia de comunicação humano→agentes
 
@@ -530,13 +568,15 @@ orquestrador daquele setor — nunca o humano fala direto com o time de
 outro setor, nunca um agente operacional media (`can_relay=False`
 sempre rejeita com 403, já testado).
 
-A tela "Gerar" do Studio ainda não cria uma `Task` real pro
-`AI Frontend` antes de chamar o devserver — isso está identificado como
-lacuna, não implementado ainda (ver seção "O que este boilerplate
-deliberadamente NÃO faz"). O pipeline de geração em si
-(`generator.mjs`) já funciona e já valida de verdade (typecheck →
-autocorreção → lint) — a lacuna é só a ausência de `Task`/`Agent`
-envolvidos, não o pipeline de geração em si.
+A tela "Gerar" do Studio (`GeneratePanel.tsx`) cria uma `Task` real pro
+agente `AI Frontend` (`task_type="generate_page"`), chama
+`start-external/`, passa `ai_provider`/`ai_model` dele ao devserver →
+`generator.mjs` → `POST harness/generate/` (parâmetros opcionais
+`provider`/`model` — o harness continua sem saber o que é setor) e fecha
+com `report-result/` (sucesso com o arquivo gerado, ou erro). Resultado:
+a geração usa a IA do setor Desenvolvimento (Claude) e **falha explícita
+sem a chave da Anthropic**, como o resto do setor. Sem `AI Frontend`
+cadastrado, gera como antes, sem Task (nunca inventa agente).
 
 ### Tempo real (Django Channels) — substitui polling, não convive com ele
 

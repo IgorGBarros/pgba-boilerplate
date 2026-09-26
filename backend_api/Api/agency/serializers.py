@@ -97,11 +97,11 @@ class SectorMessageSerializer(serializers.ModelSerializer):
         fields = [
             "id", "from_agent", "from_agent_name", "to_sector", "to_sector_name",
             "relayed_by", "relayed_by_name", "content", "response",
-            "status", "rejection_reason", "created_at", "answered_at",
+            "status", "rejection_reason", "created_at", "answered_at", "rejected_at",
         ]
         read_only_fields = [
             "id", "from_agent_name", "to_sector_name", "relayed_by", "relayed_by_name",
-            "response", "status", "rejection_reason", "created_at", "answered_at",
+            "response", "status", "rejection_reason", "created_at", "answered_at", "rejected_at",
         ]
 
 
@@ -241,9 +241,12 @@ class TaskSerializer(serializers.ModelSerializer):
         fields = [
             "id", "agent", "agent_name", "sector_name", "project", "project_name", "project_github_url",
             "brief", "status", "progress", "current_files", "result", "version", "task_type",
-            "workspace", "snapshots", "created_at", "updated_at",
+            "workspace", "runs_externally", "snapshots", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "status", "result", "version", "snapshots", "created_at", "updated_at"]
+        read_only_fields = [
+            "id", "status", "result", "version", "runs_externally", "snapshots",
+            "created_at", "updated_at",
+        ]
 
 
 class CreateTaskSerializer(serializers.Serializer):

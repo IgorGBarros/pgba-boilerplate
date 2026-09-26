@@ -1074,7 +1074,7 @@ function ObsidianNoteTab({ leadId }: { leadId: number }) {
         return (
           <div key={i} className="flex gap-1.5 text-xs">
             <span className="text-muted-foreground shrink-0">{label}:</span>
-            <span className="text-foreground">{rest.join(":").replace(/  $/, "").trim()}</span>
+            <span className="text-foreground">{rest.join(":").replace(/ {2}$/, "").trim()}</span>
           </div>
         );
       }
@@ -1753,7 +1753,9 @@ function ScraperModal({
         const updated = await getScrapingJob(id);
         setJob(updated);
         if (updated.status === "done" || updated.status === "failed") { stopPoll(); setPaused(false); }
-      } catch {}
+      } catch {
+        // falha pontual de rede: o próximo ciclo do poll tenta de novo
+      }
     }, 4000);
   };
 
@@ -1954,7 +1956,7 @@ export function CRMKanban() {
 
   const savePalette = (next: KanbanPalette) => {
     setPalette(next);
-    try { localStorage.setItem("crm_palette", JSON.stringify(next)); } catch {}
+    try { localStorage.setItem("crm_palette", JSON.stringify(next)); } catch { /* storage bloqueado: a paleta vale só nesta sessão */ }
   };
 
   const tabMeta = useMemo(() => TAB_META.map(ms => ({

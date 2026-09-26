@@ -13,8 +13,34 @@ import {
   type GenerateLogEvent,
   type ProjectFile,
 } from "@/lib/devserver";
-import { listAgencyProjects as listProjects, type Project } from "@/lib/api";
+import {
+  ApiError,
+  createTask,
+  listAgencyProjects as listProjects,
+  listAgents,
+  reportTaskResult,
+  startExternalTask,
+  type Agent,
+  type Project,
+} from "@/lib/api";
 import type { ChatMessage } from "@/types/builder";
+
+/**
+ * Quem gera páginas na empresa: o agente "AI Frontend" do setor
+ * Desenvolvimento (seed_company). Sem ele cadastrado, a geração roda como
+ * antes, sem Task — nunca inventa um agente.
+ */
+function findFrontendAgent(agents: Agent[]): Agent | null {
+  return (
+    agents.find((a) => a.name.trim().toLowerCase() === "ai frontend")
+    ?? agents.find((a) => a.role.trim().toLowerCase() === "frontend" && (a.sector_name ?? "").toLowerCase() === "desenvolvimento")
+    ?? null
+  );
+}
+
+const PROVIDER_NAME: Record<string, string> = {
+  anthropic: "Claude", groq: "Groq", openai: "OpenAI", openrouter: "OpenRouter", ollama: "Ollama",
+};
 
 // Mostra só as páginas geradas, sem carregar o Studio de novo dentro do iframe.
 const PREVIEW_URL = "http://localhost:5173/?embed=1&tab=pages";
@@ -118,6 +144,45 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
     const jobId = `job_${Date.now()}`;
     const accessToken = localStorage.getItem("pgba_access_token") ?? undefined;
 
+    // Task real pro AI Frontend: o agente aparece trabalhando no Escritório
+    // 3D durante a geração, e o resultado entra no histórico/quadro de
+    // tarefas. A geração usa a IA do agente (setor Desenvolvimento → Claude).
+    let taskId: number | null = null;
+    let provider: string | undefined;
+    let model: string | undefined;
+    try {
+      const agent = findFrontendAgent(await listAgents());
+      if (agent) {
+        const task = await createTask({
+          agentId: agent.id,
+          brief: prompt,
+          taskType: "generate_page",
+          // Sem workspace/projeto: a geração abaixo escreve no app principal.
+        });
+        const started = await startExternalTask(task.id);
+        taskId = task.id;
+        provider = started.ai_provider || undefined;
+        model = started.ai_model || undefined;
+        addMessage({
+          type: "plan",
+          content: `Tarefa #${task.id} criada para ${agent.name}${provider ? ` (IA: ${PROVIDER_NAME[provider] ?? provider})` : ""}.`,
+        });
+      }
+    } catch (err) {
+      // Sem backend de agentes (ou sem permissão), a geração segue sem Task.
+      const detail = err instanceof ApiError ? err.message : "backend indisponível";
+      addMessage({ type: "plan", content: `Gerando sem tarefa de agente (${detail}).` });
+    }
+
+    const finishTask = (success: boolean, result: Record<string, unknown>, files: string[] = []) => {
+      if (taskId == null) return;
+      const id = taskId;
+      taskId = null; // fecha uma vez só (complete/error/falha ao disparar)
+      reportTaskResult(id, { success, result, currentFiles: files }).catch(() => {
+        addMessage({ type: "error", content: `Não consegui registrar o resultado da tarefa #${id}.` });
+      });
+    };
+
     const source = connectGenerateStream(jobId, (event) => {
       setLogs((prev) => [...prev, event]);
 
@@ -128,10 +193,12 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
       } else if (event.stage === "done") {
         addMessage({ type: "assistant", content: event.message });
       } else if (event.stage === "complete") {
+        finishTask(true, { ...(event.result ?? {}) }, event.result?.filePath ? [event.result.filePath] : []);
         setIsLoading(false);
         refreshFiles();
         source.close();
       } else if (event.stage === "error") {
+        finishTask(false, { error: event.message });
         addMessage({ type: "error", content: event.message });
         setIsLoading(false);
         source.close();
@@ -140,9 +207,10 @@ export default function GeneratePanel({ initialProjectId }: GeneratePanelProps) 
     eventSourceRef.current = source;
 
     try {
-      await triggerGeneratePage({ jobId, prompt, accessToken });
+      await triggerGeneratePage({ jobId, prompt, accessToken, provider, model });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Falha ao iniciar geração.";
+      finishTask(false, { error: message });
       addMessage({ type: "error", content: message });
       toast.error(message);
       setIsLoading(false);

@@ -130,7 +130,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 400, { error: "JSON inválido" });
     }
 
-    const { prompt, name, jobId, accessToken, workspace } = payload;
+    const { prompt, name, jobId, accessToken, workspace, provider, model } = payload;
     if (!prompt || !jobId) {
       return sendJson(res, 400, { error: "prompt e jobId são obrigatórios" });
     }
@@ -151,6 +151,8 @@ const server = http.createServer(async (req, res) => {
       accessToken: accessToken || process.env.PGBA_ACCESS_TOKEN,
       prompt,
       name: name || undefined,
+      provider: provider || undefined,
+      model: model || undefined,
       onLog: (stage, message) => sendEvent(jobId, { stage, message }),
     })
       .then((result) => sendEvent(jobId, { stage: "complete", message: "ok", result }))

@@ -49,6 +49,9 @@ def test_graph_counts_unresolved_and_skips_self_links():
     g = build_knowledge_graph(docs)
     assert g["edges"] == [[2, 1]]
     assert g["unresolved"] == 2  # nota inexistente/privada nunca vira nó inventado
+    by_id = {n["id"]: n for n in g["nodes"]}
+    assert by_id[1]["broken_links"] == ["nao-existe", "privada"]  # e cada nota diz quais são
+    assert by_id[2]["broken_links"] == []
 
 
 def test_graph_excerpt_is_plain_text_and_short():

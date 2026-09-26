@@ -7,8 +7,13 @@
 //
 // O painel da nota mostra QUEM PODE LER aquela fonte — mesma regra de
 // agency.services._rag_scope_for(): CEO/Orquestrador-Geral leem tudo
-// (cérebro principal); setor só lê o próprio knowledge_source. Não é um
-// "quem leu" inventado: o backend não registra leitura por nota.
+// (cérebro principal); setor só lê o próprio knowledge_source — e quem de
+// fato CONSULTOU (AgentInteraction.source_document_ids).
+//
+// "Por uso" pinta o grafo como mapa de calor: quantas vezes cada nota foi
+// usada como contexto de resposta (agency knowledge-usage/summary/). Os
+// filtros "nunca usadas" e "links quebrados" ajudam a limpar/corrigir o
+// vault — o Cérebro só lê, nunca escreve no vault.
 //
 // Layout de forças próprio (sem dependência nova): repulsão só entre nós
 // da mesma célula/vizinhas de uma grade espacial — O(n) por passo em vez de
@@ -19,6 +24,7 @@ import {
   ApiError,
   getKnowledgeGraph,
   getKnowledgeUsage,
+  getKnowledgeUsageSummary,
   listKnowledgeSources,
   type KnowledgeGraph,
   type KnowledgeGraphNode,
@@ -32,6 +38,18 @@ const PALETTE = [
   "#8b5cf6", "#ef4444", "#14b8a6", "#84cc16", "#f97316",
 ];
 const NO_FOLDER = "(raiz)";
+const UNUSED_COLOR = "#d6d3d1";
+
+/** Cor do mapa de calor: amarelo (pouco usada) → vermelho (muito usada), escala log. */
+function heatColor(count: number, max: number): string {
+  if (count <= 0) return UNUSED_COLOR;
+  const t = max <= 1 ? 1 : Math.log(1 + count) / Math.log(1 + max);
+  const hue = 48 - 48 * t; // 48° amarelo → 0° vermelho
+  const light = 58 - 14 * t;
+  return `hsl(${hue.toFixed(0)} 90% ${light.toFixed(0)}%)`;
+}
+
+type ShowFilter = "all" | "unused" | "broken";
 
 interface SimNode extends KnowledgeGraphNode {
   x: number; y: number; vx: number; vy: number;
@@ -134,7 +152,11 @@ export function BrainGraph({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<number | "all">("all");
-  const [colorBy, setColorBy] = useState<"folder" | "source">("folder");
+  const [colorBy, setColorBy] = useState<"folder" | "source" | "usage">("folder");
+  const [show, setShow] = useState<ShowFilter>("all");
+  // Mapa de calor: id da nota → quantas vezes foi contexto de resposta
+  const [usageMap, setUsageMap] = useState<Record<string, { count: number; last_at: string }>>({});
+  const [usageError, setUsageError] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   // "Consultada por": agentes que usaram a nota selecionada como contexto
@@ -155,6 +177,17 @@ export function BrainGraph({
   const view = useRef({ x: 0, y: 0, k: 1 });
   const simRef = useRef<{ nodes: SimNode[]; edges: Array<[SimNode, SimNode]>; alpha: number } | null>(null);
   const drawRef = useRef<() => void>(() => {});
+
+  // Uso de todas as notas (mapa de calor) — falha aqui não derruba o grafo
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setUsageError(false);
+    getKnowledgeUsageSummary()
+      .then((u) => { if (!cancelled) setUsageMap(u); })
+      .catch(() => { if (!cancelled) setUsageError(true); });
+    return () => { cancelled = true; };
+  }, [open]);
 
   // Carrega ao abrir
   useEffect(() => {
@@ -181,12 +214,36 @@ export function BrainGraph({
   }, [open, onClose]);
 
   const sourceById = useMemo(() => new Map(sources.map((s) => [s.id, s])), [sources]);
+  // "Por uso" agrupa (layout/legenda) por pasta; só a cor muda
   const groupOf = useCallback(
-    (n: KnowledgeGraphNode) => colorBy === "folder" ? (n.folder || NO_FOLDER) : (sourceById.get(n.source)?.name ?? `Fonte ${n.source}`),
+    (n: KnowledgeGraphNode) => colorBy === "source" ? (sourceById.get(n.source)?.name ?? `Fonte ${n.source}`) : (n.folder || NO_FOLDER),
     [colorBy, sourceById],
   );
   const groups = useMemo(() => [...new Set((graph?.nodes ?? []).map(groupOf))].sort(), [graph, groupOf]);
   const colorOf = useCallback((g: string) => PALETTE[Math.max(0, groups.indexOf(g)) % PALETTE.length]!, [groups]);
+  const usesOf = useCallback((id: number) => usageMap[String(id)]?.count ?? 0, [usageMap]);
+  const maxUses = useMemo(
+    () => (graph?.nodes ?? []).reduce((m, n) => Math.max(m, usesOf(n.id)), 0),
+    [graph, usesOf],
+  );
+  const nodeColor = useCallback(
+    (n: KnowledgeGraphNode & { group?: string }) => (colorBy === "usage" ? heatColor(usesOf(n.id), maxUses) : colorOf(n.group ?? groupOf(n))),
+    [colorBy, usesOf, maxUses, colorOf, groupOf],
+  );
+  // Raio: ligações + (no modo uso) quantas vezes foi consultada
+  const radiusOf = useCallback(
+    (n: SimNode) => 3.2 + Math.sqrt(n.degree) * 1.7 + (colorBy === "usage" ? Math.sqrt(usesOf(n.id)) * 1.3 : 0),
+    [colorBy, usesOf],
+  );
+
+  const unusedIds = useMemo(
+    () => new Set((graph?.nodes ?? []).filter((n) => usesOf(n.id) === 0).map((n) => n.id)),
+    [graph, usesOf],
+  );
+  const brokenIds = useMemo(
+    () => new Set((graph?.nodes ?? []).filter((n) => (n.broken_links ?? []).length > 0).map((n) => n.id)),
+    [graph],
+  );
 
   const neighbors = useMemo(() => {
     const m = new Map<number, Set<number>>();
@@ -200,10 +257,16 @@ export function BrainGraph({
   }, [graph]);
 
   const q = query.trim().toLowerCase();
+  // Busca e filtro combinam: o que não passa fica apagado (não some do layout)
   const matches = useMemo(() => {
-    if (!q || !graph) return null;
-    return new Set(graph.nodes.filter((n) => n.title.toLowerCase().includes(q) || n.path.toLowerCase().includes(q) || n.tags.some((t) => t.toLowerCase().includes(q))).map((n) => n.id));
-  }, [q, graph]);
+    if (!graph) return null;
+    const filterSet = show === "unused" ? unusedIds : show === "broken" ? brokenIds : null;
+    if (!q && !filterSet) return null;
+    return new Set(graph.nodes.filter((n) =>
+      (!filterSet || filterSet.has(n.id))
+      && (!q || n.title.toLowerCase().includes(q) || n.path.toLowerCase().includes(q) || n.tags.some((t) => t.toLowerCase().includes(q))),
+    ).map((n) => n.id));
+  }, [q, graph, show, unusedIds, brokenIds]);
 
   // (Re)inicia a simulação quando o grafo muda
   useEffect(() => {
@@ -275,12 +338,21 @@ export function BrainGraph({
     }
     // nós
     for (const n of sim.nodes) {
-      const r = 3.2 + Math.sqrt(n.degree) * 1.7;
+      const r = radiusOf(n);
       ctx.globalAlpha = dimmed(n.id) ? 0.15 : 1;
-      ctx.fillStyle = colorOf(n.group);
+      ctx.fillStyle = nodeColor(n);
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
       ctx.fill();
+      if (show === "broken" && brokenIds.has(n.id) && !dimmed(n.id)) {
+        ctx.strokeStyle = "#ef4444";
+        ctx.lineWidth = 1.5 / k;
+        ctx.setLineDash([3 / k, 2 / k]);
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 2.5 / k, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       if (n.id === selectedId) {
         ctx.strokeStyle = "#1c1917";
         ctx.lineWidth = 2 / k;
@@ -291,9 +363,9 @@ export function BrainGraph({
     ctx.font = `${11 / k}px ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = "center";
     for (const n of sim.nodes) {
-      const show = (focusSet?.has(n.id)) || (matches?.has(n.id)) || k > 1.6 || n.degree >= 6;
-      if (!show || (dimmed(n.id) && !matches?.has(n.id))) continue;
-      const r = 3.2 + Math.sqrt(n.degree) * 1.7;
+      const label = (focusSet?.has(n.id)) || (matches?.has(n.id) && matches.size <= 60) || k > 1.6 || n.degree >= 6;
+      if (!label || (dimmed(n.id) && !matches?.has(n.id))) continue;
+      const r = radiusOf(n);
       ctx.globalAlpha = 1;
       ctx.fillStyle = "rgba(255,255,255,0.85)";
       const tw = ctx.measureText(n.title).width;
@@ -302,7 +374,7 @@ export function BrainGraph({
       ctx.fillText(n.title, n.x, n.y + r + 12 / k);
     }
     ctx.globalAlpha = 1;
-  }, [colorOf, hoverId, selectedId, neighbors, matches]);
+  }, [nodeColor, radiusOf, show, brokenIds, hoverId, selectedId, neighbors, matches]);
   drawRef.current = draw;
 
   // Loop: simula enquanto "esquenta", depois só redesenha quando algo muda
@@ -335,7 +407,7 @@ export function BrainGraph({
     const [wx, wy] = toWorld(clientX, clientY);
     let best: SimNode | null = null, bestD = Infinity;
     for (const n of sim.nodes) {
-      const r = 3.2 + Math.sqrt(n.degree) * 1.7 + 4 / view.current.k;
+      const r = radiusOf(n) + 4 / view.current.k;
       const d = (n.x - wx) ** 2 + (n.y - wy) ** 2;
       if (d < r * r && d < bestD) { best = n; bestD = d; }
     }
@@ -418,13 +490,31 @@ export function BrainGraph({
               {sources.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
             <div className="flex rounded-full border border-stone-200 bg-white p-0.5 text-[10px] font-medium uppercase tracking-wider">
-              {(["folder", "source"] as const).map((c) => (
+              {(["folder", "source", "usage"] as const).map((c) => (
                 <button
                   key={c}
                   onClick={() => setColorBy(c)}
+                  title={c === "usage" ? "Mapa de calor: quantas vezes cada nota foi usada numa resposta" : undefined}
                   className={`rounded-full px-2.5 py-0.5 ${colorBy === c ? "bg-stone-900 text-white" : "text-stone-500 hover:text-stone-800"}`}
                 >
-                  {c === "folder" ? "Por pasta" : "Por fonte"}
+                  {c === "folder" ? "Por pasta" : c === "source" ? "Por fonte" : "Por uso"}
+                </button>
+              ))}
+            </div>
+            <div className="flex rounded-full border border-stone-200 bg-white p-0.5 text-[10px] font-medium">
+              {([
+                ["all", "Todas", graph?.nodes.length ?? 0],
+                ["unused", "Nunca usadas", unusedIds.size],
+                ["broken", "Links quebrados", brokenIds.size],
+              ] as const).map(([id, label, n]) => (
+                <button
+                  key={id}
+                  onClick={() => setShow(id)}
+                  disabled={id === "unused" && usageError}
+                  title={id === "unused" ? "Nunca usadas como contexto de resposta (desde que o registro existe)" : id === "broken" ? "Notas com [[links]] para notas que não existem ou não foram indexadas" : undefined}
+                  className={`rounded-full px-2.5 py-0.5 disabled:opacity-40 ${show === id ? (id === "broken" ? "bg-red-600 text-white" : "bg-stone-900 text-white") : "text-stone-500 hover:text-stone-800"}`}
+                >
+                  {label} <span className="font-mono opacity-70">{n}</span>
                 </button>
               ))}
             </div>
@@ -471,7 +561,22 @@ export function BrainGraph({
             />
 
             {/* Legenda */}
-            {groups.length > 0 && (
+            {colorBy === "usage" && graph && graph.nodes.length > 0 && (
+              <div className="absolute bottom-3 left-3 rounded-xl border border-stone-200 bg-white/90 px-3 py-2 text-[10px] text-stone-600 shadow-sm">
+                <p className="mb-1 font-semibold uppercase tracking-wider text-stone-500">Consultas por nota</p>
+                <div className="flex items-center gap-1.5">
+                  <span className="size-2 rounded-full" style={{ background: UNUSED_COLOR }} /> nunca
+                  <span
+                    className="ml-2 h-2 w-20 rounded-full"
+                    style={{ background: `linear-gradient(90deg, ${heatColor(1, 10)}, ${heatColor(10, 10)})` }}
+                  />
+                  <span>até {maxUses}×</span>
+                </div>
+                {usageError && <p className="mt-1 text-red-600">Não foi possível carregar o uso das notas.</p>}
+                <p className="mt-1 text-stone-400">Conta a partir de quando o registro de fontes existe.</p>
+              </div>
+            )}
+            {colorBy !== "usage" && groups.length > 0 && (
               <div className="absolute bottom-3 left-3 max-h-[40%] max-w-[240px] overflow-y-auto rounded-xl border border-stone-200 bg-white/90 px-3 py-2 text-[10px] text-stone-600 shadow-sm">
                 <p className="mb-1 font-semibold uppercase tracking-wider text-stone-500">{colorBy === "folder" ? "Pastas" : "Fontes"}</p>
                 {groups.map((g) => (
@@ -505,7 +610,7 @@ export function BrainGraph({
           {selected && (
             <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-stone-200 bg-white px-4 py-3 text-xs text-stone-600">
               <div className="flex items-start gap-2">
-                <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: colorOf(groupOf(selected)) }} />
+                <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: nodeColor(selected) }} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold leading-snug text-stone-900">{selected.title}</p>
                   <p className="truncate font-mono text-[10px] text-stone-400" title={selected.path}>{selected.path}</p>
@@ -562,6 +667,18 @@ export function BrainGraph({
                   </p>
                 ))}
               </div>
+
+              {(selected.broken_links ?? []).length > 0 && (
+                <div className="mt-4">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-red-600">
+                    Links quebrados · {selected.broken_links.length}
+                  </p>
+                  <p className="mb-1 text-[10px] text-stone-400">Apontam para nota inexistente, privada ou fora das tags indexadas.</p>
+                  {selected.broken_links.map((l) => (
+                    <p key={l} className="truncate font-mono text-[11px] text-red-700">[[{l}]]</p>
+                  ))}
+                </div>
+              )}
 
               {([["Liga para", links.out], ["Citada por", links.inn]] as const).map(([label, list]) => (
                 <div key={label} className="mt-4">

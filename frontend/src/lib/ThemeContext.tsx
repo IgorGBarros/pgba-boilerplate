@@ -30,7 +30,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       localStorage.setItem("pgba-theme", theme);
-    } catch {}
+    } catch {
+      // storage bloqueado (aba privada etc.): o tema vale só nesta sessão
+    }
   }, [theme]);
 
   const toggle = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
