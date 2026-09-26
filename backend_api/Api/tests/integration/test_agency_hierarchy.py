@@ -102,3 +102,49 @@ def test_rag_scope_never_leaks_across_sectors():
 
     ceo = CeoAgentFactory.build()
     assert _rag_scope_for(ceo) is None  # único caso em que None (irrestrito) é aceitável
+
+
+@pytest.mark.django_db
+def test_sector_message_lifecycle_is_broadcast_in_realtime(tenant_id, monkeypatch):
+    """
+    O Escritório 3D anima o "envelope" entre setores a partir do WebSocket —
+    criar, responder e rejeitar uma SectorMessage precisa publicar o evento,
+    senão o envelope só apareceria no próximo poll (ou nunca).
+    """
+    sent = []
+    monkeypatch.setattr(
+        "agency.services.broadcast_sector_message_update",
+        lambda message: sent.append((message.id, message.status)),
+    )
+    monkeypatch.setattr(
+        "agency.services.ask_as_agent",
+        lambda tenant_id, agent_id, question, use_rag_context=True: {
+            "answer": "ok", "function_called": None, "sources": [], "status": "ok",
+        },
+    )
+    juridico = SectorFactory(tenant_id=tenant_id, name="Jurídico")
+    financeiro = SectorFactory(tenant_id=tenant_id, name="Financeiro")
+    origem = AgentFactory(tenant_id=tenant_id, sector=juridico)
+    resposta_agente = AgentFactory(tenant_id=tenant_id, sector=financeiro)
+    ceo = CeoAgentFactory(tenant_id=tenant_id)
+
+    ok = request_cross_sector_message(
+        tenant_id=tenant_id, from_agent_id=origem.id, to_sector_id=financeiro.id,
+        content="Pergunta",
+    )
+    relay_message(
+        tenant_id=tenant_id, relaying_agent_id=ceo.id, message_id=ok.id,
+        answering_agent_id=resposta_agente.id,
+    )
+    negada = request_cross_sector_message(
+        tenant_id=tenant_id, from_agent_id=origem.id, to_sector_id=financeiro.id, content="Outra",
+    )
+    with pytest.raises(AccessDeniedError):
+        relay_message(tenant_id=tenant_id, relaying_agent_id=origem.id, message_id=negada.id)
+
+    assert sent == [
+        (ok.id, SectorMessage.Status.PENDING),
+        (ok.id, SectorMessage.Status.ANSWERED),
+        (negada.id, SectorMessage.Status.PENDING),
+        (negada.id, SectorMessage.Status.REJECTED),
+    ]

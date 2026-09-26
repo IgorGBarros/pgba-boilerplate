@@ -23,7 +23,10 @@ from django.utils import timezone
 
 from agency.models import Sector, Agent, AgentInteraction, SectorMessage, Project, PendingApproval
 from harness.injection_guard import sanitize_user_input
-from agency.realtime import broadcast_pending_approval_update
+from agency.realtime import (
+    broadcast_pending_approval_update,
+    broadcast_sector_message_update,
+)
 from integrations.services import create_project_repository, get_project_repository, IntegrationConfigError
 from orchestration import registry
 
@@ -170,12 +173,14 @@ def request_cross_sector_message(tenant_id, from_agent_id, to_sector_id, content
         raise ValueError("from_agent já pertence a este setor — não é uma mensagem cruzada.")
 
     safe_content = sanitize_user_input(content, source=f"sector_message:agent_{from_agent_id}")
-    return SectorMessage.objects.create(
+    message = SectorMessage.objects.create(
         tenant_id=tenant_id,
         from_agent=from_agent,
         to_sector_id=to_sector_id,
         content=safe_content,
     )
+    broadcast_sector_message_update(message)
+    return message
 
 
 def relay_message(tenant_id, relaying_agent_id, message_id: int, answering_agent_id=None) -> SectorMessage:
@@ -199,6 +204,7 @@ def relay_message(tenant_id, relaying_agent_id, message_id: int, answering_agent
         message.status = SectorMessage.Status.REJECTED
         message.rejection_reason = "Agente não tem permissão de mediação (é operacional)."
         message.save(update_fields=["status", "rejection_reason"])
+        broadcast_sector_message_update(message)
         raise AccessDeniedError(
             "Este agente é operacional e não pode mediar comunicação entre setores — "
             "só um orquestrador (do setor de origem/destino) ou o orquestrador-geral/CEO pode."
@@ -213,6 +219,7 @@ def relay_message(tenant_id, relaying_agent_id, message_id: int, answering_agent
                 f"Orquestrador de {relaying_agent.sector} não medeia mensagens entre outros setores."
             )
             message.save(update_fields=["status", "rejection_reason"])
+            broadcast_sector_message_update(message)
             raise AccessDeniedError(message.rejection_reason)
 
     # Quem responde: um agente explícito do setor de destino, ou (padrão)
@@ -237,6 +244,7 @@ def relay_message(tenant_id, relaying_agent_id, message_id: int, answering_agent
     message.status = SectorMessage.Status.ANSWERED
     message.answered_at = timezone.now()
     message.save(update_fields=["response", "relayed_by", "status", "answered_at"])
+    broadcast_sector_message_update(message)
 
     return message
 

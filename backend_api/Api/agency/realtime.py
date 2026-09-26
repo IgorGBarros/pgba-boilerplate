@@ -42,3 +42,17 @@ def broadcast_pending_approval_update(pending) -> None:
     from agency.serializers import PendingApprovalSerializer
 
     _group_send(pending.tenant_id, "pending_approval.update", {"kind": "pending_approval", **PendingApprovalSerializer(pending).data})
+
+
+def broadcast_sector_message_update(message) -> None:
+    """
+    Mensagem entre setores criada/respondida/rejeitada — é o que o
+    Escritório 3D usa pra animar o "envelope" saindo de um setor, passando
+    por quem mediou e chegando no destino (nunca direto, CLAUDE.md §7).
+    """
+    from agency.serializers import SectorMessageSerializer
+
+    _group_send(
+        message.tenant_id, "sector_message.update",
+        {"kind": "sector_message", **SectorMessageSerializer(message).data},
+    )

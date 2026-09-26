@@ -7,7 +7,7 @@
 // eventos via context.
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { getAccessToken } from "@/lib/auth";
-import type { Agent, PendingApproval, Task } from "@/lib/api";
+import type { Agent, PendingApproval, SectorMessage, Task } from "@/lib/api";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 const WS_URL = API_URL.replace(/^http/, "ws");
@@ -34,6 +34,7 @@ interface RealtimeState {
   lastAgentEvent: Agent | null;
   lastTaskEvent: Task | null;
   lastPendingApprovalEvent: PendingApproval | null;
+  lastSectorMessageEvent: SectorMessage | null;
 }
 
 const RealtimeContext = createContext<RealtimeState>({
@@ -41,6 +42,7 @@ const RealtimeContext = createContext<RealtimeState>({
   lastAgentEvent: null,
   lastTaskEvent: null,
   lastPendingApprovalEvent: null,
+  lastSectorMessageEvent: null,
 });
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {
@@ -48,6 +50,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const [lastAgentEvent, setLastAgentEvent] = useState<Agent | null>(null);
   const [lastTaskEvent, setLastTaskEvent] = useState<Task | null>(null);
   const [lastPendingApprovalEvent, setLastPendingApprovalEvent] = useState<PendingApproval | null>(null);
+  const [lastSectorMessageEvent, setLastSectorMessageEvent] = useState<SectorMessage | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -73,6 +76,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         if (data.kind === "agent") setLastAgentEvent(data as unknown as Agent);
         else if (data.kind === "task") setLastTaskEvent(data as unknown as Task);
         else if (data.kind === "pending_approval") setLastPendingApprovalEvent(data as unknown as PendingApproval);
+        else if (data.kind === "sector_message") setLastSectorMessageEvent(data as unknown as SectorMessage);
       };
 
       ws.onclose = () => {
@@ -94,7 +98,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <RealtimeContext.Provider value={{ connected, lastAgentEvent, lastTaskEvent, lastPendingApprovalEvent }}>
+    <RealtimeContext.Provider value={{ connected, lastAgentEvent, lastTaskEvent, lastPendingApprovalEvent, lastSectorMessageEvent }}>
       {children}
     </RealtimeContext.Provider>
   );

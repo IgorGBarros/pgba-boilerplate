@@ -309,9 +309,34 @@ CEO/Orquestrador-Geral ficam na sala CEO, e há uma Sala de Reunião fixa.
   fonte baixada em runtime (rótulos 3D rasterizados em canvas,
   `office3d/textures.ts#labelTexture`) — sem rede, a cena ainda renderiza.
 
-Mantido da Fase 2: movimento por waypoints (porta → corredor → destino),
-reunião convocada pelo `MeetingModal`, portas que abrem quando um agente
-se aproxima, painéis de atividade/agentes e console.
+**Movimento sem atravessar parede** (`office3d/navigation.ts`, funções
+puras): toda rota é montada só com trechos que existem na planta — mesa →
+corredor interno entre colunas de mesas → faixa livre da frente da sala →
+porta (dentro → fora) → passeio da fileira → corredor vertical entre
+colunas de salas (`ROOM_GAP_X`) → passeio da fileira de destino → porta
+de destino. Antes (Fase 2) o agente ia da mesa direto pro lado de fora da
+porta, em diagonal, e descia reto atravessando as salas das fileiras de
+baixo. O avatar tem sempre um lugar real (`seat`/`front`/`meeting`) e uma
+mudança de status no meio do caminho espera ele chegar — nunca corta
+caminho. Mesas ficam alinhadas à mesma grade de colunas e no máximo 3
+fileiras (setor com muita gente ganha colunas mais estreitas), pra faixa
+da frente e os corredores internos ficarem sempre livres.
+`routeCrossesWall()` existe pra verificar isso: nenhum trecho de rota pode
+cruzar parede fora do vão da porta.
+
+**Envelopes entre setores** (`office3d/Envelopes.tsx` — a "Fase 2"
+combinada): mostram `SectorMessage` respeitando a regra "setor nunca fala
+direto com outro setor". Pendente = envelope parado piscando em cima da
+porta do setor de origem (a fila real, com contador); respondida = voa
+origem → sala de quem mediou (`relayed_by`) → destino, e a resposta
+(verde) volta pelo mesmo caminho; rejeitada = fica vermelho e cai na
+origem. Só anima transição vista ao vivo (ou com `answered_at` ≤ 20s no
+carregamento) — histórico antigo não fica voando.
+
+Mantido da Fase 2: reunião convocada pelo `MeetingModal` (agora cada agente
+senta numa cadeira de verdade da mesa oval — `MEETING_SEATS` é a mesma
+lista pra desenhar a cadeira e pra sentar), portas que abrem quando um
+agente se aproxima, painéis de atividade/agentes e console.
 
 Ideias de layout inspiradas no Agents Office
 (github.com/ajsahni/agents-office), **sem copiar código** — a licença
@@ -466,8 +491,10 @@ inválido/expirado) fecha com código `4001`.
 
 Um grupo Channels por tenant (`tenant_{uuid}`) — todo evento do tenant
 chega pra qualquer cliente conectado. Mensagens: `{"kind": "task", ...}`,
-`{"kind": "agent", ...}` ou `{"kind": "pending_approval", ...}` — mesmo
-formato do `TaskSerializer`/`AgentSerializer`/`PendingApprovalSerializer`
+`{"kind": "agent", ...}`, `{"kind": "pending_approval", ...}` ou
+`{"kind": "sector_message", ...}` (criada/respondida/rejeitada — é o que
+anima o envelope no Escritório 3D) — mesmo formato do
+`TaskSerializer`/`AgentSerializer`/`PendingApprovalSerializer`/`SectorMessageSerializer`
 (nunca um segundo formato de serialização pra WebSocket).
 `agency/realtime.py` nunca deixa uma falha de broadcast (Redis fora do
 ar, etc.) derrubar a operação principal — loga e segue.
