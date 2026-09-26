@@ -936,6 +936,49 @@ Módulos → Marketing). Detalhes e o que cada rede exige em `docs/MARKETING.md`
 - Organograma: setor "Marketing" abre o módulo; `getSectorModule` tratava "marke**ti**ng"
   como TI/Helpdesk — agora "ti" só como palavra.
 
+### Setor TI — observabilidade + helpdesk (`observabilidade` + `helpdesk`)
+
+`backend_api/Api/observabilidade/` (core: medir, verificar, incidentes) +
+`helpdesk/` (vertical: time de TI, chamados, IA) + `frontend/src/components/empresa/ti/`
+(Empresa → Módulos → TI · Helpdesk) + página pública `/status`. Detalhes em
+`docs/TI_OBSERVABILIDADE.md`.
+
+- **Medir sem acoplar**: `core/signals.py` (`chamada_ia`, `saida_http`) é emitido
+  por `harness.providers.chat_completion_with_usage` e `safe_http.request`;
+  `observabilidade.receptores` escuta. `MetricasMiddleware` mede `/api/` por rota
+  (regex do router vira `<pk>`) e empresa. Contadores por minuto em memória,
+  gravados em lote (UPSERT que soma). ERROR do log → `EventoErro` (agrupado,
+  `redact_pii`), handler no `LOGGING` de dev/prod.
+- **Verificações**: plataforma (`observabilidade/plataforma.py`: banco com causa
+  em português — `banco.explicar` —, Redis, workers, beat, disco, config, erros,
+  API 5xx) e por empresa **registradas por quem conhece o assunto**
+  (`observabilidade.registro.registrar_verificacao`): `helpdesk/verificacoes.py`
+  (IA de cada setor, conectores, MCP com chamada real, e-mails, agentes: tarefas
+  paradas, falhas, aprovações velhas, orçamento) e `marketing/verificacoes.py`
+  (tokens das redes). Beat `verificar_task` a cada 60s; falhou 2x → `Incidente`
+  (sinal `incidente_aberto`), voltou → resolvido. `python manage.py diagnostico`.
+- **Banco fora**: nada grava; a queda é anotada no Redis e vira incidente com o
+  horário real quando o banco volta. `/status` e `observabilidade/saude/`
+  (público, throttle `status_publico`) testam na hora.
+- **Escopo**: empresa vê o dela + componentes da plataforma **sem** detalhe
+  técnico (`_enxuto`); métricas só as dela; saídas HTTP por host e erros do log
+  só `is_staff`.
+- **Time de TI** (`helpdesk/equipe.py`, `seed_ti`, botão "Montar time"): Head de
+  TI + SRE, DBA, Suporte, Integrações (APIs & MCP), Segurança — todos observer.
+- **Chamado = Task** (`task_type="chamado"`): agente pela categoria, SLA por
+  prioridade (4/8/24/72h), "Atender com IA" sugere (rascunho), pessoa responde,
+  **resolver aprova a Task**; aprovar/rejeitar no quadro move o chamado
+  (`helpdesk/receptores.py`). Incidente abre chamado (plataforma: em toda empresa
+  com time de TI, sem IP/detalhe) e o SRE/DBA/Integrações diagnostica no Celery.
+- **IA** (`helpdesk/ia.py` via `agency/ia_json.py` — executor JSON comum, o
+  Marketing usa o mesmo): fatos `[F#]` montados em Python (`helpdesk/fatos.py`),
+  citação inexistente removida (`citacoes_invalidas`), nunca executa comando.
+  Funções: `ti_status_sistema`, `ti_chamados_abertos`, `ti_abrir_chamado` (low).
+- `GET helpdesk/agentes/`: observabilidade de todos os agentes de todos os setores.
+- **Tailwind**: tokens em `tailwind.config.ts` passam por `color-mix(... <alpha-value>)`
+  — antes, `bg-success/10`, `border-destructive/30` etc. (centenas no app) não
+  geravam CSS nenhum.
+
 ### Painel administrativo + integrações (`integrations` + `components/admin/`)
 
 Abre pelo botão **Painel administrativo** na caixa **Empresa** do organograma

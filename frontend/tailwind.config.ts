@@ -1,5 +1,10 @@
 import type { Config } from "tailwindcss";
 
+// Tokens são CSS vars com cor pronta (hex/oklch) — sem isto, `bg-success/10`,
+// `border-destructive/30`… não geravam CSS nenhum (Tailwind só aplica opacidade
+// a cor com `<alpha-value>`). color-mix mistura o token com transparente.
+const v = (name: string) => `color-mix(in srgb, var(${name}) calc(<alpha-value> * 100%), transparent)`;
+
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   darkMode: "class",
@@ -16,63 +21,63 @@ export default {
           900: "#1b2c8f",
         },
         surface: {
-          DEFAULT: "var(--surface)",
-          raised:  "var(--elevated)",
+          DEFAULT: v("--surface"),
+          raised:  v("--elevated"),
         },
 
         // Tokens semânticos — todos referenciados via CSS var oklch
-        background:  "var(--background)",
-        foreground:  "var(--foreground)",
-        elevated:    "var(--elevated)",
-        border:      "var(--border)",
-        input:       "var(--input)",
-        ring:        "var(--ring)",
+        background:  v("--background"),
+        foreground:  v("--foreground"),
+        elevated:    v("--elevated"),
+        border:      v("--border"),
+        input:       v("--input"),
+        ring:        v("--ring"),
 
         primary: {
-          DEFAULT:    "var(--primary)",
-          foreground: "var(--primary-foreground)",
+          DEFAULT:    v("--primary"),
+          foreground: v("--primary-foreground"),
         },
         secondary: {
-          DEFAULT:    "var(--secondary)",
-          foreground: "var(--secondary-foreground)",
+          DEFAULT:    v("--secondary"),
+          foreground: v("--secondary-foreground"),
         },
         muted: {
-          DEFAULT:    "var(--muted)",
-          foreground: "var(--muted-foreground)",
+          DEFAULT:    v("--muted"),
+          foreground: v("--muted-foreground"),
         },
         accent: {
-          DEFAULT:    "var(--accent)",
-          foreground: "var(--accent-foreground)",
+          DEFAULT:    v("--accent"),
+          foreground: v("--accent-foreground"),
         },
         destructive: {
-          DEFAULT:    "var(--destructive)",
-          foreground: "var(--destructive-foreground)",
+          DEFAULT:    v("--destructive"),
+          foreground: v("--destructive-foreground"),
         },
         success: {
-          DEFAULT:    "var(--success)",
-          foreground: "var(--success-foreground)",
+          DEFAULT:    v("--success"),
+          foreground: v("--success-foreground"),
         },
         warning: {
-          DEFAULT:    "var(--warning)",
-          foreground: "var(--warning-foreground)",
+          DEFAULT:    v("--warning"),
+          foreground: v("--warning-foreground"),
         },
         card: {
-          DEFAULT:    "var(--card)",
-          foreground: "var(--card-foreground)",
+          DEFAULT:    v("--card"),
+          foreground: v("--card-foreground"),
         },
         popover: {
-          DEFAULT:    "var(--popover)",
-          foreground: "var(--popover-foreground)",
+          DEFAULT:    v("--popover"),
+          foreground: v("--popover-foreground"),
         },
         sidebar: {
-          DEFAULT:               "var(--sidebar)",
-          foreground:            "var(--sidebar-foreground)",
-          primary:               "var(--sidebar-primary)",
-          "primary-foreground":  "var(--sidebar-primary-foreground)",
-          accent:                "var(--sidebar-accent)",
-          "accent-foreground":   "var(--sidebar-accent-foreground)",
-          border:                "var(--sidebar-border)",
-          ring:                  "var(--sidebar-ring)",
+          DEFAULT:               v("--sidebar"),
+          foreground:            v("--sidebar-foreground"),
+          primary:               v("--sidebar-primary"),
+          "primary-foreground":  v("--sidebar-primary-foreground"),
+          accent:                v("--sidebar-accent"),
+          "accent-foreground":   v("--sidebar-accent-foreground"),
+          border:                v("--sidebar-border"),
+          ring:                  v("--sidebar-ring"),
         },
         chart: {
           1: "var(--chart-1)",

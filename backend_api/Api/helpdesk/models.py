@@ -12,6 +12,10 @@ class Ticket(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
         ("mobile", "Mobile"),
         ("infraestrutura", "Infraestrutura"),
         ("equipamento", "Equipamento"),
+        ("sistema", "Sistema (PGBA)"),
+        ("banco", "Banco de dados"),
+        ("integracao", "Integração / API / MCP"),
+        ("ia", "IA / agentes"),
         ("outro", "Outro"),
     ]
     PRIORIDADE_CHOICES = [
@@ -39,6 +43,30 @@ class Ticket(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
     atendente = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     resolvido_em = models.DateTimeField(null=True, blank=True)
+
+    ORIGEM_CHOICES = [
+        ("manual", "Aberto por pessoa"),
+        ("incidente", "Incidente (monitoramento)"),
+        ("agente", "Aberto por agente"),
+        ("email", "E-mail"),
+    ]
+    # Setor de quem pediu (pode ser qualquer setor) — o chamado é atendido pelo TI
+    setor = models.ForeignKey(
+        "agency.Sector", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    # Agente do TI responsável + a Task real que carrega o atendimento
+    agente = models.ForeignKey(
+        "agency.Agent", on_delete=models.SET_NULL, null=True, blank=True, related_name="chamados"
+    )
+    task = models.ForeignKey(
+        "agency.Task", on_delete=models.SET_NULL, null=True, blank=True, related_name="chamados"
+    )
+    origem = models.CharField(max_length=12, choices=ORIGEM_CHOICES, default="manual")
+    # id solto (observabilidade.Incidente) — vertical conhece core, nunca FK cruzada
+    incidente_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    primeira_resposta_em = models.DateTimeField(null=True, blank=True)
+    prazo_sla = models.DateTimeField(null=True, blank=True)
+    solucao = models.TextField(blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -86,8 +114,35 @@ class EquipamentoTI(TenantMixin, AuditMixin, SoftDeleteMixin, models.Model):
             models.Index(fields=["tenant_id", "tipo"]),
         ]
         constraints = [
-            models.UniqueConstraint(fields=["tenant_id", "codigo"], name="uniq_equipamento_codigo_per_tenant")
+            models.UniqueConstraint(
+                fields=["tenant_id", "codigo"], name="uniq_equipamento_codigo_per_tenant"
+            )
         ]
 
     def __str__(self):
         return f"{self.codigo} — {self.nome}"
+
+
+class InteracaoChamado(TenantMixin, models.Model):
+    """Linha do tempo do chamado: comentário de pessoa, resposta da IA ou evento do sistema."""
+
+    TIPO_CHOICES = [
+        ("comentario", "Comentário"),
+        ("resposta", "Resposta ao solicitante"),
+        ("ia", "Sugestão da IA"),
+        ("sistema", "Sistema"),
+    ]
+
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="interacoes")
+    tipo = models.CharField(max_length=12, choices=TIPO_CHOICES, default="comentario")
+    autor = models.CharField(max_length=200, blank=True)
+    texto = models.TextField()
+    dados = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [models.Index(fields=["tenant_id", "ticket"])]
+
+    def __str__(self):
+        return f"#{self.ticket_id} {self.tipo}"

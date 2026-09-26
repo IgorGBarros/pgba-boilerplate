@@ -12,12 +12,15 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 
 import httpx
 from django.conf import settings
+
+from core.signals import chamada_ia
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +257,28 @@ def chat_completion_with_usage(
     Como chat_completion mas retorna (texto, tokens_in, tokens_out) — os
     tokens que o provedor informou (estimativa só se ele não informar).
     """
+    inicio = time.monotonic()
+    resolved_model = model or ""
+    try:
+        text, tin, tout, resolved_model = _chat_dispatch(
+            tenant_id, provider, model, messages, temperature, json_mode, timeout
+        )
+    except Exception as exc:
+        chamada_ia.send_robust(
+            None, tenant_id=tenant_id, provider=provider, model=resolved_model, ok=False,
+            ms=int((time.monotonic() - inicio) * 1000), erro=str(exc)[:500],
+        )
+        raise
+    chamada_ia.send_robust(
+        None, tenant_id=tenant_id, provider=provider, model=resolved_model, ok=True,
+        ms=int((time.monotonic() - inicio) * 1000), erro="",
+    )
+    for collector in _usage_collectors.get():
+        collector.append(ChatUsage(provider, resolved_model, tin, tout))
+    return text, tin, tout
+
+
+def _chat_dispatch(tenant_id, provider, model, messages, temperature, json_mode, timeout):
     cred = get_credential(tenant_id, provider)
     resolved_model = _resolve_model_for(cred, provider, model)
     resolved_timeout = timeout if timeout is not None else getattr(settings, "CHAT_TIMEOUT_SECONDS", 120.0)
@@ -272,10 +297,7 @@ def chat_completion_with_usage(
         )
     else:
         raise ProviderConfigError(f"Provedor '{provider}' não suportado.")
-
-    for collector in _usage_collectors.get():
-        collector.append(ChatUsage(provider, resolved_model, tin, tout))
-    return text, tin, tout
+    return text, tin, tout, resolved_model
 
 
 def _estimate_tokens(text: str) -> int:
